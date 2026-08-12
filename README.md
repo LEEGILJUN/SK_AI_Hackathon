@@ -38,7 +38,7 @@
 ```bash
 python scripts/check_scenarios.py     # 시나리오 형식
 python scripts/demo_diagnose.py       # 이슈 접수부터 진단까지 (데이터 없이도 됨)
-python -m pytest tests/ -q            # 전체 89건
+python -m pytest tests/ -q            # 전체 테스트
 ```
 
 ## 문서
@@ -46,6 +46,7 @@ python -m pytest tests/ -q            # 전체 89건
 | 문서 | 내용 |
 |---|---|
 | [`docs/이어서작업.md`](docs/이어서작업.md) | **다른 장비에서 이어받을 때.** 환경 준비, 현재 상태, 다음 할 일 |
+| [`docs/문서지도.md`](docs/문서지도.md) | **문서를 고칠 때.** 무엇을 바꾸면 어떤 문서가 낡는지 |
 | [`docs/깃사용법.md`](docs/깃사용법.md) | **깃을 처음 쓴다면 여기부터.** 초대 수락, 파일 수정, 충돌 해결 |
 | [`examples/`](examples/) | **자기 담당 파일을 채우기 전에.** 시나리오 작성 예시, 가상공장 구조 |
 | [`CLAUDE.md`](CLAUDE.md) | 프로젝트 컨텍스트와 작업 원칙. 코드 작업 전 필독 |

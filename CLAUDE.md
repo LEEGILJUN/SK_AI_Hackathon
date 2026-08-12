@@ -153,10 +153,11 @@ MES 데이터와 이미지 메타데이터는 **벡터화하지 않습니다.** 
 ### 확인 명령
 
 ```bash
-.venv/bin/python -m pytest tests/ -q            # 전체 146건
+.venv/bin/python -m pytest tests/ -q            # 전체 테스트
 .venv/bin/python scripts/check_models.py        # 모델 연결·도구 호출·이미지 판독
 .venv/bin/python scripts/check_scenarios.py     # 시나리오 형식 (장영진)
 .venv/bin/python scripts/check_factory.py       # 가상 공장 데이터 (이동현)
+.venv/bin/python scripts/check_docs.py          # 문서가 코드와 어긋나지 않는지
 .venv/bin/python scripts/demo_diagnose.py       # 접수부터 진단까지
 .venv/bin/python -m uvicorn app.main:app --port 8000   # 웹 화면
 ```
