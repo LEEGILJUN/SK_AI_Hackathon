@@ -14,6 +14,25 @@
 
 기준 모델은 PatchCore입니다. 정상 패치를 메모리 뱅크에 담아두고 최근접 거리로 판정하는 구조라, 미검출이 발생했을 때 그 이미지가 어떤 정상 패치와 가까웠는지를 되짚을 수 있습니다. 진단 에이전트는 이 경로를 따라가 원인을 규명합니다.
 
+## 처음 오셨다면 — 자기 줄만 보세요
+
+파일이 많아 보이지만 **각자 건드릴 곳은 몇 개 안 됩니다.**
+
+| | 채울 파일 | 먼저 볼 것 | 맞는지 확인 |
+|---|---|---|---|
+| **장영진** | `data/scenarios.yaml`<br>`data/criteria.yaml`<br>`data/quality_baseline.yaml` | [`examples/scenarios_예시.yaml`](examples/scenarios_예시.yaml) | `python scripts/check_scenarios.py` |
+| **이동현** | `data/build_factory.py`<br>`data/manifest.csv`, `mes.csv`<br>`lookup/` 실구현 | [`examples/가상공장_구조.md`](examples/가상공장_구조.md) | `python scripts/demo_diagnose.py` |
+| **이길준** | `agents/`, `inspection/`, `app/` | — | `python -m pytest tests/ -q` |
+
+**나머지 코드는 안 읽으셔도 됩니다.** 형식만 맞으면 알아서 붙습니다.
+형식이 왜 그래야 하는지는 [`examples/README.md`](examples/README.md)에 적어뒀습니다.
+
+돌아가는 걸 한 번 보고 싶으시면 (데이터 없이도 됩니다):
+
+```bash
+python scripts/demo_diagnose.py
+```
+
 ## 문서
 
 | 문서 | 내용 |
