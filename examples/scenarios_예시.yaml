@@ -1,0 +1,259 @@
+# ═══════════════════════════════════════════════════════════════════════
+# 시나리오 작성 예시 — 장영진용
+#
+# data/scenarios.yaml 의 골격에 실제 값을 채우면 어떤 모습인지 보여주는
+# 예시입니다. 3건만 넣었고, 서로 다른 원인을 골라 대비가 보이게 했습니다.
+#
+# 이 파일은 정답 파일이 아닙니다. 형식 확인용이며 채점에 쓰이지 않습니다.
+#
+# ── 채우실 때 알아두시면 좋은 것 세 가지 ────────────────────────────────
+#
+# 1. issue_text 는 사람이 실제로 칠 법한 문장으로 써 주세요.
+#    이 문장이 언어 모델에 그대로 들어갑니다. 정제된 문장만 넣으면 현장에서
+#    들어오는 거친 입력을 처리하지 못하는 채로 시연에 가게 됩니다.
+#    일부러 라인 번호를 빼거나, 결함 이름을 다르게 부르거나, 두 가지를 섞어
+#    말하는 케이스를 몇 건 넣어 주세요. 인테이크가 되묻는지를 봐야 합니다.
+#
+# 2. ground_truth.evidence 는 "그 값이 실제로 그렇게 나오는지"까지 맞춰
+#    주세요. 예를 들어 score_vs_threshold: below 라고 적었으면 실제로 추론했을
+#    때 점수가 임계값에 크게 못 미쳐야 합니다. injection 으로 그렇게 만드는
+#    것이고, 안 맞으면 채점이 아니라 데이터가 틀린 겁니다.
+#
+# 3. 원인이 정해지면 requires_bank_rebuild 는 따라옵니다. 손으로 정하지 마세요.
+#    임계값·중첩·설비·기준 → false / 오염·커버리지 → true
+#    이 값이 정량 목표 "재구성이 답이 아닌 케이스 전건 차단"의 채점 기준입니다.
+# ═══════════════════════════════════════════════════════════════════════
+
+version: 1
+owner: 장영진
+updated: 2026-08-13
+note: 예시 파일. data/scenarios.yaml 에 옮겨 적을 때는 이 note 를 지우세요.
+
+cause_codes:
+  - {code: threshold,          label_ko: 임계값 문제,     requires_bank_rebuild: false}
+  - {code: bank_contamination, label_ko: 뱅크 오염,       requires_bank_rebuild: true}
+  - {code: coverage_gap,       label_ko: 커버리지 부족,   requires_bank_rebuild: true}
+  - {code: normal_overlap,     label_ko: 정상 분포 중첩,  requires_bank_rebuild: false}
+  - {code: equipment_optics,   label_ko: 설비·광학,       requires_bank_rebuild: false}
+  - {code: criteria,           label_ko: 기준 문제,       requires_bank_rebuild: false}
+
+intake_verdicts: [proceed, need_more_info, duplicate]
+
+
+scenarios:
+
+  # ═══════════════════════════════════════════════════════════════════
+  # 예시 1 — 뱅크 오염 (MVP 필수)
+  #
+  # 실측으로 재현 확인된 케이스입니다. VisA capsules 정상셋에 결함 3장을
+  # 섞었더니 운영 임계값에서 검출이 12/12 에서 7/12 로 떨어졌고, 역추적이
+  # 섞어 넣은 이미지를 지목했습니다.
+  # ═══════════════════════════════════════════════════════════════════
+  - id: SC-BC-001
+    title: 특정 형상 결함만 계속 빠짐
+    cause_group: bank_contamination
+    priority: mvp
+
+    target:
+      line: line_02
+      object: capsules
+      bank_version: v3
+      lot_ids: [LOT-20260605-014]
+      date_range: [2026-06-05, 2026-06-07]
+
+    input:
+      # 라인·품목·결함유형이 다 들어 있는 "잘 쓴" 입력. 인테이크가 바로 통과해야 합니다.
+      issue_text: "2라인 캡슐 표면 찍힘이 며칠째 계속 빠집니다. 육안으로는 명확한데 검사에서 양품으로 나옵니다."
+      attachments:
+        - line_02/2026-06-05/LOT-20260605-014/img_0142.png
+        - line_02/2026-06-06/LOT-20260605-014/img_0311.png
+      reporter_role: 공정엔지니어
+      submitted_at: 2026-06-07T22:10:00
+
+    injection:
+      method: bank_contamination
+      seed: 20260605
+      params:
+        # VisA 원본 기준 경로. build_factory.py 가 이 파일들을 정상셋에 섞습니다.
+        contaminated_images:
+          - capsules/Data/Images/Anomaly/000.JPG
+          - capsules/Data/Images/Anomaly/001.JPG
+          - capsules/Data/Images/Anomaly/002.JPG
+        contaminated_count: 3
+        target_bank_version: v3
+
+    ground_truth:
+      intake_verdict: proceed
+      cause: bank_contamination
+      requires_bank_rebuild: true
+      duplicate_of: null
+
+      evidence:
+        defect_visible: true              # 1. 찍힘이 이미지에 보임
+        quality_within_baseline: true     # 2. 화질은 정상. 설비 문제 아님
+        score_vs_threshold: below         # 3. 임계값 아래
+        score_ratio: 0.92                 # 3-1. 점수/임계값. 오염이라 살짝 아래
+        nearest_patch_ref:                # 4. 역추적 결과
+          source_image: capsules/Data/Images/Anomaly/002.JPG
+          patch_index: null               # 실행할 때마다 달라지므로 채점하지 않음
+        nearest_patch_is_defect: true     # 5. ★ 이 값이 원인을 가릅니다
+        coverage_present: true            # 6. 조건은 뱅크에 있음
+        criteria_verdict: defect          # 7. 기준상 불량이 맞음
+
+      expected_actions: [remove_contaminated_samples, rebuild_bank, shadow_compare]
+      forbidden_actions: [lower_threshold]
+
+    scoring:
+      weight: 1.0
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [nearest_patch_is_defect, defect_visible]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        최근접 패치를 찾는 것만으로는 정답이 아니다. 그 패치가 결함이라는
+        판정까지 맞아야 뱅크 오염과 정상 분포 중첩이 갈린다.
+
+    demo:
+      show_in_pitch: true
+      pair_with: SC-NO-001
+      talking_point: 같은 "안 잡힌다"에서 출발해 조치가 정반대로 갈리는 지점.
+
+
+  # ═══════════════════════════════════════════════════════════════════
+  # 예시 2 — 정상 분포 중첩 (오염과 반드시 쌍으로)
+  #
+  # 1번과 겉모습이 똑같습니다. 결함이 보이고, 화질 정상이고, 점수가 임계값
+  # 아래입니다. 판별 5번 하나만 다릅니다. 이 대비가 시연의 핵심입니다.
+  # ═══════════════════════════════════════════════════════════════════
+  - id: SC-NO-001
+    title: 새로 결함으로 정의된 형상이 안 잡힘
+    cause_group: normal_overlap
+    priority: mvp
+
+    target:
+      line: line_02
+      object: capsules
+      bank_version: v3
+      lot_ids: [LOT-20260606-021]
+      date_range: [2026-06-06, 2026-06-07]
+
+    input:
+      issue_text: "캡슐 표면에 살짝 눌린 자국을 이번 달부터 불량으로 보기로 했는데 검사기가 전혀 못 잡습니다."
+      attachments:
+        - line_02/2026-06-06/LOT-20260606-021/img_0088.png
+      reporter_role: 품질담당
+      submitted_at: 2026-06-07T09:30:00
+
+    injection:
+      method: overlap_select
+      seed: 20260606
+      params:
+        # 정상과 시각적으로 가까운 결함 유형을 고릅니다. 조작이 아니라 선정입니다.
+        # 고른 뒤 반드시 점수 분포가 실제로 겹치는지 확인하세요.
+        defect_subtype: 눌림
+        source_images: [capsules/Data/Images/Anomaly/031.JPG]
+        verify: 임계값 스윕에서 검출률 100% 달성 시 과검률이 30% 를 넘을 것
+
+    ground_truth:
+      intake_verdict: proceed
+      cause: normal_overlap
+      requires_bank_rebuild: false        # ★ 1번과 여기서 갈립니다
+      duplicate_of: null
+
+      evidence:
+        defect_visible: true              # 1. 동일
+        quality_within_baseline: true     # 2. 동일
+        score_vs_threshold: below         # 3. 동일
+        score_ratio: 0.88
+        nearest_patch_ref:
+          source_image: capsules/Data/Images/Normal/047.JPG   # ★ 정상 이미지
+          patch_index: null
+        nearest_patch_is_defect: false    # ★ 1번과 정반대. 진짜 정상품이다
+        coverage_present: true            # 6. 동일
+        criteria_verdict: defect          # 7. 동일
+
+      expected_actions: [redefine_criteria, add_dedicated_detector, improve_imaging]
+      forbidden_actions: [rebuild_bank, lower_threshold]
+
+    scoring:
+      weight: 1.5                          # 가장 어려운 판정이라 가중치를 높임
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [nearest_patch_is_defect]
+      notes: >
+        여기서 뱅크 재구성을 권고하면 실패로 친다. 데이터를 더 넣어도 해결되지
+        않는 케이스이며, 오히려 해당 결함을 뱅크에 넣으면 더 못 잡게 된다.
+        임계값 스윕이 과검률 대가를 제시해야 판정이 확정된다.
+
+    demo:
+      show_in_pitch: true
+      pair_with: SC-BC-001
+      talking_point: >
+        판별 7항목 중 6개가 1번과 같다. 5번 하나가 조치를 정반대로 뒤집는다.
+
+
+  # ═══════════════════════════════════════════════════════════════════
+  # 예시 3 — 정보 부족 (인테이크에서 멈춰야 하는 케이스)
+  #
+  # 원인 6종에 안 들어갑니다. 인테이크가 되묻는지를 보는 케이스이며,
+  # 이런 것도 몇 건 있어야 접수 단계가 실제로 검증됩니다.
+  # ═══════════════════════════════════════════════════════════════════
+  - id: SC-INTAKE-001
+    title: 라인 정보 없이 접수된 건
+    cause_group: null
+    priority: extended
+
+    target:
+      line: null
+      object: null
+      bank_version: null
+      lot_ids: []
+      date_range: null
+
+    input:
+      # 일부러 거칠게. 야간에 급히 친 메모 같은 입력입니다.
+      issue_text: "요즘 자꾸 빠지는거 같은데 확인좀"
+      attachments: []
+      reporter_role: 현장작업자
+      submitted_at: 2026-06-07T02:14:00
+
+    injection:
+      method: none
+      seed: null
+      params: {}
+
+    ground_truth:
+      intake_verdict: need_more_info
+      cause: null
+      requires_bank_rebuild: null
+      duplicate_of: null
+
+      # 진단으로 넘어가지 않으므로 판별 항목은 채점하지 않습니다.
+      evidence: null
+
+      expected_actions: [ask_for_line, ask_for_object, ask_for_image]
+      forbidden_actions: [proceed_to_diagnosis]
+
+    scoring:
+      weight: 0.5
+      cause_match: exact
+      grade_evidence: false
+      notes: >
+        추측으로 라인을 채우면 엉뚱한 라인의 뱅크를 건드리게 된다.
+        되묻는 것이 정답이다.
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# 남은 17건을 채울 때의 배분 제안
+#
+#   threshold          3건   임계값을 실제 결함 점수 분포보다 높게 설정
+#   bank_contamination 2건   혼입 장수를 1장 / 5장으로 나눠 민감도를 봄
+#   coverage_gap       3건   특정 일자·로트의 정상 이미지를 뱅크에서 제외
+#   normal_overlap     2건   결함 유형을 달리해 2건 더
+#   equipment_optics   3건   해당 일자 이후 이미지에 블러·밝기 시프트
+#   criteria           3건   마스크 면적 기준 임계값을 도중에 변경
+#   duplicate          1건   과거 이슈 이력에 동일 케이스를 사전 배치
+#
+# issue_text 는 이 중 4~5건을 일부러 불완전하게 써 주세요.
+# 전부 잘 쓴 문장이면 인테이크가 검증되지 않습니다.
+# ═══════════════════════════════════════════════════════════════════════
