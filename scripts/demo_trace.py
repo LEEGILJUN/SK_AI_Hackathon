@@ -58,6 +58,15 @@ def main() -> None:
     parser.add_argument("--backbone", default=None, help="백본. 기본은 합성 resnet18 / 실데이터 wide_resnet50_2")
     parser.add_argument("--contaminants", type=int, default=2, help="뱅크에 섞을 결함 장수")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--max-normal", type=int, default=80,
+        help="뱅크·홀드아웃에 쓸 정상 이미지 수 상한. 실데이터는 수백 장이라 "
+             "전부 쓰면 coreset 선별이 시연에 쓸 수 없을 만큼 느려진다",
+    )
+    parser.add_argument(
+        "--coreset", type=float, default=None,
+        help="coreset 비율. 기본은 합성 0.25 / 실데이터 0.01(논문 기본값)",
+    )
     args = parser.parse_args()
 
     synthetic = args.normal_dir is None
@@ -81,6 +90,19 @@ def main() -> None:
     if len(defect) < args.contaminants + 1:
         raise SystemExit(f"결함 이미지가 부족하다. 최소 {args.contaminants + 1}장 필요.")
 
+    # 실데이터는 객체당 수백~천 장이다. 전부 넣으면 패치가 수십만 개가 되고
+    # coreset 선별이 O(k·N) 이라 끝나지 않는다. 앞에서 잘라 쓰되 몇 장을
+    # 버렸는지 밝힌다.
+    dropped_normal = max(0, len(normal) - args.max_normal)
+    dropped_defect = max(0, len(defect) - (args.contaminants + 12))
+    normal = normal[: args.max_normal]
+    defect = defect[: args.contaminants + 12]
+    if dropped_normal or dropped_defect:
+        print(f"  표본 제한: 정상 {len(normal)}장 사용 (제외 {dropped_normal}장), "
+              f"결함 {len(defect)}장 사용 (제외 {dropped_defect}장)")
+
+    coreset_ratio = args.coreset if args.coreset is not None else (0.25 if synthetic else 0.01)
+
     embedder = PatchEmbedder(config)
     print(f"  장치: {describe(embedder.device)} | 백본: {config.backbone}")
 
@@ -93,12 +115,15 @@ def main() -> None:
     bank_normal = normal[:-holdout_size]
     holdout_normal = normal[-holdout_size:]
 
-    shared = dict(coreset_ratio=0.25, seed=args.seed, root=root)
+    shared = dict(coreset_ratio=coreset_ratio, seed=args.seed, root=root)
     print("\n뱅크를 만드는 중...")
     clean = build_bank(bank_normal, embedder, bank_version="clean-v1", **shared)
     dirty = build_bank(
         list(bank_normal) + list(contaminants), embedder, bank_version="contaminated-v2", **shared
     )
+    print(f"  coreset 비율 {coreset_ratio}")
+    if clean.meta.get("coreset_capped"):
+        print(f"  ! {clean.meta['coreset_note']}")
     print(f"  깨끗한 뱅크   {len(clean):>6}행   정상 {len(bank_normal)}장")
     print(
         f"  오염된 뱅크   {len(dirty):>6}행   정상 {len(bank_normal)}장 "

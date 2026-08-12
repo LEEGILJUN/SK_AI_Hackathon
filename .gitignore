@@ -3,6 +3,8 @@
 # 각자 내려받는다:
 #   curl -O https://amazon-visual-anomaly.s3.amazonaws.com/VisA_20220922.tar
 VisA_*.tar
+VisA_20220922/
+VisA_*/
 *.tar
 *.tar.gz
 *.zip

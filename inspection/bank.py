@@ -206,6 +206,12 @@ class MemoryBank:
 # ── 구축 ────────────────────────────────────────────────────────────────
 
 
+#: coreset 선별은 뽑을 개수에 비례해 느려진다(O(k·N)). 이 값을 넘어가면
+#: 실행 시간이 시연에 쓸 수 없는 수준이 되므로 기본 상한을 둔다.
+#: 실측: 이미지 600장(패치 47만개)에 ratio 0.25 를 주면 11.8만 번을 반복한다.
+DEFAULT_MAX_BANK_SIZE = 20_000
+
+
 def build_bank(
     image_paths: Sequence[str | Path],
     embedder: PatchEmbedder | None = None,
@@ -216,11 +222,18 @@ def build_bank(
     batch_size: int = 8,
     root: str | Path | None = None,
     extra_meta: dict | None = None,
+    max_bank_size: int | None = DEFAULT_MAX_BANK_SIZE,
 ) -> MemoryBank:
     """정상 이미지 목록으로 메모리 뱅크를 만든다.
 
     coreset_ratio
-        전체 패치 중 남길 비율. 논문 기본값은 1% 다.
+        전체 패치 중 남길 비율. 논문 기본값은 1% 다. 합성 데이터처럼 패치가
+        적을 때만 이보다 크게 잡는다. 실데이터에서 0.25 같은 값을 주면
+        뱅크가 십만 행대가 되어 선별이 끝나지 않는다.
+    max_bank_size
+        coreset 결과 행 수의 상한. 비율만 보고 크게 잡았다가 실행이 멈추는
+        것을 막는다. 상한이 걸리면 meta["coreset_capped"] 에 남기므로
+        조용히 잘리지 않는다. None 이면 상한을 두지 않는다.
     root
         주면 이미지 경로를 이 기준의 상대 경로로 기록한다. 사람마다 다른
         절대 경로가 뱅크에 박히는 것을 막는다.
@@ -246,7 +259,13 @@ def build_bank(
     cols = np.tile(np.tile(np.arange(grid_w, dtype=np.int64), grid_h), n_images)
     origins_all = np.stack([image_index, rows, cols], axis=1)
 
-    target = max(1, int(round(flat.shape[0] * coreset_ratio)))
+    requested = max(1, int(round(flat.shape[0] * coreset_ratio)))
+    target = requested
+    capped = False
+    if max_bank_size is not None and target > max_bank_size:
+        target = max_bank_size
+        capped = True
+
     keep = greedy_coreset(
         flat, size=target, seed=seed, projection_dim=projection_dim, device=embedder.device
     )
@@ -270,10 +289,20 @@ def build_bank(
         "patches_per_image": int(per_image),
         "total_patches_before_coreset": int(flat.shape[0]),
         "coreset_ratio": coreset_ratio,
+        "coreset_requested": int(requested),
+        "coreset_capped": capped,
+        "max_bank_size": max_bank_size,
         "seed": seed,
         "projection_dim": projection_dim,
         "feature_config": embedder.config.fingerprint(),
     }
+    if capped:
+        # 조용히 잘리면 "비율대로 만들어졌다"고 오해하게 된다.
+        meta["coreset_note"] = (
+            f"coreset_ratio {coreset_ratio} 는 {requested:,}행을 요구했으나 "
+            f"max_bank_size {max_bank_size:,} 로 제한했다. 비율을 낮추거나 "
+            f"max_bank_size 를 올려라."
+        )
     if extra_meta:
         meta.update(extra_meta)
 
