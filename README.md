@@ -18,19 +18,27 @@
 
 파일이 많아 보이지만 **각자 건드릴 곳은 몇 개 안 됩니다.**
 
-| | 채울 파일 | 먼저 볼 것 | 맞는지 확인 |
-|---|---|---|---|
-| **장영진** | `data/scenarios.yaml`<br>`data/criteria.yaml`<br>`data/quality_baseline.yaml` | [`examples/scenarios_예시.yaml`](examples/scenarios_예시.yaml) | `python scripts/check_scenarios.py` |
-| **이동현** | `data/build_factory.py`<br>`data/manifest.csv`, `mes.csv`<br>`lookup/` 실구현 | [`examples/가상공장_구조.md`](examples/가상공장_구조.md) | `python scripts/demo_diagnose.py` |
-| **이길준** | `agents/`, `inspection/`, `app/` | — | `python -m pytest tests/ -q` |
+| | 채울 파일 | 웹 클로드에 붙여넣을 자료 |
+|---|---|---|
+| **장영진** | `data/scenarios.yaml`<br>`data/criteria.yaml`<br>`data/quality_baseline.yaml` | [`examples/웹클로드에_붙여넣기_시나리오.md`](examples/웹클로드에_붙여넣기_시나리오.md) |
+| **이동현** | `data/build_factory.py`<br>`data/manifest.csv`, `mes.csv`<br>`lookup/` 실구현 | [`examples/웹클로드에_붙여넣기_가상공장.md`](examples/웹클로드에_붙여넣기_가상공장.md) |
+| **이길준** | `agents/`, `inspection/`, `app/` | — |
 
 **나머지 코드는 안 읽으셔도 됩니다.** 형식만 맞으면 알아서 붙습니다.
-형식이 왜 그래야 하는지는 [`examples/README.md`](examples/README.md)에 적어뒀습니다.
 
-돌아가는 걸 한 번 보고 싶으시면 (데이터 없이도 됩니다):
+### 터미널 없이 확인하는 법
+
+`data/scenarios.yaml` 을 **GitHub 웹에서 고쳐 커밋하면 형식 검사가 자동으로
+돌아갑니다.** 1~2분 뒤 커밋 옆에 ✅ 또는 ❌ 가 뜨고, ❌ 를 누르면 무엇이
+잘못됐는지 한국어로 나옵니다. 그 메시지를 웹 클로드에 붙여넣어 고쳐 달라고
+하시면 됩니다.
+
+파이썬을 쓰실 수 있으면 같은 검사를 직접 돌려도 됩니다.
 
 ```bash
-python scripts/demo_diagnose.py
+python scripts/check_scenarios.py     # 시나리오 형식
+python scripts/demo_diagnose.py       # 이슈 접수부터 진단까지 (데이터 없이도 됨)
+python -m pytest tests/ -q            # 전체 89건
 ```
 
 ## 문서
