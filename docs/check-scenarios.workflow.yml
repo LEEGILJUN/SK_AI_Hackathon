@@ -44,3 +44,24 @@ jobs:
         run: |
           echo "위에 나온 [SC-...] 항목을 고쳐 주세요."
           echo "작성 예시는 examples/scenarios_예시.yaml 을 보시면 됩니다."
+
+# ─────────────────────────────────────────────────────────────────────
+# 이 파일을 쓰는 법
+#
+# 이 파일은 원래 .github/workflows/check-scenarios.yml 에 있어야 합니다.
+# 다만 OAuth 토큰에 workflow 권한이 없으면 푸시가 거부되므로 여기 두었습니다.
+#
+# 방법 1 — 터미널
+#   gh auth refresh -s workflow
+#   mkdir -p .github/workflows
+#   cp docs/check-scenarios.workflow.yml .github/workflows/check-scenarios.yml
+#   git add .github && git commit -m "시나리오 형식 검사 워크플로 추가" && git push
+#
+# 방법 2 — GitHub 웹 (권한 문제 없음)
+#   저장소 → Add file → Create new file
+#   파일 이름에 .github/workflows/check-scenarios.yml 입력
+#   이 파일 내용을 붙여넣고 Commit changes
+#
+# 넣고 나면 data/*.yaml 을 웹에서 고쳐 커밋할 때마다 형식 검사가 자동으로
+# 돌고, 커밋 옆에 체크 또는 엑스가 표시됩니다.
+# ─────────────────────────────────────────────────────────────────────
