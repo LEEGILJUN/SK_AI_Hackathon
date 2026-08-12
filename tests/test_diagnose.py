@@ -396,3 +396,68 @@ def test_result_serializes_for_handoff():
     assert payload["cause"] == "bank_contamination"
     assert payload["cause_label"] == "뱅크 오염"
     assert len(payload["evidence"]) == 7
+
+
+# ── 조건 축이 여러 개일 때 ─────────────────────────────────────────────
+
+
+def test_all_condition_axes_are_checked():
+    """조건 축이 늘어나면 진단이 전부 확인해야 한다.
+
+    MES 를 섬세하게 만들수록 여기서 값어치가 나온다. 축을 하나만 보면
+    팀원이 넣은 도메인 정보가 죽은 데이터가 된다.
+    """
+    profile = BankProfile(
+        bank_version="v3", line="line_02", object_name="capsules",
+        source_image_count=12, patch_count=800,
+        conditions={
+            "date": ["2026-06-01"],
+            "lot": ["LOT-A"],
+            "shift": ["day"],            # 야간은 뱅크에 없다
+            "material_batch": ["MB-01"],
+        },
+    )
+    evidence = collect_evidence(
+        defect_visible=vision("defect"),
+        quality=quality(True),
+        inference=inference(1.0),
+        threshold=threshold(),
+        patch_judgment=vision("normal"),
+        bank_profile=profile,
+        conditions={"date": "2026-06-01", "lot": "LOT-A", "shift": "night"},
+        criteria=criteria(),
+        defect_area=200.0,
+    )
+    item = next(e for e in evidence if e.item_no == 6)
+
+    assert item.value is False, "야간 교대가 뱅크에 없으므로 커버리지 부족이어야 한다"
+    assert "shift=night" in item.detail, "어느 축이 비었는지 지목해야 한다"
+    assert "date" not in item.detail.split("가 뱅크")[0], "채워진 축은 지목하지 않는다"
+
+    assert decide(evidence).cause == "coverage_gap"
+
+
+def test_all_axes_present_means_covered():
+    profile = BankProfile(
+        bank_version="v3", line="line_02", object_name="capsules",
+        source_image_count=12, patch_count=800,
+        conditions={"date": ["2026-06-01"], "shift": ["day", "night"]},
+    )
+    evidence = collect_evidence(
+        inference=inference(1.0), threshold=threshold(), bank_profile=profile,
+        conditions={"date": "2026-06-01", "shift": "night"},
+    )
+    item = next(e for e in evidence if e.item_no == 6)
+
+    assert item.value is True
+    assert "모두" in item.detail
+
+
+def test_single_axis_form_still_works():
+    """기존 호출 방식(condition_key/value)도 그대로 동작해야 한다."""
+    evidence = collect_evidence(
+        inference=inference(1.0), threshold=threshold(),
+        bank_profile=bank_profile(["2026-06-01"]),
+        condition_key="date", condition_value="2026-06-01",
+    )
+    assert next(e for e in evidence if e.item_no == 6).value is True

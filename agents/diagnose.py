@@ -175,6 +175,7 @@ def collect_evidence(
     threshold: ThresholdRecord | None = None,
     patch_judgment: VisionJudgment | None = None,
     bank_profile: BankProfile | None = None,
+    conditions: dict[str, str] | None = None,
     condition_key: str | None = None,
     condition_value: str | None = None,
     criteria: CriteriaRule | None = None,
@@ -271,16 +272,37 @@ def collect_evidence(
     )
 
     # 6. 현재 조건의 정상 패치가 뱅크에 있는가 — 뱅크 구성 이력 조회
+    #
+    # 조건 축은 여러 개일 수 있다. 일자만이 아니라 로트·설비·교대조·자재
+    # 배치까지 조건이 될 수 있고, 어느 축이 비었는지가 조치를 좌우한다.
+    # 자재 배치가 빠진 것과 야간 교대가 빠진 것은 보충할 이미지가 다르다.
+    # 그래서 축을 하나로 묶지 않고 전부 확인한 뒤 빠진 축을 지목한다.
+    #
+    # 데이터에 축이 늘어나면 진단이 자동으로 더 많이 본다. MES 를 섬세하게
+    # 만들수록 여기서 값어치가 나온다.
+    asked: dict[str, str] = dict(conditions or {})
+    if condition_key and condition_value:
+        asked.setdefault(condition_key, condition_value)
+
     coverage = None
     detail_6 = "뱅크 구성 이력 없음"
-    if bank_profile and condition_key and condition_value:
-        coverage = bank_profile.covers(condition_key, condition_value)
-        detail_6 = (
-            f"{condition_key}={condition_value} 가 뱅크 {bank_profile.bank_version} 구성에 "
-            f"{'포함됨' if coverage else '없음'}"
-        )
+    if bank_profile and asked:
+        checked = {key: bank_profile.covers(key, value) for key, value in asked.items()}
+        missing = [key for key, present in checked.items() if not present]
+        coverage = not missing
+
+        if coverage:
+            listed = ", ".join(f"{k}={v}" for k, v in asked.items())
+            detail_6 = f"{listed} 가 모두 뱅크 {bank_profile.bank_version} 구성에 포함됨"
+        else:
+            listed = ", ".join(f"{k}={asked[k]}" for k in missing)
+            detail_6 = (
+                f"{listed} 가 뱅크 {bank_profile.bank_version} 구성에 없음 "
+                f"(확인한 조건 {len(asked)}개 중 {len(missing)}개 누락)"
+            )
         if bank_profile.is_estimated:
             detail_6 += " (폴더 스캔으로 역추정한 이력 — 추정)"
+
     items.append(
         Evidence(
             item_no=6,

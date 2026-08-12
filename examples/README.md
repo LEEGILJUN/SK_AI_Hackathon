@@ -10,6 +10,7 @@
 |---|---|---|---|
 | [`scenarios_예시.yaml`](scenarios_예시.yaml) | 시나리오와 정답 | `data/scenarios.yaml` | 장영진 |
 | [`가상공장_구조.md`](가상공장_구조.md) | 폴더트리·MES·조회 | `data/build_factory.py`, `data/manifest.csv`, `data/mes.csv` | 이동현 |
+| [`MES_설계.md`](MES_설계.md) | **MES 에 무엇을 더 넣을 것인가** | `data/mes.csv` | 이동현·장영진 |
 
 ## 왜 형식을 맞춰야 하는가
 
