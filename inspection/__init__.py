@@ -19,6 +19,15 @@
 from .bank import MemoryBank, build_bank, greedy_coreset
 from .device import available_devices, describe, pick_device
 from .features import FeatureConfig, PatchEmbedder
+from .sweep import (
+    FeasibilityVerdict,
+    SweepPoint,
+    ThresholdCurve,
+    assess_threshold_feasibility,
+    format_curve,
+    sweep_from_results,
+    sweep_thresholds,
+)
 from .trace import anomaly_map, bank_contribution, score_image, score_images
 from .types import InferenceResult, NearestMatch, PatchRef
 
@@ -31,6 +40,13 @@ __all__ = [
     "pick_device",
     "FeatureConfig",
     "PatchEmbedder",
+    "FeasibilityVerdict",
+    "SweepPoint",
+    "ThresholdCurve",
+    "assess_threshold_feasibility",
+    "format_curve",
+    "sweep_from_results",
+    "sweep_thresholds",
     "anomaly_map",
     "bank_contribution",
     "score_image",
