@@ -48,7 +48,7 @@ CONFIG = {
     "ROOT_MES_CSV_PATH": os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "mes_data.csv"),
     "MANIFEST_CSV_PATH": os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "manifest.csv"),
     "ERROR_MAPPING_CSV_PATH": os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "error_code_mapping.csv"),
-    "EVENT_GUIDE_MD_PATH": os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "event_scenarios_guide.md"),
+    "EVENT_GUIDE_MD_PATH": os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "event_scenarios_guide.md"),
 
     # --------------------------------------------------------------------------
     # [라인별 VisA 데이터셋 카테고리 매핑]
