@@ -1,0 +1,165 @@
+# ═══════════════════════════════════════════════════════════════════════
+# scenarios.yaml — 시연 시나리오와 정답 원인 (스키마 초안)
+#
+# 소유: 장영진
+# 성격: 채점 기준 파일. 진단 정확도를 맞추려고 이 파일을 고치지 않습니다.
+#       변경이 필요하면 소유자 확인 후 진행합니다.
+#
+# 현재 상태: 필드 정의와 예시 1건만 담긴 골격입니다.
+#            실제 20건은 작업목록 3번(시연 시나리오 설계)에서 채웁니다.
+#
+# 이 파일이 답해야 하는 것
+#   1) 에이전트에 무엇을 입력하는가        → input
+#   2) 그 상황을 어떻게 재현하는가          → injection
+#   3) 정답이 무엇인가                      → ground_truth
+#   4) 어떻게 점수를 매기는가               → scoring
+# ═══════════════════════════════════════════════════════════════════════
+
+version: 1
+owner: 장영진
+updated: 2026-08-12
+
+# ── 원인 코드 (닫힌 집합) ──────────────────────────────────────────────
+# 진단 에이전트의 출력과 ground_truth.cause 는 반드시 이 중 하나입니다.
+# requires_bank_rebuild 는 정답 원인이 정해지면 따라 결정되는 값이며,
+# "뱅크 재구성이 답이 아닌 케이스의 차단율"을 채점하는 축입니다.
+cause_codes:
+  - code: threshold            # 임계값 문제 — 점수는 높으나 임계값 아래
+    label_ko: 임계값 문제
+    requires_bank_rebuild: false
+  - code: bank_contamination   # 뱅크 오염 — 최근접 정상 패치가 실제로는 결함
+    label_ko: 뱅크 오염
+    requires_bank_rebuild: true
+  - code: coverage_gap         # 커버리지 부족 — 현재 조건의 정상 패치가 뱅크에 없음
+    label_ko: 커버리지 부족
+    requires_bank_rebuild: true
+  - code: normal_overlap       # 정상 분포 중첩 — 최근접 패치가 진짜 정상품
+    label_ko: 정상 분포 중첩
+    requires_bank_rebuild: false
+  - code: equipment_optics     # 설비·광학 — 화질 지표가 기준 분포를 이탈
+    label_ko: 설비·광학
+    requires_bank_rebuild: false
+  - code: criteria             # 기준 문제 — 검출은 했으나 기준상 양품
+    label_ko: 기준 문제
+    requires_bank_rebuild: false
+
+# ── 인테이크 판정 코드 ─────────────────────────────────────────────────
+# 진단 이전 단계의 정답입니다. duplicate 케이스는 원인 분류로 넘어가지 않고
+# 인테이크에서 멈춰야 하므로 cause_codes 와 별도 축으로 둡니다.
+intake_verdicts:
+  - proceed        # 정보 충분, 진단으로 넘김
+  - need_more_info # 정보 부족, 추가 요청
+  - duplicate      # 이미 해결된 사례, 중복 차단
+
+# ═══════════════════════════════════════════════════════════════════════
+# 시나리오 목록
+#   유형별 3건 이상 × 6원인 + 중복 케이스 = 20건 이상
+#   id 규칙: SC-<원인 약어>-<일련번호>
+# ═══════════════════════════════════════════════════════════════════════
+scenarios:
+
+  # ───────────────────────────────────────────────────────────────────
+  # 예시 1건 — 뱅크 오염 (MVP 필수 시나리오)
+  # 아래 형식을 그대로 복제해 나머지를 채웁니다.
+  # ───────────────────────────────────────────────────────────────────
+  - id: SC-BC-001
+    title: 특정 형상 결함만 계속 빠짐            # 한 줄 요약
+    cause_group: bank_contamination              # 폴더링·집계용. ground_truth 와 항상 일치
+    priority: mvp                                # mvp | extended — 시연 필수 여부
+
+    # ── 대상 ────────────────────────────────────────────────────────
+    target:
+      line: line_02                              # 가상 라인 ID (manifest.csv 와 동일 표기)
+      object: capsules                           # VisA 객체명
+      bank_version: v3                           # 이슈 발생 시점에 배포되어 있던 뱅크
+      lot_ids: [LOT-20260605-014]                # MES 조회 키. 없으면 [] 로 둡니다
+      date_range: [2026-06-05, 2026-06-07]       # 운영 데이터 기간
+
+    # ── 에이전트 입력 ───────────────────────────────────────────────
+    # 인테이크 에이전트에 실제로 들어가는 값. 사람이 웹에서 치는 문장 그대로.
+    input:
+      issue_text: "2라인 캡슐 표면 찍힘이 며칠째 계속 빠집니다. 육안으로는 명확한데 검사에서 양품으로 나옵니다."
+      attachments:                               # data/factory/ 기준 상대 경로
+        - line_02/2026-06-05/lot_014/img_0142.png
+        - line_02/2026-06-06/lot_014/img_0311.png
+      reporter_role: 공정엔지니어                 # 정보 수준 차이를 만들기 위한 값
+      submitted_at: 2026-06-07T22:10:00
+
+    # ── 재현 방법 ───────────────────────────────────────────────────
+    # 이 상황을 데이터에서 어떻게 만들어 냈는지. 시드 고정으로 누구나 재현합니다.
+    # method 별로 params 스키마가 다르며, 값은 data/build_factory.py 가 읽습니다.
+    injection:
+      method: bank_contamination                 # bank_contamination | threshold_shift
+                                                 # | coverage_exclude | overlap_select
+                                                 # | image_degrade | criteria_change
+                                                 # | none (조작 없음)
+      seed: 20260605
+      params:
+        contaminated_images:                     # 정상 학습셋에 혼입한 결함 이미지
+          - capsules/Anomaly/bubble/000_12.png
+          - capsules/Anomaly/bubble/000_47.png
+        contaminated_count: 5
+        target_bank_version: v3
+
+    # ── 정답 ────────────────────────────────────────────────────────
+    ground_truth:
+      intake_verdict: proceed
+      cause: bank_contamination
+      requires_bank_rebuild: true                # cause 로부터 결정되는 값. 명시해 둡니다
+      duplicate_of: null                         # intake_verdict 가 duplicate 일 때만 이슈 ID
+
+      # 판별 항목 7가지의 정답값.
+      # 원인만 맞히고 근거가 틀린 답을 걸러내기 위한 축입니다.
+      # null 은 "이 케이스에서는 채점하지 않음"을 뜻합니다.
+      evidence:
+        defect_visible: true                     # 1. 결함이 이미지에 실제로 보이는가 (VLM)
+        quality_within_baseline: true            # 2. 화질 지표가 기준 분포 안인가 (통계)
+        score_vs_threshold: below                # 3. above | near | below
+        score_ratio: 0.42                        # 3-1. 이상점수 / 임계값. 허용오차는 scoring 참조
+        nearest_patch_ref:                       # 4. 최근접 정상 패치 역추적 결과
+          source_image: capsules/Anomaly/bubble/000_12.png
+          patch_index: 1874
+        nearest_patch_is_defect: true            # 5. 그 패치가 결함인가 (VLM 또는 사람)
+        coverage_present: true                   # 6. 현재 조건의 정상 패치가 뱅크에 있는가
+        criteria_verdict: defect                 # 7. 판정 기준상 불량이 맞는가
+                                                 #    defect | pass | out_of_scope
+
+      # 진단 이후 단계의 정답. 하지 말아야 할 조치를 했는지도 함께 봅니다.
+      expected_actions:
+        - remove_contaminated_samples
+        - rebuild_bank
+        - shadow_compare
+      forbidden_actions:
+        - lower_threshold                        # 오염을 임계값으로 덮는 오답 조치
+
+    # ── 채점 ────────────────────────────────────────────────────────
+    scoring:
+      weight: 1.0                                # 원인 분류 정확도 집계 시 가중치
+      cause_match: exact                         # exact | any_of
+      grade_evidence: true                       # 근거 항목까지 채점할지
+      evidence_required:                         # 이 케이스에서 반드시 맞혀야 하는 근거
+        - nearest_patch_is_defect                # 4·5번이 이 원인의 결정타
+        - defect_visible
+      tolerance:
+        score_ratio: 0.10                        # 수치 근거의 허용 오차 (상대값)
+      notes: >
+        최근접 패치를 찾아내는 것만으로는 정답이 아니다. 그 패치가 결함이라는
+        판정까지 맞아야 뱅크 오염과 정상 분포 중첩이 갈린다.
+
+    # ── 시연 메모 ───────────────────────────────────────────────────
+    demo:
+      show_in_pitch: true
+      pair_with: SC-NO-001                       # 정상 분포 중첩 케이스와 나란히 시연
+      talking_point: >
+        같은 "안 잡힌다"에서 출발해 조치가 정반대로 갈리는 지점.
+
+  # ───────────────────────────────────────────────────────────────────
+  # TODO(장영진): 나머지 19건 이상
+  #   threshold        SC-TH-001..003
+  #   bank_contamination SC-BC-002..003
+  #   coverage_gap     SC-CV-001..003
+  #   normal_overlap   SC-NO-001..003   ← SC-BC-001 과 쌍으로 반드시 포함
+  #   equipment_optics SC-EQ-001..003
+  #   criteria         SC-CR-001..003
+  #   duplicate        SC-DUP-001..002  (intake_verdict: duplicate)
+  # ───────────────────────────────────────────────────────────────────

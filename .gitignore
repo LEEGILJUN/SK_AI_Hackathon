@@ -1,0 +1,40 @@
+# ===== 대용량 데이터 (스크립트로 재현) =====
+data/visa_raw/
+data/factory/
+*.png.orig
+!docs/*.png
+
+# ===== 메모리 뱅크 · 모델 산출물 =====
+*.pt
+*.pth
+*.npz
+*.npy
+*.pkl
+banks/
+models/
+checkpoints/
+
+# ===== 실행 산출물 =====
+outputs/
+reports/
+logs/
+*.log
+runs/
+
+# ===== 환경 =====
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+*.key
+
+# ===== 에디터 · OS =====
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ===== 노트북 =====
+.ipynb_checkpoints/

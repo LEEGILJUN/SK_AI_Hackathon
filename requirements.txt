@@ -1,0 +1,56 @@
+# 검사 AI 자율 운영 에이전트 — Python 의존성 (초안)
+#
+# 대상 환경: Python 3.11 / RTX 4090 노트북 (CUDA 12.x)
+# 지금은 하한(>=)만 지정한 초안입니다. 3인 환경이 동일하게 굳는 시점에
+# `pip freeze` 결과로 ==  고정하고, 각 항목의 라이선스를 THIRD_PARTY.md에 옮겨 적습니다.
+#
+# torch 기본 PyPI 휠에는 CUDA 런타임이 포함됩니다. CUDA 버전을 맞춰야 하면:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+
+# ── PatchCore 추론 · 최근접 패치 역추적 ────────────────────────────────
+torch>=2.3
+torchvision>=0.18
+timm>=1.0                      # WideResNet50 등 특징 추출 백본
+faiss-cpu>=1.8                 # 패치 최근접 검색. index → 원본 패치 역매핑에 사용
+                               # (설치가 막히면 scikit-learn NearestNeighbors로 대체 가능)
+scikit-learn>=1.4              # coreset 서브샘플링, 거리·분포 계산 보조
+numpy>=1.26
+scipy>=1.11
+
+# ── 이미지 처리 · 화질 지표 ────────────────────────────────────────────
+Pillow>=10.2
+opencv-python-headless>=4.9    # 라플라시안 분산(선예도), 블러·밝기 시프트 주입
+scikit-image>=0.22             # 노이즈·대비 지표, 마스크 면적 계산
+
+# ── 데이터 계층 (결정론적 조회) ────────────────────────────────────────
+pandas>=2.2                    # manifest.csv · mes.csv 조인과 집계
+# 관계형 저장소는 표준 라이브러리 sqlite3를 사용합니다. 별도 의존성 없음.
+# MES·이미지 메타데이터는 벡터화하지 않으므로 벡터 DB 의존성도 없습니다.
+
+# ── 설정 · 스키마 ──────────────────────────────────────────────────────
+PyYAML>=6.0                    # scenarios / criteria / quality_baseline 파싱
+pydantic>=2.6                  # 에이전트 간 판단 결과·근거의 구조 검증
+python-dotenv>=1.0
+
+# ── 웹 애플리케이션 (이슈 접수 · 진행 상황 · 리포트) ───────────────────
+fastapi>=0.110
+uvicorn[standard]>=0.29
+jinja2>=3.1
+python-multipart>=0.0.9        # 이슈 이미지 첨부 업로드
+
+# ── LLM · VLM 어댑터 계층 ──────────────────────────────────────────────
+# 로컬 모델과 외부 API를 설정으로 교체합니다.
+# openai 클라이언트는 vLLM·Ollama의 OpenAI 호환 엔드포인트에 그대로 붙으므로
+# 폐쇄망 경로와 API 경로가 같은 코드로 커버됩니다.
+openai>=1.30
+transformers>=4.40             # 로컬 VLM을 직접 로드하는 경로
+accelerate>=0.30
+# anthropic>=0.25              # 외부 API 경로를 Claude로 둘 경우 활성화
+
+# ── 리포트 · 유틸 ──────────────────────────────────────────────────────
+matplotlib>=3.8                # 임계값 스윕 곡선 (검출률 · 과검률)
+tqdm>=4.66
+
+# ── 개발 도구 ──────────────────────────────────────────────────────────
+pytest>=8.0
+ruff>=0.4
