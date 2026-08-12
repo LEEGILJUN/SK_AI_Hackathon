@@ -543,9 +543,8 @@ def main():
     mes_df = pd.DataFrame(mes_records)
     manifest_df = pd.DataFrame(manifest_records)
 
-    # 내보내기
+    # 내보내기 (모든 메타데이터 및 설정 문서는 data/ 폴더 내로 집중)
     mes_df.to_csv(CONFIG["MES_CSV_PATH"], index=False, encoding="utf-8-sig")
-    mes_df.to_csv(CONFIG["ROOT_MES_CSV_PATH"], index=False, encoding="utf-8-sig")
     manifest_df.to_csv(CONFIG["MANIFEST_CSV_PATH"], index=False, encoding="utf-8-sig")
 
     export_error_code_mapping(CONFIG["ERROR_MAPPING_CSV_PATH"])
