@@ -20,6 +20,7 @@ from .bank import MemoryBank, build_bank, greedy_coreset
 from .crop import crop_patch, crop_with_context, patch_box
 from .device import available_devices, describe, pick_device
 from .features import FeatureConfig, PatchEmbedder
+from .quality import QualityAssessment, QualityMetrics, assess_quality, compute_baseline, compute_metrics
 from .isolation import (
     IsolationScore,
     contamination_amplification,
@@ -51,6 +52,11 @@ __all__ = [
     "pick_device",
     "FeatureConfig",
     "PatchEmbedder",
+    "QualityAssessment",
+    "QualityMetrics",
+    "assess_quality",
+    "compute_baseline",
+    "compute_metrics",
     "IsolationScore",
     "contamination_amplification",
     "image_isolation",
