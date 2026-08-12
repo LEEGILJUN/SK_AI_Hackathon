@@ -1,0 +1,11 @@
+﻿ERROR_CODE,DEFECT_NAME,DESCRIPTION
+0000,normal,정상품 (Normal / Good)
+ESA0,bent,휘어짐 / 굽힘 (Bent)
+ESA1,burnt,소손 / 탄화 (Burnt)
+ESA2,damage,파손 / 크랙 (Damage)
+ESA3,dirt,이물 / 오염 (Dirt)
+ESA4,extra,잉여물 / 동박 돌기 (Extra material)
+ESA5,melt,용융 / 녹음 (Melt)
+ESA6,missing,미삽 / 부품 누락 (Missing component)
+ESA7,scratch,스크래치 / 긁힘 (Scratch)
+ESA8,wrong place,오삽 / 위치 오류 (Wrong place)
