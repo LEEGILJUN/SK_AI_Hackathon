@@ -28,6 +28,7 @@ from .isolation import (
     patch_isolation,
     suspect_images,
 )
+from .shadow import Disagreement, ShadowReport, shadow_compare
 from .sweep import (
     FeasibilityVerdict,
     SweepPoint,
@@ -62,6 +63,9 @@ __all__ = [
     "image_isolation",
     "patch_isolation",
     "suspect_images",
+    "Disagreement",
+    "ShadowReport",
+    "shadow_compare",
     "FeasibilityVerdict",
     "SweepPoint",
     "ThresholdCurve",

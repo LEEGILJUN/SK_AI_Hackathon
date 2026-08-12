@@ -14,6 +14,15 @@ from .rebuild import (
     compare_banks,
     execute_rebuild,
 )
+from .gate import (
+    CheckResult,
+    GateCriteria,
+    GateResult,
+    ReproducibilityResult,
+    check_reproducibility,
+    evaluate_gate,
+)
+from .release import ReleasePackage, prepare_release, write_approval_document
 from .tools import AgentRun, Tool, ToolRegistry, ToolResult, run_agent
 from .diagnose import (
     CAUSE_LABEL_KO,
@@ -38,6 +47,15 @@ __all__ = [
     "RebuildResult",
     "compare_banks",
     "execute_rebuild",
+    "CheckResult",
+    "GateCriteria",
+    "GateResult",
+    "ReproducibilityResult",
+    "check_reproducibility",
+    "evaluate_gate",
+    "ReleasePackage",
+    "prepare_release",
+    "write_approval_document",
     "AgentRun",
     "Tool",
     "ToolRegistry",
