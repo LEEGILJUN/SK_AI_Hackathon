@@ -9,11 +9,11 @@
 
 # ── PatchCore 추론 · 최근접 패치 역추적 ────────────────────────────────
 torch>=2.3
-torchvision>=0.18
-timm>=1.0                      # WideResNet50 등 특징 추출 백본
-faiss-cpu>=1.8                 # 패치 최근접 검색. index → 원본 패치 역매핑에 사용
-                               # (설치가 막히면 scikit-learn NearestNeighbors로 대체 가능)
-scikit-learn>=1.4              # coreset 서브샘플링, 거리·분포 계산 보조
+torchvision>=0.18              # wide_resnet50_2 백본을 여기서 가져온다
+timm>=1.0                      # 아직 미사용. 백본을 torchvision 밖에서 고를 때만 필요
+faiss-cpu>=1.8                 # 아직 미사용. 현재는 torch.cdist 를 뱅크 단위로 잘라 쓴다
+                               # 뱅크가 수십만 행으로 커지면 이쪽으로 교체한다
+scikit-learn>=1.4              # 거리·분포 계산 보조
 numpy>=1.26
 scipy>=1.11
 
