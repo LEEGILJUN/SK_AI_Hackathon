@@ -42,17 +42,37 @@ class FeatureConfig:
         맞추기 위한 선택이다. 가중치 내려받기가 막힌 환경에서는 resnet18 처럼
         이미 캐시된 백본으로 바꿔 끼울 수 있다.
     resize / crop
-        긴 변을 resize 로 맞춘 뒤 중앙을 crop 만큼 잘라 쓴다.
+        짧은 변을 resize 로 맞춘 뒤 중앙을 crop 만큼 잘라 쓴다.
+
+        기본값 512/448 은 VisA 실측으로 정한 것이다. 흔히 쓰는 256/224 로는
+        결함을 거의 잡지 못했다.
+
+            256/224, 정상 60장   AUROC 0.526   ← 무작위 수준
+            512/448, 정상 60장   AUROC 0.931
+            256/224, 정상 150장  AUROC 0.502   ← 뱅크만 키워도 소용없다
+            512/448, 정상 150장  AUROC 0.998
+
+        이유는 결함 크기다. VisA capsules 의 결함은 원본(1500x1000)에서
+        40x40px, 전체 면적의 0.1% 다. 224 입력이면 격자 한 칸이 원본 31px 라
+        결함이 딱 한 칸이고, 아래 neighborhood 평균에 주변 정상 8칸과 섞여
+        희석된다. 448 이면 한 칸이 16px 이라 결함이 여러 칸에 걸친다.
+
+        **뱅크 크기로는 해결되지 않는다.** 데이터를 더 넣어도 해상도가
+        모자라면 신호 자체가 없다.
+
+        종횡비를 눌러 정사각으로 만들면(시야 49% 를 살리는 대신 왜곡) 오히려
+        떨어졌다(0.837). 중앙 크롭으로 시야를 버리는 편이 낫다.
     neighborhood
         각 격자 칸의 특징을 주변 이웃과 평균낼 때의 커널 크기. 논문의
         local neighborhood aggregation 이며, 미세한 위치 흔들림을 흡수한다.
+        결함이 격자 한 칸보다 작으면 여기서 희석된다.
     """
 
     backbone: str = "wide_resnet50_2"
     layers: tuple[str, ...] = ("layer2", "layer3")
     weights: str | None = "IMAGENET1K_V1"
-    resize: int = 256
-    crop: int = 224
+    resize: int = 512
+    crop: int = 448
     neighborhood: int = 3
 
     def fingerprint(self) -> dict:
