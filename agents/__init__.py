@@ -5,6 +5,16 @@ vision    시각 언어 모델을 쓰는 두 판별 — 항목 1번과 5번
 """
 
 from .adapters import ModelAdapter, build_adapters, load_config
+from .curate import AdditionRequest, CurationPlan, RemovalCandidate, plan_curation
+from .rebuild import (
+    DirectoryImageSource,
+    ImageSource,
+    RebuildRecord,
+    RebuildResult,
+    compare_banks,
+    execute_rebuild,
+)
+from .tools import AgentRun, Tool, ToolRegistry, ToolResult, run_agent
 from .diagnose import (
     CAUSE_LABEL_KO,
     REBUILD_REQUIRED,
@@ -18,6 +28,21 @@ from .vision import VisionJudgment, cause_from_patch_judgment, judge_bank_patch,
 
 __all__ = [
     "ModelAdapter",
+    "AdditionRequest",
+    "CurationPlan",
+    "RemovalCandidate",
+    "plan_curation",
+    "DirectoryImageSource",
+    "ImageSource",
+    "RebuildRecord",
+    "RebuildResult",
+    "compare_banks",
+    "execute_rebuild",
+    "AgentRun",
+    "Tool",
+    "ToolRegistry",
+    "ToolResult",
+    "run_agent",
     "CAUSE_LABEL_KO",
     "REBUILD_REQUIRED",
     "DiagnosisResult",

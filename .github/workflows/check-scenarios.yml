@@ -1,0 +1,46 @@
+# 시나리오·기준 파일 형식 검사
+#
+# GitHub 웹에서 파일을 고쳐 커밋하면 자동으로 돌아갑니다. 터미널이 필요 없고,
+# 결과는 커밋 옆에 초록 체크(✅) 또는 빨간 엑스(❌)로 표시됩니다.
+# 엑스를 누르면 무엇이 잘못됐는지 한국어로 나옵니다.
+#
+# torch 같은 무거운 것은 설치하지 않습니다. YAML 형식만 보므로 몇 초면 끝납니다.
+
+name: 시나리오 형식 검사
+
+on:
+  push:
+    paths:
+      - "data/*.yaml"
+      - "scripts/check_scenarios.py"
+      - ".github/workflows/check-scenarios.yml"
+  pull_request:
+    paths:
+      - "data/*.yaml"
+  workflow_dispatch:        # 저장소 Actions 탭에서 수동 실행도 가능
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: PyYAML 설치
+        run: pip install --quiet pyyaml
+
+      - name: data/scenarios.yaml 검사
+        run: python scripts/check_scenarios.py
+
+      - name: 통과했을 때 안내
+        if: success()
+        run: echo "형식 문제 없습니다. 정답이 맞는지는 사람이 판단해야 합니다."
+
+      - name: 실패했을 때 안내
+        if: failure()
+        run: |
+          echo "위에 나온 [SC-...] 항목을 고쳐 주세요."
+          echo "작성 예시는 examples/scenarios_예시.yaml 을 보시면 됩니다."
