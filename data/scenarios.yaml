@@ -86,7 +86,7 @@ scenarios:
       params:
         original_threshold: 0.42
         evaluation_threshold: 0.50
-        note: "초기 캘리브레이션 시 정상 스코어 상위 극단값 기준으로 과도하게 보수적으로(높게) 설정"
+        note: "초기 Threshold 설정시 정상 스코어 상위 극단값 기준으로 과도하게 보수적으로(높게) 설정"
  
     ground_truth:
       intake_verdict: proceed
@@ -130,7 +130,7 @@ scenarios:
       date_range: [2026-06-20, 2026-06-22]
  
     input:
-      issue_text: "line_02 요즘 자꾸 놓치는거 같은데 확인좀요 ㅠㅠ"
+      issue_text: "line_02 요즘 자꾸 미검나는 것 같은데 확인좀요 ㅠㅠ"
       attachments:
         - line_02/2026-06-21/LOT-20260622-011/img_0203.png
       reporter_role: 라인관리자
@@ -410,7 +410,7 @@ scenarios:
       date_range: [2026-06-24, 2026-06-26]
  
     input:
-      issue_text: "line_03 먹통(불량인데 그냥 통과) 계속 나옴. 뭐가 문제인지 봐주세요"
+      issue_text: "line_03 검사 먹통(불량인데 그냥 통과) 계속 나옴. 뭐가 문제인지 봐주세요"
       attachments:
         - line_03/2026-06-25/LOT-20260625-009/img_0071.png
       reporter_role: 라인관리자
@@ -449,7 +449,7 @@ scenarios:
       evidence_required: [nearest_patch_is_defect, defect_visible]
       tolerance: {score_ratio: 0.10}
       notes: >
-        "먹통"은 미검을 뜻하는 현장 비표준 표현 — 인테이크 단계에서 용어를 정규화해야
+        "검사 먹통"은 미검을 뜻하는 현장 비표준 표현 — 인테이크 단계에서 용어를 정규화해야
         진단으로 넘어갈 수 있는 케이스. 원인은 뱅크 오염.
  
   - id: SC-BC-004
@@ -1309,7 +1309,7 @@ scenarios:
       date_range: [2026-07-08, 2026-07-10]
  
     input:
-      issue_text: "line_03 미검 건으로 접수됐는데 확인해보니 검사기는 잡았던 것 같음. 기준 문제인듯"
+      issue_text: "line_03 미검 건으로 접수됐는데 확인해보니 검사기는 잡았던 것 같음. 한도 기준 문제인듯"
       attachments:
         - line_03/2026-07-09/LOT-20260709-006/img_0009.png
       reporter_role: 법인MI담당자
@@ -1320,7 +1320,7 @@ scenarios:
       seed: 20260709
       params:
         spec_field: warp_tolerance
-        spec_note: "제보자가 이미 기준 문제를 의심한 상태로 접수"
+        spec_note: "제보자가 이미 한도 기준 문제를 의심한 상태로 접수"
  
     ground_truth:
       intake_verdict: proceed
@@ -1348,7 +1348,7 @@ scenarios:
       evidence_required: [score_vs_threshold, criteria_verdict]
       tolerance: {score_ratio: 0.10}
       notes: >
-        제보자가 이미 원인을 추측(기준 문제)해 접수한 케이스 — 에이전트가 이 추측에
+        제보자가 이미 원인을 추측(한도 기준 문제)해 접수한 케이스 — 에이전트가 이 추측에
         편향되지 않고 evidence 7종을 직접 검증해 동일 결론에 도달하는지가 포인트.
  
   - id: SC-CR-004
