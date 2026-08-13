@@ -46,6 +46,37 @@ from datetime import date
 from typing import Any, Protocol, runtime_checkable
 
 
+#: 각 조회가 **실제로 어떤 방식으로** 답을 찾는가.
+#:
+#: 화면에 이것을 그대로 띄운다. "다 RAG 로 찾습니다"가 보기에는 좋지만
+#: 사실이 아니고, 사실이 아닌 것을 띄우면 심사에서 한 번만 파고들어도 무너진다.
+#: 그리고 **이 구분 자체가 이 과제의 논거다** — 진단의 신뢰도는 벡터 검색이
+#: 아니라 결정론적 조회에서 나온다. 여덟 중 일곱이 조인이고 그래프 검색은
+#: 하나뿐이며, 그 하나의 역할도 진단 근거가 아니라 중복 차단이다.
+#:
+#: 새 조회 함수를 추가하면 여기에도 등록한다. 빠지면 화면이 "미분류"로 뜬다.
+RETRIEVAL_KIND: dict[str, str] = {
+    "get_threshold": "join",
+    "get_quality_baseline": "join",
+    "get_criteria": "join",
+    "get_bank_profile": "join",
+    "resolve_bank": "join",
+    "find_images": "join",
+    "defect_distribution": "aggregate",
+    "find_similar_issues": "graph",
+}
+
+#: 사람이 읽을 이름과 한 줄 설명.
+RETRIEVAL_LABEL: dict[str, tuple[str, str]] = {
+    "join": ("결정론적 조회", "조인으로 정확한 값을 얻는다. 임베딩하면 오히려 틀린다"),
+    "aggregate": ("집계", "세어서 답한다. 어디에 몰렸는지는 계산 문제다"),
+    "graph": ("그래프 검색", "유사 사례 탐색. 중복 차단 전용이며 진단 근거가 아니다"),
+    "llm": ("언어 모델", "자연어에서 항목을 뽑는다. 판정하지 않는다"),
+    "vlm": ("시각 언어 모델", "이미지를 읽는다. 판별 1·5번뿐"),
+    "compute": ("계산", "추론·역추적·통계"),
+}
+
+
 # ── 조회 결과 ───────────────────────────────────────────────────────────
 
 
@@ -261,11 +292,46 @@ class DefectDistribution:
 
 
 @dataclass
+class IssueEdge:
+    """이슈 이력 그래프의 간선 하나.
+
+    이 프로젝트에서 온톨로지가 실제로 사는 곳이다. MES 도 이미지 메타데이터도
+    조인으로 답하고, **그래프로 표현할 값어치가 있는 것은 이것 하나**다 —
+    운영 이력은 개체 사이의 관계 자체가 답이기 때문이다.
+
+        이슈 ─[발생_라인]→ 라인
+        이슈 ─[대상_품목]→ 품목
+        이슈 ─[결함_유형]→ 결함유형
+        이슈 ─[진단_원인]→ 원인
+        원인 ─[조치]→ 조치
+        조치 ─[결과]→ 해결/미해결
+
+    유사 사례를 "왜 비슷하다고 봤는가"가 이 간선들에 남는다. 점수 하나만
+    돌려주면 사람이 검증할 수 없다.
+    """
+
+    source: str
+    relation: str
+    target: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class PastIssue:
     """그래프 검색 결과 — 유사 사례 한 건.
 
     역할은 중복 작업 차단 하나다. 진단 근거로 쓰지 않는다. 진단의 근거는
     결정론적 조회에서 나오고, 이것은 "이미 해결된 건 아닌가"를 묻는 용도다.
+
+    **이 좁은 역할이 설계다.** 과거 사례가 비슷하다고 이번 원인을 그것으로
+    정하면 진단이 유사도 맞히기가 된다. 그래프는 "이미 답이 나온 일인가"만
+    묻고, 원인은 매번 판별 7항목으로 새로 규명한다.
+
+    path
+        이 사례에 도달한 그래프 경로. 어떤 간선을 밟았는지가 남아 있어야
+        "왜 비슷하다고 봤는가"를 사람이 검증할 수 있다.
     """
 
     issue_id: str
@@ -276,6 +342,9 @@ class PastIssue:
     resolved: bool
     similarity: float
     summary: str = ""
+    defect_type: str | None = None
+    path: list[IssueEdge] = field(default_factory=list)
+    matched_on: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

@@ -353,6 +353,7 @@ def decide(
     sweep: FeasibilityVerdict | None = None,
     similar_issues: Sequence[PastIssue] | None = None,
     duplicate_similarity: float = 0.85,
+    current_line: str | None = None,
 ) -> DiagnosisResult:
     """근거를 원인으로 옮긴다. 여기가 진단의 본체다.
 
@@ -361,6 +362,10 @@ def decide(
         보강 근거로 쓴다. 없어도 판정은 된다.
     similar_issues
         유사 사례. 이미 해결된 동일 건이면 진단 이전에 중복으로 끊는다.
+    current_line
+        지금 이슈의 라인. 주면 **다른 라인의 사례는 중복으로 세지 않는다.**
+        라인마다 뱅크가 따로이므로 1라인 뱅크가 오염됐다고 2라인도 그렇다는
+        뜻이 아니다. 안 주면 라인을 보지 않던 예전 동작 그대로다.
     """
     evidence = list(evidence)
     result = DiagnosisResult(
@@ -369,6 +374,8 @@ def decide(
 
     # ── 0. 이미 해결된 사례인가 ────────────────────────────────────────
     for issue in similar_issues or []:
+        if current_line is not None and issue.line != current_line:
+            continue
         if issue.resolved and issue.similarity >= duplicate_similarity:
             result.duplicate_of = issue.issue_id
             result.confidence = "high"

@@ -21,10 +21,20 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from fastapi import FastAPI, Form, HTTPException  # noqa: E402
+import io  # noqa: E402
+
+from fastapi import FastAPI, Form, HTTPException, Response  # noqa: E402
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse  # noqa: E402
 
-from app.pipeline import DemoFactory, RunOutcome, default_issue, run_pipeline  # noqa: E402
+from app.pipeline import (  # noqa: E402
+    DEMO_CONFIG,
+    DemoFactory,
+    RunOutcome,
+    default_issue,
+    run_pipeline,
+)
+from inspection.crop import crop_patch  # noqa: E402
+from inspection.types import PatchRef  # noqa: E402
 from app.view import render_page  # noqa: E402
 
 app = FastAPI(title="검사 AI 자율 운영 에이전트")
@@ -115,6 +125,39 @@ def image(relative_path: str) -> FileResponse:
     if not target.is_file() or target.suffix.lower() not in {".png", ".jpg", ".jpeg"}:
         raise HTTPException(status_code=404, detail="없는 이미지입니다.")
     return FileResponse(target)
+
+
+@app.get("/crop/{relative_path:path}")
+def crop(relative_path: str, row: int, col: int, grid_h: int, grid_w: int,
+         margin: int = 12) -> Response:
+    """패치 한 칸을 원본에서 잘라 돌려준다 — 역추적 근거를 눈으로 보게.
+
+    "이 미검출 이미지가 뱅크의 저 정상 패치와 가까웠다"를 글로만 적으면
+    확인할 방법이 없다. 그 자리를 실제로 잘라 보여주면 사람이 직접 판단할 수
+    있고, 그것이 판별 5번이 하는 일이기도 하다.
+
+    좌표 계산은 `inspection.crop` 이 한다. 화면이 따로 계산하면 두 벌이 되고
+    한쪽만 고쳐져 엉뚱한 자리를 자르게 된다.
+    """
+    root = factory().root.resolve()
+    try:
+        target = (root / relative_path).resolve()
+        target.relative_to(root)
+    except (ValueError, OSError):
+        raise HTTPException(status_code=404, detail="없는 경로입니다.")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="없는 이미지입니다.")
+    if grid_h <= 0 or grid_w <= 0 or not (0 <= row < grid_h) or not (0 <= col < grid_w):
+        raise HTTPException(status_code=400, detail="격자 좌표가 범위를 벗어났습니다.")
+
+    ref = PatchRef(source_image=relative_path, row=row, col=col,
+                   patch_index=row * grid_w + col)
+    patch = crop_patch(target, ref, (grid_h, grid_w), DEMO_CONFIG,
+                       margin=max(0, min(margin, 256)), enlarge_to=192)
+
+    buffer = io.BytesIO()
+    patch.save(buffer, format="PNG")
+    return Response(content=buffer.getvalue(), media_type="image/png")
 
 
 @app.get("/health", response_class=PlainTextResponse)

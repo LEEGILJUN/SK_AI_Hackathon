@@ -12,8 +12,10 @@ from __future__ import annotations
 import json
 from html import escape
 from pathlib import Path
+from urllib.parse import quote, urlencode
 
 from app.pipeline import RunOutcome, Stage
+from lookup.base import RETRIEVAL_LABEL
 
 STATUS_LABEL = {"done": "진행", "blocked": "중단", "skipped": "건드리지 않음", "pending": "대기"}
 
@@ -131,6 +133,78 @@ a{color:var(--accent)}
 .tally .good b{color:var(--ok)}
 .tally .bad b{color:var(--stop)}
 @media (prefers-reduced-motion:reduce){.piece{transition:none}}
+
+/* ── 진단 근거 시각화 ──────────────────────────────────────────────── */
+.evidence{background:var(--panel);border:1px solid var(--rule);border-radius:8px;
+  padding:18px;display:flex;flex-direction:column;gap:14px}
+.ev-head{display:flex;justify-content:space-between;align-items:baseline;
+  gap:12px;flex-wrap:wrap}
+.ev-grid{display:flex;gap:20px;flex-wrap:wrap}
+.ev-grid>div{flex:1;min-width:250px;display:flex;flex-direction:column;gap:8px}
+.ev-label{font-family:var(--mono);font-size:11px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink3)}
+.heat{display:grid;gap:2px;background:var(--panel2);padding:6px;border-radius:6px;
+  border:1px solid var(--rule2);aspect-ratio:1;max-width:260px}
+.heat i{background:var(--stop);border-radius:2px;min-height:8px;display:block}
+.heat i.hot{outline:2px solid var(--accent);outline-offset:1px}
+.score{height:12px;background:var(--panel2);border:1px solid var(--rule2);
+  border-radius:6px;overflow:hidden}
+.score>span{display:block;height:100%;background:linear-gradient(90deg,var(--ok),var(--stop))}
+.score-num{margin:0;font-family:var(--mono);font-size:14px}
+.score-num em{font-style:normal;font-size:11px;padding:2px 8px;border-radius:3px;
+  margin-left:8px;letter-spacing:.06em}
+.score-num em.under{color:var(--stop);background:var(--stop-bg)}
+.score-num em.over{color:var(--ok);background:var(--ok-bg)}
+.pair{display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+  background:var(--panel2);border:1px solid var(--rule2);border-radius:6px;padding:14px}
+.pair figure{margin:0;display:flex;flex-direction:column;gap:6px;align-items:center}
+.pair img{width:120px;height:120px;object-fit:cover;border-radius:5px;
+  border:2px solid var(--rule)}
+.pair figcaption{font-family:var(--mono);font-size:11px;color:var(--ink2);
+  text-align:center;line-height:1.5}
+.pair figcaption span{color:var(--ink3)}
+.arrow{font-family:var(--mono);font-size:11px;color:var(--ink3);text-align:center;
+  letter-spacing:.08em}
+.arrow b{display:block;font-size:15px;color:var(--accent);margin-top:3px}
+
+/* ── 조회 방식 ─────────────────────────────────────────────────────── */
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.kind{font-family:var(--mono);font-size:11px;padding:2px 9px;border-radius:3px;
+  font-weight:600;white-space:nowrap}
+.kind.join{color:var(--ok);background:var(--ok-bg)}
+.kind.aggregate{color:var(--accent);background:var(--panel2)}
+.kind.graph{color:var(--skip);background:var(--skip-bg)}
+.kind.llm,.kind.vlm{color:var(--stop);background:var(--stop-bg)}
+.kind.unknown{color:var(--ink3);background:var(--panel2)}
+table.ret td{font-size:13px}
+table.ret td:first-child{width:auto;white-space:nowrap}
+.legend{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;
+  gap:5px;font-size:12.5px;color:var(--ink3)}
+
+/* ── 이슈 이력 그래프 ──────────────────────────────────────────────── */
+.query-node{background:var(--panel2);border:1px solid var(--accent);border-radius:6px;
+  padding:11px 14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.query-node code{font-size:13px;font-weight:700;color:var(--accent)}
+.onodes{display:flex;gap:12px;flex-wrap:wrap}
+.onode{flex:1;min-width:290px;background:var(--panel2);border:1px solid var(--rule2);
+  border-radius:6px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.onode.hit{border-color:var(--stop);background:var(--stop-bg)}
+.onode-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.onode-head code{font-size:13px;font-weight:700}
+.sim-score{font-family:var(--mono);font-size:13px;color:var(--accent);font-weight:700}
+.edges{display:flex;gap:5px;flex-wrap:wrap}
+.edge{font-family:var(--mono);font-size:10.5px;padding:2px 7px;border-radius:3px;
+  background:var(--panel);border:1px solid var(--rule2);color:var(--ink3);white-space:nowrap}
+.edge.on{border-color:var(--accent);color:var(--accent);font-weight:600}
+.chain{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12.5px}
+.chain .rel{font-family:var(--mono);font-size:10px;color:var(--ink3);letter-spacing:.06em}
+.chain .rel::before{content:"─["}
+.chain .rel::after{content:"]→"}
+.chain .cause{font-weight:650;color:var(--stop)}
+.chain .act{color:var(--ink2)}
+.chain .res{font-family:var(--mono);font-size:10.5px;padding:1px 7px;border-radius:3px}
+.chain .res.ok{color:var(--ok);background:var(--ok-bg)}
+.chain .res.no{color:var(--skip);background:var(--skip-bg)}
 """
 
 
@@ -149,6 +223,240 @@ def _stage_html(stage: Stage) -> str:
       {f'<table>{rows}</table>' if rows else ''}
       {f'<p class="note">{escape(stage.note)}</p>' if stage.note else ''}
     </section>
+    """
+
+
+CAUSE_KO = {
+    "threshold": "임계값 문제", "bank_contamination": "뱅크 오염",
+    "coverage_gap": "커버리지 부족", "normal_overlap": "정상 분포 중첩",
+    "equipment_optics": "설비·광학", "criteria": "기준 문제",
+}
+
+
+def _ontology_html(outcome: RunOutcome) -> str:
+    """이슈 이력 그래프 — 온톨로지가 실제로 쓰이는 유일한 자리.
+
+    조회 계층의 나머지 일곱은 조인이다. 여기만 그래프인 이유는 운영 이력이
+    **개체 사이의 관계 자체가 답**이기 때문이다. "이 증상이 다른 라인에서 어떤
+    원인으로 규명돼 어떤 조치로 해결됐나"는 이슈→원인→조치→결과를 따라가야
+    나온다.
+
+    **경로를 그린다.** 유사도 숫자만 띄우면 왜 비슷하다고 봤는지 검증할 수
+    없고, 그러면 중복 차단이라는 역할도 못 맡긴다.
+
+    역할이 좁은 것은 설계다. 과거 사례가 비슷하다고 이번 원인을 그것으로 정하면
+    진단이 유사도 맞히기가 된다. 그래프는 "이미 답이 나온 일인가"만 묻는다.
+    """
+    intake = outcome.intake
+    if intake is None or not intake.similar:
+        return ""
+
+    query = intake.report
+    blocked = intake.verdict == "duplicate"
+
+    def node_html(issue) -> str:
+        matched = set(issue.matched_on or [])
+        chips = "".join(
+            f'<span class="edge{" on" if key in matched else ""}">{escape(label)} {escape(value)}</span>'
+            for key, label, value in (
+                ("line", "발생_라인", issue.line),
+                ("object_name", "대상_품목", issue.object_name),
+                ("defect_type", "결함_유형", issue.defect_type or "—"),
+            )
+        )
+        return f"""
+        <div class="onode{' hit' if blocked and intake.duplicate_of == issue.issue_id else ''}">
+          <div class="onode-head">
+            <code>{escape(issue.issue_id)}</code>
+            <span class="sim-score">{issue.similarity:.2f}</span>
+          </div>
+          <div class="edges">{chips}</div>
+          <div class="chain">
+            <span class="cause">{escape(CAUSE_KO.get(issue.cause, issue.cause))}</span>
+            <span class="rel">조치</span>
+            <span class="act">{escape(issue.action)}</span>
+            <span class="rel">결과</span>
+            <span class="res {'ok' if issue.resolved else 'no'}">
+              {'해결' if issue.resolved else '미해결'}</span>
+          </div>
+          <p class="hint">{escape(issue.summary)}</p>
+        </div>
+        """
+
+    verdict_note = (
+        f"<strong>중복으로 끊었습니다</strong> — {escape(intake.duplicate_of or '')} 과 "
+        f"같은 라인·같은 증상이며 이미 조치가 끝났습니다. 진단하지 않습니다."
+        if blocked else
+        "<strong>중복이 아니라 진행합니다.</strong> 유사도가 높은 건도 "
+        "<em>라인이 다릅니다</em> — 라인마다 뱅크가 따로이므로 1라인 뱅크가 "
+        "오염됐다고 2라인도 그렇다는 뜻이 아닙니다. 관련 사례로만 넘깁니다."
+    )
+    return f"""
+    <div class="evidence">
+      <div class="ev-head">
+        <span class="stage-title">이슈 이력 그래프 — 이미 답이 나온 일인가</span>
+        <span class="kind graph">그래프 검색</span>
+      </div>
+      <div class="query-node">
+        <code>이번 이슈</code>
+        <span class="edge on">발생_라인 {escape(query.line or '—')}</span>
+        <span class="edge on">대상_품목 {escape(query.object_name or '—')}</span>
+        <span class="edge on">결함_유형 {escape(query.defect_type or '—')}</span>
+      </div>
+      <div class="onodes">{''.join(node_html(i) for i in intake.similar[:4])}</div>
+      <p class="detail">{verdict_note}</p>
+      <p class="note">
+        진한 간선이 이번 이슈와 겹친 자리입니다. <strong>이 그래프는 원인을
+        정하지 않습니다</strong> — 과거가 비슷하다고 이번 원인을 그것으로 정하면
+        진단이 유사도 맞히기가 됩니다. 원인은 판별 7항목으로 매번 새로 규명합니다.
+      </p>
+    </div>
+    """
+
+
+def _evidence_visual_html(outcome: RunOutcome) -> str:
+    """진단 근거를 눈으로 — 히트맵, 이상 점수, 역추적한 두 자리.
+
+    이 과제의 주장은 "판단 근거가 모델 안에 이미 있다"이다. 그런데 화면이
+    문장으로만 *"격자(6,5), 거리 0.0059"* 라고 적으면 확인할 방법이 없다.
+    그 자리를 실제로 잘라 나란히 놓으면 사람이 직접 판단할 수 있다.
+
+    **여기 뜨는 값은 전부 실제 추론 결과다.** 히트맵은 `patch_distances` 를
+    그대로 칠한 것이고, 잘라낸 조각은 `inspection.crop` 이 같은 좌표계로
+    낸 것이다. 그림을 따로 계산하면 두 벌이 되고 한쪽만 틀어진다.
+    """
+    result = outcome.inference
+    if result is None or not outcome.query_image or not result.patch_distances:
+        return ""
+
+    top = result.top_match
+    grid_h, grid_w = outcome.grid
+    flat = [v for row in result.patch_distances for v in row]
+    lo, hi = min(flat), max(flat)
+    span = (hi - lo) or 1.0
+
+    cells = "".join(
+        f'<i style="opacity:{(v - lo) / span:.3f}"'
+        f'{" class=\'hot\'" if top and r == top.query.row and c == top.query.col else ""}'
+        f' title="({r},{c}) {v:.4f}"></i>'
+        for r, row in enumerate(result.patch_distances)
+        for c, v in enumerate(row)
+    )
+
+    threshold = outcome.threshold or 1.0
+    # 점수 막대는 임계값을 눈금 100% 로 잡는다. 넘으면 100% 에서 멈추되
+    # 숫자는 그대로 적는다 — 막대가 잘렸다고 값이 바뀐 것은 아니다.
+    fill = min(result.score / threshold, 1.0) * 100 if threshold else 0.0
+    verdict = "검출" if result.score >= threshold else "미검"
+
+    def crop_url(image: str, row: int, col: int) -> str:
+        query = urlencode({"row": row, "col": col, "grid_h": grid_h,
+                           "grid_w": grid_w, "margin": 24})
+        return f"/crop/{quote(image)}?{query}"
+
+    traced = ""
+    if top:
+        q, b = top.query, top.bank
+        traced = f"""
+        <div class="pair">
+          <figure>
+            <img src="{escape(crop_url(outcome.query_image, q.row, q.col))}" alt="질의 패치">
+            <figcaption>질의 패치 ({q.row},{q.col})<br><span>못 잡은 이미지의 이 자리</span></figcaption>
+          </figure>
+          <div class="arrow">최근접<br><b>{top.distance:.4f}</b></div>
+          <figure>
+            <img src="{escape(crop_url(b.source_image, b.row, b.col))}" alt="뱅크 패치">
+            <figcaption>뱅크 패치 ({b.row},{b.col})<br>
+              <span>{escape(Path(b.source_image).name)}</span></figcaption>
+          </figure>
+        </div>
+        """
+    return f"""
+    <div class="evidence">
+      <div class="ev-head">
+        <span class="stage-title">진단 근거 — 모델이 어디를 보고 통과시켰나</span>
+        <span class="sim-state">{escape(outcome.bank_version)}</span>
+      </div>
+      <div class="ev-grid">
+        <div>
+          <div class="ev-label">이상 점수 히트맵 · {grid_h}×{grid_w}</div>
+          <div class="heat" style="grid-template-columns:repeat({grid_w},1fr)">{cells}</div>
+          <p class="hint">진할수록 정상에서 멀다. 테두리 친 칸이 가장 높은 자리다.</p>
+        </div>
+        <div>
+          <div class="ev-label">이상 점수</div>
+          <div class="score"><span style="width:{fill:.1f}%"></span></div>
+          <p class="score-num">
+            <b>{result.score:.4f}</b> / 임계값 {threshold:.2f}
+            <em class="{'over' if verdict == '검출' else 'under'}">{verdict}</em>
+          </p>
+          <p class="hint">
+            임계값 아래라 양품으로 나갔습니다. <strong>점수가 낮다고 이상이
+            없는 것이 아닙니다</strong> — 어디가 이상한지는 히트맵이 압니다.
+          </p>
+        </div>
+      </div>
+      {traced}
+      <p class="note">
+        역추적한 두 자리를 같은 좌표계로 잘라 나란히 놓은 것입니다.
+        <strong>이 뱅크 패치가 결함이면 뱅크 오염, 진짜 정상품이면 정상 분포
+        중첩이며 조치가 정반대입니다</strong>(판별 5번).
+      </p>
+    </div>
+    """
+
+
+def _retrieval_html(outcome: RunOutcome) -> str:
+    """어떤 자료를 **어떤 방식으로** 찾았는가.
+
+    "전부 RAG 로 찾습니다"가 보기에는 좋지만 사실이 아니고, 사실이 아닌 것을
+    띄우면 심사에서 한 번만 파고들어도 무너진다. 그리고 이 구분 자체가 이
+    과제의 논거다 — **진단의 신뢰도는 벡터 검색이 아니라 결정론적 조회에서
+    나온다.** MES 와 이미지 메타데이터를 임베딩하면 비슷한 로트를 섞어 온다.
+
+    목록은 조회 계층이 남긴 실제 호출 기록이다. 지어낸 것이 아니다.
+    """
+    if not outcome.retrievals:
+        return ""
+
+    counts: dict[str, int] = {}
+    for call in outcome.retrievals:
+        counts[call["kind"]] = counts.get(call["kind"], 0) + 1
+
+    chips = "".join(
+        f'<span class="kind {escape(kind)}">{escape(RETRIEVAL_LABEL.get(kind, (kind, ""))[0])}'
+        f' {n}</span>'
+        for kind, n in sorted(counts.items(), key=lambda kv: -kv[1])
+    )
+    rows = "".join(
+        f'<tr><td><span class="kind {escape(c["kind"])}">'
+        f'{escape(RETRIEVAL_LABEL.get(c["kind"], (c["kind"], ""))[0])}</span></td>'
+        f'<td><code>{escape(c["name"])}</code></td>'
+        f'<td>{escape(", ".join(f"{k}={v}" for k, v in c["arguments"].items()) or "—")}</td></tr>'
+        for c in outcome.retrievals
+    )
+    legend = "".join(
+        f"<li><span class=\"kind {escape(kind)}\">{escape(label)}</span> {escape(why)}</li>"
+        for kind, (label, why) in RETRIEVAL_LABEL.items()
+        if kind in counts
+    )
+    return f"""
+    <div class="evidence">
+      <div class="ev-head">
+        <span class="stage-title">무엇을 어떻게 찾았나</span>
+        <span class="sim-state">{escape(str(len(outcome.retrievals)))}회 조회</span>
+      </div>
+      <div class="chips">{chips}</div>
+      <p class="detail">
+        <strong>대부분이 조인입니다.</strong> "3라인 A-217 로트 캡슐 이미지 목록"은
+        정확히 답할 문제이고, 임베딩하면 비슷한 로트를 섞어 옵니다.
+        벡터·그래프 검색은 <strong>과거 유사 사례 하나</strong>에만 쓰며,
+        그 역할도 진단 근거가 아니라 중복 작업 차단입니다.
+      </p>
+      <table class="ret">{rows}</table>
+      <ul class="legend">{legend}</ul>
+      <p class="note">조회 계층이 남긴 실제 호출 기록입니다.</p>
+    </div>
     """
 
 
@@ -368,6 +676,14 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
             if stage.key == "shadow":
                 stages_html.append(_simulator_html(outcome))
             stages_html.append(_stage_html(stage))
+            # 진단 바로 뒤에 근거를 그린다. 문장으로만 적으면 확인할 방법이 없다.
+            if stage.key == "diagnose":
+                stages_html.append(_evidence_visual_html(outcome))
+            if stage.key == "evidence":
+                stages_html.append(_retrieval_html(outcome))
+            # 그래프는 인테이크 바로 뒤. "이미 답이 나온 일인가"를 묻는 자리다.
+            if stage.key == "intake":
+                stages_html.append(_ontology_html(outcome))
         body += '<div class="flow">' + "".join(stages_html) + "</div>"
         if outcome.approval_markdown:
             body += f"""

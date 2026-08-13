@@ -140,13 +140,21 @@ def receive(
     lookup: LookupLayer | None = None,
     known: dict[str, Any] | None = None,
     attachments: list[str] | None = None,
-    duplicate_similarity: float = 0.85,
+    duplicate_similarity: float = 0.95,
+    duplicate_requires_same_line: bool = True,
 ) -> IntakeResult:
     """이슈를 접수하고 다음 단계로 넘길지 판단한다.
 
     known
         웹 양식에서 이미 받은 값. 추출 결과보다 우선한다. 사람이 고른 값이
         모델이 뽑은 값보다 정확하기 때문이다.
+    duplicate_similarity
+        이 값을 넘고 해결된 사례가 있으면 중복으로 보고 끊는다.
+    duplicate_requires_same_line
+        **다른 라인의 같은 증상은 중복이 아니다.** 라인마다 뱅크가 따로이므로
+        1라인 뱅크가 오염됐다고 2라인 뱅크도 오염됐다는 뜻이 아니다. 유사도만
+        보고 끊으면 실제로 존재하는 문제를 "이미 해결된 건"으로 덮는다.
+        관련 사례로는 여전히 similar 에 담겨 다음 단계로 넘어간다.
     """
     report = extract(text, adapter)
 
@@ -189,6 +197,8 @@ def receive(
         )
 
     for issue in similar:
+        if duplicate_requires_same_line and issue.line != report.line:
+            continue
         if issue.resolved and issue.similarity >= duplicate_similarity:
             return IntakeResult(
                 verdict="duplicate",

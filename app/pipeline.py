@@ -74,7 +74,7 @@ from inspection.crop import crop_patch, crop_with_context
 from inspection.quality import assess_quality
 from inspection.shadow import ShadowReport
 from lookup import MockLookup
-from lookup.base import DefectDistribution, ImageRecord
+from lookup.base import RETRIEVAL_KIND, DefectDistribution, ImageRecord
 
 DEMO_CONFIG = FeatureConfig(backbone="resnet18", resize=64, crop=64)
 DEFAULT_ISSUE = "2라인 캡슐 표면 찍힘이 며칠째 계속 빠집니다. 육안으로는 명확한데 검사에서 양품으로 나옵니다."
@@ -149,6 +149,14 @@ class RunOutcome:
     #: MES 조회·추론으로 가려낸 미검 건. 로트 집중도 집계의 재료다.
     missed_records: list[ImageRecord] = field(default_factory=list)
     distribution: DefectDistribution | None = None
+    #: 진단 근거를 화면에 그리기 위한 것들. 전부 실제 추론 결과다.
+    inference: Any = None                 # InferenceResult — 히트맵과 점수
+    query_image: str = ""                 # 저장소 기준 상대 경로
+    threshold: float = 0.0
+    bank_version: str = ""
+    grid: tuple[int, int] = (0, 0)
+    #: 어떤 조회를 어떤 방식으로 했는가. lookup 이 남긴 실제 호출 기록이다.
+    retrievals: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def finished(self) -> bool:
@@ -535,6 +543,13 @@ class _DemoSession:
         self.inference = missed[0][1] if missed else None
 
         self.outcome.missed_records = [r for r, _ in missed]
+        if missed:
+            top_record, top_result = missed[0]
+            self.outcome.inference = top_result
+            self.outcome.query_image = top_record.path
+            self.outcome.threshold = self.threshold
+            self.outcome.bank_version = self.item.bank.version
+            self.outcome.grid = (top_result.grid_h, top_result.grid_w)
         self.outcome.stages.append(
             Stage(
                 key="inspect",
@@ -657,7 +672,8 @@ class _DemoSession:
         if self.evidence is None:
             raise RuntimeError("먼저 run_checks 를 불러야 한다.")
 
-        diagnosis = decide(self.evidence, similar_issues=self.outcome.intake.similar)
+        diagnosis = decide(self.evidence, similar_issues=self.outcome.intake.similar,
+                           current_line=self.outcome.intake.report.line)
         self.outcome.diagnosis = diagnosis
         self.outcome.stages.append(
             Stage(
@@ -970,4 +986,15 @@ def run_pipeline(
         )
 
     session.outcome.agent_run = run
+    # 어떤 조회를 실제로 했는지 화면에 그대로 띄운다. 지어낸 목록이 아니라
+    # 조회 계층이 남긴 호출 기록이고, 방식 표시는 RETRIEVAL_KIND 에서 온다.
+    # 실구현이 calls 를 안 남기면 이 칸은 비고, 그때는 비어 있는 것이 맞다.
+    session.outcome.retrievals = [
+        {
+            "name": name,
+            "kind": RETRIEVAL_KIND.get(name, "unknown"),
+            "arguments": {k: v for k, v in arguments.items() if v},
+        }
+        for name, arguments in getattr(session.lookup, "calls", [])
+    ]
     return session.outcome

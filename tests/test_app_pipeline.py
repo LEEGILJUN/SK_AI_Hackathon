@@ -338,3 +338,94 @@ def test_simulator_is_absent_when_there_was_no_shadow_run(factory):
     html = render_page(outcome, outcome.issue_text)
     assert outcome.shadow is None
     assert "코어셋 검증 — 가상 라인" not in html
+
+
+# ── 온톨로지 · 진단 근거 · 조회 방식 ────────────────────────────────────
+
+
+def test_issue_graph_returns_the_path_not_just_a_score(factory):
+    """유사도 숫자만 돌려주면 왜 비슷한지 검증할 수 없다.
+
+    그래프 검색이 블랙박스가 되면 중복 차단이라는 역할도 못 맡긴다.
+    """
+    from lookup import MockLookup
+
+    found = MockLookup().find_similar_issues("line_02", "capsules", "dent")
+    assert found, "이슈 이력 그래프가 비어 있다"
+
+    top = found[0]
+    assert top.path, "도달 경로가 없다"
+    assert top.matched_on, "무엇이 겹쳐서 비슷하다고 봤는지가 없다"
+    relations = {edge.relation for edge in top.path}
+    assert {"진단_원인", "조치", "결과"} <= relations, (
+        f"원인→조치→결과 사슬이 끊겼다: {relations}"
+    )
+    assert found == sorted(found, key=lambda i: -i.similarity), "유사도 순이 아니다"
+
+
+def test_a_different_line_is_related_not_duplicate(factory):
+    """다른 라인의 같은 증상은 중복이 아니다.
+
+    라인마다 뱅크가 따로이므로 1라인 뱅크가 오염됐다고 2라인도 그렇다는 뜻이
+    아니다. 유사도만 보고 끊으면 실제로 있는 문제를 "이미 해결된 건"으로 덮는다.
+    """
+    outcome = run(factory, patch_override="defect")
+
+    assert outcome.intake is not None
+    assert outcome.intake.similar, "유사 사례가 넘어오지 않았다"
+
+    cross_line = [i for i in outcome.intake.similar
+                  if i.line != outcome.intake.report.line and i.resolved]
+    assert cross_line, "다른 라인 사례가 없어 이 규칙을 재지 못한다"
+    assert max(i.similarity for i in cross_line) >= 0.8, "유사도가 낮으면 시험이 안 된다"
+
+    assert outcome.intake.verdict == "proceed", "다른 라인 사례로 끊었다"
+    assert outcome.diagnosis is not None and outcome.diagnosis.cause is not None
+
+
+def test_retrieval_trace_labels_each_lookup_by_actual_mechanism(factory):
+    """조회를 전부 "RAG"로 뭉뚱그리면 화면이 거짓말을 한다.
+
+    이 구분 자체가 과제의 논거다 — 진단의 신뢰도는 벡터 검색이 아니라
+    결정론적 조회에서 나온다.
+    """
+    outcome = run(factory, patch_override="defect")
+
+    assert outcome.retrievals, "조회 기록이 비어 있다"
+    kinds = {c["kind"] for c in outcome.retrievals}
+    assert "unknown" not in kinds, (
+        f"RETRIEVAL_KIND 에 등록 안 된 조회가 있다: "
+        f"{[c['name'] for c in outcome.retrievals if c['kind'] == 'unknown']}"
+    )
+
+    joins = [c for c in outcome.retrievals if c["kind"] == "join"]
+    graphs = [c for c in outcome.retrievals if c["kind"] == "graph"]
+    assert len(joins) > len(graphs), "조인이 그래프보다 많아야 한다"
+    assert all(c["name"] == "find_similar_issues" for c in graphs), (
+        "이슈 이력 말고 다른 것이 그래프 검색으로 표시됐다"
+    )
+
+
+def test_diagnosis_panel_draws_the_traced_pair(factory):
+    """역추적한 두 자리를 실제로 잘라 보여줘야 한다.
+
+    "격자(6,5), 거리 0.0059" 라고 글로만 적으면 확인할 방법이 없다.
+    """
+    from app.view import render_page
+
+    outcome = run(factory, patch_override="defect")
+    if outcome.inference is None:
+        pytest.skip("이 실행에서는 추론까지 가지 않았다")
+
+    html = render_page(outcome, outcome.issue_text)
+    assert "이상 점수 히트맵" in html
+    assert "이슈 이력 그래프" in html
+    assert "무엇을 어떻게 찾았나" in html
+
+    top = outcome.inference.top_match
+    grid_h, grid_w = outcome.grid
+    # 두 크롭이 같은 격자 기준으로 걸려야 한다. 화면이 좌표를 따로 계산하면
+    # 두 벌이 되고 한쪽만 틀어져 엉뚱한 자리를 자른다.
+    assert f"row={top.query.row}&amp;col={top.query.col}" in html
+    assert f"row={top.bank.row}&amp;col={top.bank.col}" in html
+    assert f"grid_h={grid_h}&amp;grid_w={grid_w}" in html

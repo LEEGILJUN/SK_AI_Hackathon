@@ -20,6 +20,7 @@ from .base import (
     CriteriaRule,
     DefectDistribution,
     ImageRecord,
+    IssueEdge,
     PastIssue,
     QualityBaselineRecord,
     ThresholdRecord,
@@ -27,6 +28,52 @@ from .base import (
 
 #: 이 값들은 전부 임시로 지어낸 것이다. 실데이터가 아니다.
 IS_MOCK = True
+
+
+#: 이슈 이력 그래프 — 온톨로지가 실제로 사는 곳.
+#:
+#: 조회 계층의 나머지는 전부 조인으로 답한다. 여기만 그래프인 이유는 운영
+#: 이력이 **개체 사이의 관계 자체가 답**이기 때문이다. "이 증상이 다른 라인에서
+#: 어떤 원인으로 규명돼 어떤 조치로 해결됐나"는 이슈→원인→조치→결과를 따라가야
+#: 나오고, 표로 만들면 매번 새 조인을 짜야 한다.
+#:
+#: 이동현의 실제 그래프가 오면 이 상수가 빠진다. 스키마는 같다.
+ISSUE_GRAPH: list[dict] = [
+    {
+        "issue_id": "ISS-0042", "line": "line_01", "object_name": "capsules",
+        "defect_type": "dent", "cause": "bank_contamination",
+        "action": "오염 샘플 2장 제거 후 뱅크 재구성", "resolved": True,
+        "summary": "정상 학습셋에 불량이 섞여 같은 유형을 정상으로 끌어당기고 있었다.",
+    },
+    {
+        "issue_id": "ISS-0031", "line": "line_02", "object_name": "capsules",
+        "defect_type": "scratch", "cause": "threshold",
+        "action": "임계값 2.35 → 2.10 재조정", "resolved": True,
+        "summary": "이상 점수는 충분히 높았으나 임계값 바로 아래에 몰려 있었다.",
+    },
+    {
+        "issue_id": "ISS-0055", "line": "line_03", "object_name": "macaroni1",
+        "defect_type": "dent", "cause": "normal_overlap",
+        "action": "촬영 각도 변경 · 전용 판별 로직 추가", "resolved": True,
+        "summary": "최근접 패치가 진짜 정상품이었다. 재구성으로는 해결되지 않는 유형.",
+    },
+    {
+        "issue_id": "ISS-0067", "line": "line_02", "object_name": "pcb1",
+        "defect_type": "dent", "cause": "coverage_gap",
+        "action": "야간 로트 정상 이미지 40장 보충", "resolved": True,
+        "summary": "야간 조명 조건의 정상 패치가 뱅크 구성에 없었다.",
+    },
+    {
+        "issue_id": "ISS-0071", "line": "line_01", "object_name": "capsules",
+        "defect_type": "dent", "cause": "equipment_optics",
+        "action": "설비 점검 요청 — 조명 열화 확인", "resolved": False,
+        "summary": "화질 지표가 기준 분포를 벗어났다. 모델 문제가 아니다.",
+    },
+]
+
+#: 어느 속성이 겹치면 얼마나 가까운 것으로 보는가.
+#: 자리표시 값이며, 실제 가중치는 시나리오로 측정해 정해야 한다.
+_MATCH_WEIGHT = {"object_name": 0.45, "defect_type": 0.40, "line": 0.15}
 
 
 class MockLookup:
@@ -168,7 +215,59 @@ class MockLookup:
         self._record(
             "find_similar_issues", line=line, object_name=object_name, defect_type=defect_type
         )
-        return self.similar_issues[:limit]
+        if self.similar_issues:
+            # 생성자로 직접 넣어 준 것이 있으면 그것을 쓴다. 테스트가 특정
+            # 시나리오를 만들 때 그래프를 통째로 바꾸지 않아도 되게 한다.
+            return self.similar_issues[:limit]
+        return self._walk_graph(line, object_name, defect_type)[:limit]
+
+    def _walk_graph(
+        self, line: str, object_name: str, defect_type: str | None
+    ) -> list[PastIssue]:
+        """이슈 이력 그래프를 걸어 유사 사례를 찾는다.
+
+        **점수만 돌려주지 않는다.** 어떤 간선을 밟아 도달했는지를 함께 남긴다.
+        "왜 비슷하다고 봤는가"를 사람이 검증할 수 없으면 그래프 검색은
+        블랙박스가 되고, 그러면 중복 차단이라는 역할도 못 맡긴다.
+        """
+        query = {"line": line, "object_name": object_name, "defect_type": defect_type}
+        found: list[PastIssue] = []
+
+        for node in ISSUE_GRAPH:
+            matched = [k for k, w in _MATCH_WEIGHT.items()
+                       if query.get(k) and query[k] == node.get(k)]
+            if not matched:
+                continue
+            score = sum(_MATCH_WEIGHT[k] for k in matched)
+
+            issue = node["issue_id"]
+            path = [IssueEdge(issue, "발생_라인", node["line"]),
+                    IssueEdge(issue, "대상_품목", node["object_name"])]
+            if node.get("defect_type"):
+                path.append(IssueEdge(issue, "결함_유형", node["defect_type"]))
+            path.append(IssueEdge(issue, "진단_원인", node["cause"]))
+            path.append(IssueEdge(node["cause"], "조치", node["action"]))
+            path.append(IssueEdge(node["action"], "결과",
+                                  "해결" if node["resolved"] else "미해결"))
+
+            found.append(
+                PastIssue(
+                    issue_id=issue,
+                    line=node["line"],
+                    object_name=node["object_name"],
+                    cause=node["cause"],
+                    action=node["action"],
+                    resolved=node["resolved"],
+                    similarity=round(score, 2),
+                    summary=node["summary"],
+                    defect_type=node.get("defect_type"),
+                    path=path,
+                    matched_on=matched,
+                )
+            )
+
+        found.sort(key=lambda i: -i.similarity)
+        return found
 
     # ── MES 쪽 ──────────────────────────────────────────────────────────
 
