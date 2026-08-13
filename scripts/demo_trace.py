@@ -177,6 +177,7 @@ def main() -> None:
     print(f"임계값 스윕   홀드아웃 양품 {len(holdout_normal)}장 / 불량 {len(holdout_defect)}장")
     print("=" * 68)
 
+    verdicts: dict[str, object] = {}
     for label, bank in (("깨끗한 뱅크", clean), ("오염된 뱅크", dirty)):
         normals = score_images(holdout_normal, bank, embedder, root=root)
         defects = score_images(holdout_defect, bank, embedder, root=root)
@@ -187,6 +188,8 @@ def main() -> None:
         print(format_curve(curve, rows=5))
         print(f"  판정: {'임계값 조정으로 해결 가능' if verdict.achievable else '임계값 조정으로 해결 불가'}")
         print(f"  근거: {verdict.reason}")
+
+        verdicts[label] = verdict
 
         if label == "깨끗한 뱅크" and verdict.required_threshold is not None:
             operating = verdict.required_threshold
@@ -199,10 +202,28 @@ def main() -> None:
                 f"미검출 {at_operating.missed}건 (검출률 {at_operating.detection_rate:.0%})"
             )
 
+    # ── 맺음말 ────────────────────────────────────────────────────────
+    # 실제 판정을 읽어서 말한다. 문장을 고정해 두면 데이터가 바뀔 때 화면에
+    # 거짓이 뜬다. 실제로 한 번 그랬다 — "두 경우 모두 다시 잡으면 된다로
+    # 읽힌다"고 적혀 있었는데 VisA 실측에서는 둘 다 "해결 불가"였다.
+    dirty_verdict = verdicts.get("오염된 뱅크")
+    print("\n요점")
+    if dirty_verdict is not None and not dirty_verdict.achievable:
+        print(
+            "  스윕은 오염된 뱅크를 '임계값 조정으로 해결 불가'로 판정했다.\n"
+            "  여기까지는 맞다. 문제는 **정상 분포 중첩에서도 똑같이 '해결 불가'가\n"
+            "  나온다**는 것이다. 두 원인은 조치가 정반대다 — 오염은 제거 후\n"
+            "  재구성, 중첩은 재구성 금지."
+        )
+    else:
+        print(
+            "  스윕은 오염된 뱅크를 '임계값 조정으로 해결 가능'으로 판정했다.\n"
+            "  임계값 문제와 구분되지 않는다는 뜻이다."
+        )
     print(
-        "\n요점: 스윕만 보면 두 경우 모두 '임계값을 다시 잡으면 된다'로 읽힌다.\n"
-        "      점수가 떨어진 이유가 뱅크에 섞인 결함이라는 사실은 역추적에서만 나온다.\n"
-        "      임계값을 다시 잡으면 증상은 사라지지만 오염은 그대로 남는다."
+        "  어느 쪽이든 스윕은 '왜 안 되는지'를 말해주지 못한다.\n"
+        "  그 갈림은 역추적이 만든다 — 최근접 패치가 잘못 섞인 결함인지\n"
+        "  진짜 정상품인지가 원인을 가른다."
     )
 
 

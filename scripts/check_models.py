@@ -109,40 +109,69 @@ def check_tools(adapter: ModelAdapter) -> bool:
 
 
 def check_vision(adapter: ModelAdapter) -> bool:
-    """이미지를 실제로 읽는가. 판별 항목 1번과 5번이 여기에 걸려 있다."""
+    """이미지를 실제로 읽는가. 판별 항목 1번과 5번이 여기에 걸려 있다.
+
+    판정 기준은 **틀린 답을 내지 않는가** 다.
+
+      실패  결함에 normal 을 냈다 / 정상에 defect 를 냈다
+      보류  unknown — 실패가 아니다
+      통과  틀린 답이 하나도 없다
+
+    unknown 을 실패로 치면 안 된다. 모를 때 지어내지 않는 것은 설계 의도이고,
+    그런 판정은 usable=False 로 빠져 사람에게 넘어간다. 실제로 이 검사가
+    정상 이미지에 unknown 을 냈다고 모델을 탈락시킨 적이 있는데, 같은 모델이
+    VisA 실데이터에서는 10장 중 9장을 맞혔다. 쓸 수 있는 모델을 "쓰지 마라"고
+    판정한 것이다.
+
+    합성 이미지는 체커보드 무늬라 "제품 표면이 아니다"라는 답이 오히려 정확할
+    수 있다. 그래서 여기서는 **거짓 판정만** 잡고, 실제 성능은 VisA 로 잰다
+    (scripts/measure_trace_crop.py).
+    """
     from tests.synthetic import make_defect, make_normal
 
     if adapter.is_stub:
         print(f"{SKIP} 이미지 판독 — 스텁이라 의미 없음")
         return True
 
-    defect_judgment = judge_defect_visible(adapter, make_defect(7))
-    normal_judgment = judge_defect_visible(adapter, make_normal(7))
+    cases = [
+        ("결함 이미지", make_defect(7), "defect", "normal"),
+        ("정상 이미지", make_normal(7), "normal", "defect"),
+    ]
 
-    print(
-        f"       결함 이미지 → {defect_judgment.verdict} "
-        f"(확신 {defect_judgment.confidence:.2f}) {defect_judgment.reason[:50]}"
-    )
-    print(
-        f"       정상 이미지 → {normal_judgment.verdict} "
-        f"(확신 {normal_judgment.confidence:.2f}) {normal_judgment.reason[:50]}"
-    )
+    wrong: list[str] = []
+    held = 0
 
-    if defect_judgment.verdict == "unknown" and normal_judgment.verdict == "unknown":
-        print(f"{FAIL} 이미지 판독 — 두 이미지 모두 판정하지 못했다")
+    for label, image, expected, forbidden in cases:
+        judgment = judge_defect_visible(adapter, image)
+        print(
+            f"       {label} → {judgment.verdict} "
+            f"(확신 {judgment.confidence:.2f}) {judgment.reason[:50]}"
+        )
+        if judgment.verdict == forbidden:
+            wrong.append(f"{label}에 {forbidden}")
+        elif judgment.verdict == "unknown":
+            held += 1
+
+    if wrong:
+        print(
+            f"{FAIL} 이미지 판독 — 거짓 판정 {len(wrong)}건 ({', '.join(wrong)}). "
+            f"판별 1·5번을 이 모델로 쓸 수 없다."
+        )
         return False
 
-    # 합성 이미지는 사람 눈에 명확히 다르다. 여기서 구분하지 못하면
-    # 실제 결함 판독은 더 어렵다.
-    if defect_judgment.verdict == "defect" and normal_judgment.verdict == "normal":
-        print(f"{OK} 이미지 판독 — 합성 결함과 정상을 구분함")
-        return True
+    if held:
+        print(
+            f"{OK} 이미지 판독 — 거짓 판정 없음. 보류 {held}건은 실패가 아니다 "
+            f"(모를 때 지어내지 않는 것이 설계 의도)"
+        )
+    else:
+        print(f"{OK} 이미지 판독 — 결함과 정상을 구분함")
 
     print(
-        f"{FAIL} 이미지 판독 — 응답은 오지만 명확한 합성 이미지를 구분하지 못한다. "
-        f"판별 항목 1·5번의 신뢰도를 낮게 잡아야 한다."
+        "       합성 이미지는 사전 점검용이다. 실제 판독 성능은 VisA 로 재라 — "
+        "scripts/measure_trace_crop.py"
     )
-    return False
+    return True
 
 
 def main() -> int:
