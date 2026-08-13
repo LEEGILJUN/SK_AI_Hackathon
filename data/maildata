@@ -1,0 +1,872 @@
+# 24개 미검 진단 시나리오(scenarios_undetection_diagnosis.yaml)에 대응하는
+# 인테이크 메일(input 블록) 세트
+#
+# 전달 구조: 고객/현장(공정기술·양산품질·라인관리자·품질검사원) → 법인MI → AI Squad TF
+# 공통 규칙:
+#  - 전건 intake_verdict 목표: proceed (원인 채점용 24건이므로 진단 가능한 정보는 모두 포함)
+#  - 생산기간은 본문에서 의도적으로 생략 (로트/라인/불량유형만 제공, MES 역산이 실제 패턴)
+#  - CR(휨 출하 건)은 고객 유출 성격이라 제목에 [중요] 태그
+#  - 이메일 도메인은 전건 @example.com, 사명은 가상제조 주식회사, 인명은 가상
+
+# =====================================================================
+# SC-TH-001 : PCB 엣지 크랙 미검 - threshold 과보수 설정
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 최법인 <beopin.choi@example.com>
+        받는사람: 검사기술팀(AI Squad TF) <vision-ops@example.com>
+        제목: [line_01] PCB 크랙 미검 건 공유
+        보낸시각: 2026-06-11 14:20
+
+        AI Squad TF 님,
+
+        현장에서 아래와 같이 미검 이슈가 접수되어 공유드립니다. 확인 부탁드립니다.
+
+        ---------- 원본 메일 ----------
+        보낸사람: 김공기 <gonggi.kim@example.com>
+        받는사람: 법인 MI팀 <mi-ops@example.com>
+        제목: [line_01] PCB 크랙 미검 건
+        보낸시각: 2026-06-11 09:40
+
+        line_01에서 PCB 엣지 크랙으로 보이는 미검 건 발생했습니다.
+        관련 로트 첨부 이미지 확인 부탁드립니다.
+        --------------------------------
+
+        --
+        최법인
+        법인 MI팀 / 가상제조 주식회사
+
+      email:
+        from_role: 법인MI담당자
+        thread_depth: 2
+        has_quoted_history: true
+        subject_matches_body: true
+
+      attachments:
+        - line_01/2026-06-10/LOT-20260610-003/img_0087.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-06-11T14:20:00
+# 노림: proceed / 빠뜨린 정보: 생산기간(로트 기반 역산 필요, 의도적)
+
+# =====================================================================
+# SC-TH-002 : line_02 야간 접수 - 원인 불명 상태의 미검 의심
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 김공기 <gonggi.kim@example.com>
+        받는사람: 법인 MI팀 <mi-ops@example.com>
+        제목: line_02 미검 관련
+        보낸시각: 2026-06-22 23:47
+
+        line_02 요즘 자꾸 놓치는거 같은데 확인좀요 ㅠㅠ
+        사진 하나 첨부합니다.
+
+        --
+        김공기
+
+      email:
+        from_role: 라인관리자
+        thread_depth: 1
+        has_quoted_history: false
+        subject_matches_body: false
+
+      attachments:
+        - line_02/2026-06-21/LOT-20260622-011/img_0203.png
+      reporter_role: 라인관리자
+      submitted_at: 2026-06-22T23:47:00
+# 노림: proceed (거친 문장 처리 검증) / 빠뜨린 정보: 결함유형·정확한 건수, 제목이 본문과 어긋남(subject_matches_body:false)
+
+# =====================================================================
+# SC-TH-003 : macaroni1 표면 결함 미검 재현
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 최법인 <beopin.choi@example.com>
+        받는사람: 검사기술팀(AI Squad TF) <vision-ops@example.com>
+        제목: [line_03] 표면 결함 미검 재현 건
+        보낸시각: 2026-07-02 10:05
+
+        아래 건 전달드립니다.
+
+        ---------- 원본 메일 ----------
+        보낸사람: 박양품 <yangpum.park@example.com>
+        받는사람: 법인 MI팀 <mi-ops@example.com>
+        제목: [line_03] 표면 결함 미검출 재현
+        보낸시각: 2026-07-01 17:30
+
+        line_03 표면 결함 미검출 건 재현됐습니다. 이전에도 비슷한 사례가 있었던 걸로
+        기억하는데 이번에도 같은 유형인지는 확인이 필요할 것 같습니다.
+        --------------------------------
+
+        --
+        최법인
+        법인 MI팀 / 가상제조 주식회사
+
+      email:
+        from_role: 법인MI담당자
+        thread_depth: 2
+        has_quoted_history: true
+        subject_matches_body: true
+
+      attachments:
+        - line_03/2026-07-01/LOT-20260701-005/img_0119.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-07-02T10:05:00
+# 노림: proceed / 함정: "이전에도 비슷한 사례" 언급이 duplicate로 오판하도록 유도하나
+#       실제 로트·시점이 달라 별개 건 -> proceed가 정답
+
+# =====================================================================
+# SC-TH-004 : capsules 미검 1건 - threshold 경계 근접
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 최법인 <beopin.choi@example.com>
+        받는사람: 검사기술팀(AI Squad TF) <vision-ops@example.com>
+        제목: [line_04] 캡슐 표면 미검 건
+        보낸시각: 2026-07-16 09:30
+
+        ---------- 원본 메일 ----------
+        보낸사람: 김공기 <gonggi.kim@example.com>
+        받는사람: 법인 MI팀 <mi-ops@example.com>
+        제목: [line_04] 캡슐 표면 미검 1건
+        보낸시각: 2026-07-15 18:10
+
+        line_04 캡슐 표면 미검 1건 확인했습니다. threshold 쪽 문제 아닐까 싶은데
+        확인 부탁드립니다.
+        --------------------------------
+
+        --
+        최법인
+        법인 MI팀 / 가상제조 주식회사
+
+      email:
+        from_role: 법인MI담당자
+        thread_depth: 2
+        has_quoted_history: true
+        subject_matches_body: true
+
+      attachments:
+        - line_04/2026-07-15/LOT-20260715-002/img_0044.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-07-16T09:30:00
+# 노림: proceed / 함정: 제보자가 이미 "threshold 문제"로 원인을 추정해 적음 -> 에이전트가
+#       이 추정에 편향되지 않고 evidence로 직접 검증해야 함
+
+# =====================================================================
+# SC-BC-001 : PCB 이물 미검 - v3 뱅크 업데이트 이후 스코어 이상
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 최법인 <beopin.choi@example.com>
+        받는사람: 검사기술팀(AI Squad TF) <vision-ops@example.com>
+        제목: [line_01] PCB 이물 미검 건 - 뱅크 업데이트 이후 스코어 이상
+        보낸시각: 2026-06-07 22:10
+
+        AI Squad TF 님,
+
+        아래 건 전달드립니다. 최근 뱅크 업데이트(v3) 이후부터 스코어가
+        이상하게 낮게 나오는 것 같다는 의견이 있어 같이 공유드립니다.
+
+        ---------- 원본 메일 ----------
+        보낸사람: 김공기 <gonggi.kim@example.com>
+        받는사람: 법인 MI팀 <mi-ops@example.com>
+        제목: [line_01] PCB 표면 이물 미검
+        보낸시각: 2026-06-07 15:50
+
+        line_01 PCB 표면 이물 미검 건입니다. 뱅크 업데이트 이후부터 뭔가
+        스코어가 이상해 보입니다. 확인 부탁드립니다.
+        --------------------------------
+
+        --
+        최법인
+        법인 MI팀 / 가상제조 주식회사
+
+      email:
+        from_role: 법인MI담당자
+        thread_depth: 2
+        has_quoted_history: true
+        subject_matches_body: true
+
+      attachments:
+        - line_01/2026-06-05/LOT-20260605-014/img_0142.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-06-07T22:10:00
+# 노림: proceed / 뱅크 버전 시점 단서가 스코어 이상 패턴 역추적의 실마리
+
+# =====================================================================
+# SC-BC-002 : PCB 크랙 동일 위치 반복 미검 - 뱅크 오염 의심
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 최법인 <beopin.choi@example.com>
+        받는사람: 검사기술팀(AI Squad TF) <vision-ops@example.com>
+        제목: [line_02] PCB 크랙 미검 2건 - 동일 위치 반복
+        보낸시각: 2026-06-19 16:40
+
+        ---------- 원본 메일 ----------
+        보낸사람: 김공기 <gonggi.kim@example.com>
+        받는사람: 법인 MI팀 <mi-ops@example.com>
+        제목: [line_02] 크랙 미검 재발
+        보낸시각: 2026-06-19 11:05
+
+        line_02 크랙 미검 2건입니다. 같은 위치에서 계속 발생하는 것 같아서
+        뱅크 쪽도 한번 봐주셨으면 합니다.
+        --------------------------------
+
+        --
+        최법인
+        법인 MI팀 / 가상제조 주식회사
+
+      email:
+        from_role: 법인MI담당자
+        thread_depth: 2
+        has_quoted_history: true
+        subject_matches_body: true
+
+      attachments:
+        - line_02/2026-06-18/LOT-20260618-007/img_0055.png
+        - line_02/2026-06-18/LOT-20260618-007/img_0056.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-06-19T16:40:00
+# 노림: proceed / 첨부 2건(같은 위치 반복 신호), 로트 단일
+
+# =====================================================================
+# SC-BC-003 : cashew 표면 결함 통과 반복 - 법인MI 자체 로그 발견
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 최법인 <beopin.choi@example.com>
+        받는사람: 검사기술팀(AI Squad TF) <vision-ops@example.com>
+        제목: [line_03] 먹통 재발 - 스코어 로그 확인 요청
+        보낸시각: 2026-06-26 20:15
+
+        line_03에서 먹통(불량인데 그냥 통과) 계속 나온다는 현장 얘기가 있어
+        저희 쪽에서 스코어 로그 먼저 확인해봤습니다. 뭐가 문제인지 같이
+        봐주시면 좋겠습니다.
+
+        --
+        최법인
+        법인 MI팀 / 가상제조 주식회사
+
+      email:
+        from_role: 법인MI담당자
+        thread_depth: 1
+        has_quoted_history: false
+        subject_matches_body: true
+
+      attachments:
+        - line_03/2026-06-25/LOT-20260625-009/img_0071.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-06-26T20:15:00
+# 노림: proceed / 법인MI가 로그 확인 후 직접 1차 작성자가 된 케이스(현장 원본 인용 없음).
+#       "먹통"이라는 비표준 현장 은어를 그대로 옮김 - 정규화 필요
+
+# =====================================================================
+# SC-BC-004 : PCB 배선 결함 미검 - 스코어 전반적 하락
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 최법인 <beopin.choi@example.com>
+        받는사람: 검사기술팀(AI Squad TF) <vision-ops@example.com>
+        제목: [line_04] PCB 배선 결함 미검 - 스코어 전반적 하락 의심
+        보낸시각: 2026-07-04 11:00
+
+        ---------- 원본 메일 ----------
+        보낸사람: 김공기 <gonggi.kim@example.com>
+        받는사람: 법인 MI팀 <mi-ops@example.com>
+        제목: [line_04] 배선 결함 미검
+        보낸시각: 2026-07-03 20:40
+
+        line_04 PCB 배선 결함 미검 건입니다. 스코어 로그를 보니 특정 시점부터
+        이상 점수 자체가 전반적으로 낮아진 것 같습니다.
+        --------------------------------
+
+        --
+        최법인
+        법인 MI팀 / 가상제조 주식회사
+
+      email:
+        from_role: 법인MI담당자
+        thread_depth: 2
+        has_quoted_history: true
+        subject_matches_body: true
+
+      attachments:
+        - line_04/2026-07-03/LOT-20260703-018/img_0098.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-07-04T11:00:00
+# 노림: proceed / 함정: "전반적으로 낮아짐"이 threshold 문제처럼 보이나 실제는 뱅크 오염
+
+# =====================================================================
+# SC-CV-001 : 신규 방향 스크래치 미검 - 커버리지 부족
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 최법인 <beopin.choi@example.com>
+        받는사람: 검사기술팀(AI Squad TF) <vision-ops@example.com>
+        제목: [line_01] 신규 형태 스크래치 미검 건
+        보낸시각: 2026-06-09 13:25
+
+        ---------- 원본 메일 ----------
+        보낸사람: 박양품 <yangpum.park@example.com>
+        받는사람: 법인 MI팀 <mi-ops@example.com>
+        제목: [line_01] 처음 보는 스크래치 미검
+        보낸시각: 2026-06-09 08:50
+
+        line_01에서 처음 보는 형태의 스크래치 결함 미검이 확인됐습니다.
+        기존에 없던 방향이라 참고 부탁드립니다.
+        --------------------------------
+
+        --
+        최법인
+        법인 MI팀 / 가상제조 주식회사
+
+      email:
+        from_role: 법인MI담당자
+        thread_depth: 2
+        has_quoted_history: true
+        subject_matches_body: true
+
+      attachments:
+        - line_01/2026-06-08/LOT-20260608-004/img_0063.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-06-09T13:25:00
+# 노림: proceed / "처음 보는 형태"라는 표현이 커버리지 부족의 직접적 단서
+
+# =====================================================================
+# SC-CV-002 : 특정 결함 클래스(이물)만 반복 미검
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 최법인 <beopin.choi@example.com>
+        받는사람: 검사기술팀(AI Squad TF) <vision-ops@example.com>
+        제목: [line_02] 이물 미검 반복 - 스크래치는 정상 검출
+        보낸시각: 2026-06-20 15:50
+
+        ---------- 원본 메일 ----------
+        보낸사람: 김공기 <gonggi.kim@example.com>
+        받는사람: 법인 MI팀 <mi-ops@example.com>
+        제목: [line_02] 이물 오염만 계속 미검
+        보낸시각: 2026-06-20 09:15
+
+        line_02 이물 오염 결함만 계속 미검됩니다. 스크래치는 잘 잡히는데
+        이물만 유독 반복되는 것 같습니다.
+        --------------------------------
+
+        --
+        최법인
+        법인 MI팀 / 가상제조 주식회사
+
+      email:
+        from_role: 법인MI담당자
+        thread_depth: 2
+        has_quoted_history: true
+        subject_matches_body: true
+
+      attachments:
+        - line_02/2026-06-19/LOT-20260619-006/img_0037.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-06-20T15:50:00
+# 노림: proceed / 결함유형별 편중 패턴이 명시적으로 드러난 케이스
+
+# =====================================================================
+# SC-CV-003 : 뱅크 경량화(v4) 이후 미검·과검 동시 증가 - 법인MI 자체 발견
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 최법인 <beopin.choi@example.com>
+        받는사람: 검사기술팀(AI Squad TF) <vision-ops@example.com>
+        제목: [line_03] 뱅크 경량화(v4) 이후 미검·과검 동시 증가 모니터링 결과
+        보낸시각: 2026-06-29 18:00
+
+        AI Squad TF 님,
+
+        저희 쪽 모니터링 지표 확인 결과, line_03에서 최근 뱅크 경량화(v4)
+        배포 이후로 미검과 과검이 둘 다 늘어난 것으로 보입니다. 미검 건
+        먼저 진단 부탁드립니다.
+
+        --
+        최법인
+        법인 MI팀 / 가상제조 주식회사
+
+      email:
+        from_role: 법인MI담당자
+        thread_depth: 1
+        has_quoted_history: false
+        subject_matches_body: true
+
+      attachments:
+        - line_03/2026-06-28/LOT-20260628-010/img_0154.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-06-29T18:00:00
+# 노림: proceed / 법인MI 자체 모니터링 발견 케이스(현장 원본 없음)
+
+# =====================================================================
+# SC-CV-004 : 시점 불명 커버리지 저하 - 코어셋 노후화
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 김공기 <gonggi.kim@example.com>
+        받는사람: 법인 MI팀 <mi-ops@example.com>
+        제목: line_04 결함
+        보낸시각: 2026-07-11 22:30
+
+        line_04 결함 좀 이상하게 넘어가는거 많아진듯. 언제부턴지는
+        모르겠는데 확인 좀 부탁드려요.
+
+        --
+        김공기
+
+      email:
+        from_role: 라인관리자
+        thread_depth: 1
+        has_quoted_history: false
+        subject_matches_body: false
+
+      attachments:
+        - line_04/2026-07-10/LOT-20260710-013/img_0201.png
+      reporter_role: 라인관리자
+      submitted_at: 2026-07-11T22:30:00
+# 노림: proceed (거친 문장, 발생 시점 정보 없음) / 빠뜨린 정보: 결함유형 특정,
+#       발생 시점 - data drift형은 원래 시점 특정이 어려운 것과 맞물림
+
+# =====================================================================
+# SC-NO-001 : PCB 미세 결함 - 정상 배선 굴곡과 형상 유사
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 최법인 <beopin.choi@example.com>
+        받는사람: 검사기술팀(AI Squad TF) <vision-ops@example.com>
+        제목: [line_01] 미세 결함 미검 1건 - 육안 판정 애매
+        보낸시각: 2026-06-13 09:15
+
+        ---------- 원본 메일 ----------
+        보낸사람: 박양품 <yangpum.park@example.com>
+        받는사람: 법인 MI팀 <mi-ops@example.com>
+        제목: [line_01] 미세 결함 미검
+        보낸시각: 2026-06-12 19:20
+
+        line_01 미세 결함 미검 1건입니다. 육안으로도 애매한 수준이라
+        판정 확인 부탁드립니다.
+        --------------------------------
+
+        --
+        최법인
+        법인 MI팀 / 가상제조 주식회사
+
+      email:
+        from_role: 법인MI담당자
+        thread_depth: 2
+        has_quoted_history: true
+        subject_matches_body: true
+
+      attachments:
+        - line_01/2026-06-12/LOT-20260612-002/img_0019.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-06-13T09:15:00
+# 노림: proceed / "육안으로도 애매"라는 표현이 normal_overlap의 단서
+
+# =====================================================================
+# SC-NO-002 : 현장 오판정 의심 - 실제 결함 없음
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 김공기 <gonggi.kim@example.com>
+        받는사람: 법인 MI팀 <mi-ops@example.com>
+        제목: line_02
+        보낸시각: 2026-06-25 21:05
+
+        line_02 미검같은데 확인점요
+
+        --
+        김공기
+
+      email:
+        from_role: 라인관리자
+        thread_depth: 1
+        has_quoted_history: false
+        subject_matches_body: false
+
+      attachments:
+        - line_02/2026-06-24/LOT-20260624-005/img_0028.png
+      reporter_role: 라인관리자
+      submitted_at: 2026-06-25T21:05:00
+# 노림: proceed (거친 짧은 문장 처리) / 빠뜨린 정보: 결함유형, "미검같은데"라는
+#       불확실한 표현 자체가 정밀 재검이 필요함을 시사
+
+# =====================================================================
+# SC-NO-003 : 신규 디자인 변경으로 인한 실크스크린 오판정
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 최법인 <beopin.choi@example.com>
+        받는사람: 검사기술팀(AI Squad TF) <vision-ops@example.com>
+        제목: [line_03] 실크스크린 각인 근처 미검 신고
+        보낸시각: 2026-07-03 14:00
+
+        ---------- 원본 메일 ----------
+        보낸사람: 김공기 <gonggi.kim@example.com>
+        받는사람: 법인 MI팀 <mi-ops@example.com>
+        제목: [line_03] 실크스크린 각인 미검 의심
+        보낸시각: 2026-07-02 22:50
+
+        line_03 실크스크린 각인 근처 미검 신고 들어왔습니다. 최근 신규
+        디자인 변경이 있었다고 들었는데 그거랑 관련 있는지도 같이
+        봐주시면 좋겠습니다.
+        --------------------------------
+
+        --
+        최법인
+        법인 MI팀 / 가상제조 주식회사
+
+      email:
+        from_role: 법인MI담당자
+        thread_depth: 2
+        has_quoted_history: true
+        subject_matches_body: true
+
+      attachments:
+        - line_03/2026-07-02/LOT-20260702-008/img_0410.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-07-03T14:00:00
+# 노림: proceed / 디자인 변경 단서가 명시적으로 포함된 케이스
+
+# =====================================================================
+# SC-NO-004 : 반복적 경계선 형상 - threshold 근접으로 오인되기 쉬운 케이스
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 최법인 <beopin.choi@example.com>
+        받는사람: 검사기술팀(AI Squad TF) <vision-ops@example.com>
+        제목: [line_04] 미세 형상 미검 의심 - 경계선 케이스 반복
+        보낸시각: 2026-07-19 10:40
+
+        ---------- 원본 메일 ----------
+        보낸사람: 박양품 <yangpum.park@example.com>
+        받는사람: 법인 MI팀 <mi-ops@example.com>
+        제목: [line_04] 미세 형상 결함 미검 의심
+        보낸시각: 2026-07-18 16:15
+
+        line_04 미세 형상 결함 미검 의심 건입니다. 이전에도 비슷한
+        경계선 케이스가 있었던 것 같아서 같이 공유드립니다.
+        --------------------------------
+
+        --
+        최법인
+        법인 MI팀 / 가상제조 주식회사
+
+      email:
+        from_role: 법인MI담당자
+        thread_depth: 2
+        has_quoted_history: true
+        subject_matches_body: true
+
+      attachments:
+        - line_04/2026-07-18/LOT-20260718-011/img_0089.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-07-19T10:40:00
+# 노림: proceed / 함정: "이전에도 비슷한 케이스"가 duplicate를 암시하나 실제로는
+#       반복 발생하는 별개의 경계선 신규 건 -> proceed가 정답
+
+# =====================================================================
+# SC-EQ-001 : PCB 크랙 미검 - 이미지 흐림 의심
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 최법인 <beopin.choi@example.com>
+        받는사람: 검사기술팀(AI Squad TF) <vision-ops@example.com>
+        제목: [line_01] 크랙 미검 - 이미지 화질 이슈 의심
+        보낸시각: 2026-06-15 17:20
+
+        ---------- 원본 메일 ----------
+        보낸사람: 김공기 <gonggi.kim@example.com>
+        받는사람: 법인 MI팀 <mi-ops@example.com>
+        제목: [line_01] 크랙 미검
+        보낸시각: 2026-06-15 10:30
+
+        line_01 크랙 미검 건입니다. 최근 이미지가 좀 흐릿해 보인다는
+        얘기도 있어서 같이 확인 부탁드립니다.
+        --------------------------------
+
+        --
+        최법인
+        법인 MI팀 / 가상제조 주식회사
+
+      email:
+        from_role: 법인MI담당자
+        thread_depth: 2
+        has_quoted_history: true
+        subject_matches_body: true
+
+      attachments:
+        - line_01/2026-06-14/LOT-20260614-006/img_0140.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-06-15T17:20:00
+# 노림: proceed / "이미지가 흐릿해 보인다"는 광학 원인의 직접 단서
+
+# =====================================================================
+# SC-EQ-002 : PCB 결함 미검 재현 - 법인MI가 카메라 점검 이력 확인 요청
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 최법인 <beopin.choi@example.com>
+        받는사람: 검사기술팀(AI Squad TF) <vision-ops@example.com>
+        제목: [line_02] 결함 미검 재현 - 카메라 점검 이력 확인 요청
+        보낸시각: 2026-06-27 12:10
+
+        AI Squad TF 님,
+
+        line_02에서 결함 미검이 재현되어 공유드립니다. 저희 쪽에서 먼저
+        확인해보니 최근 카메라 쪽 점검 이력이 있는지가 궁금한데, 진단
+        결과와 같이 봐주시면 좋겠습니다.
+
+        --
+        최법인
+        법인 MI팀 / 가상제조 주식회사
+
+      email:
+        from_role: 법인MI담당자
+        thread_depth: 1
+        has_quoted_history: false
+        subject_matches_body: true
+
+      attachments:
+        - line_02/2026-06-26/LOT-20260626-012/img_0203.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-06-27T12:10:00
+# 노림: proceed / 법인MI 직접 작성(현장 원본 인용 없음), 설비 원인을 스스로 의심하는 케이스
+
+# =====================================================================
+# SC-EQ-003 : 이미지 화질 저하 의심 - 현장 구어체 보고
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 김공기 <gonggi.kim@example.com>
+        받는사람: 법인 MI팀 <mi-ops@example.com>
+        제목: line_03 사진 이상함
+        보낸시각: 2026-07-05 23:00
+
+        line_03 요새 사진들이 뭔가 뿌옇던데 그것 때문인가 미검이 있음.
+        확인 부탁드립니다.
+
+        --
+        김공기
+
+      email:
+        from_role: 라인관리자
+        thread_depth: 1
+        has_quoted_history: false
+        subject_matches_body: true
+
+      attachments:
+        - line_03/2026-07-04/LOT-20260704-004/img_0066.png
+      reporter_role: 라인관리자
+      submitted_at: 2026-07-05T23:00:00
+# 노림: proceed (구어체 처리) / "뿌옇다"는 표현이 화질 저하의 직접 단서
+
+# =====================================================================
+# SC-EQ-004 : 조명 밝기 이슈 관련 미검 발생
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 최법인 <beopin.choi@example.com>
+        받는사람: 검사기술팀(AI Squad TF) <vision-ops@example.com>
+        제목: [line_04] 결함 미검 - 조명 밝기 이슈 관련 의심
+        보낸시각: 2026-07-23 15:45
+
+        ---------- 원본 메일 ----------
+        보낸사람: 김공기 <gonggi.kim@example.com>
+        받는사람: 법인 MI팀 <mi-ops@example.com>
+        제목: [line_04] 결함 미검 발생
+        보낸시각: 2026-07-23 09:20
+
+        line_04 결함 미검 발생했습니다. 최근 조명 밝기 이슈가 있었다고
+        들었는데 관련 있는지 확인 부탁드립니다.
+        --------------------------------
+
+        --
+        최법인
+        법인 MI팀 / 가상제조 주식회사
+
+      email:
+        from_role: 법인MI담당자
+        thread_depth: 2
+        has_quoted_history: true
+        subject_matches_body: true
+
+      attachments:
+        - line_04/2026-07-22/LOT-20260722-009/img_0512.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-07-23T15:45:00
+# 노림: proceed / 조명 이슈 단서가 명시적으로 포함된 케이스
+
+# =====================================================================
+# SC-CR-001 : 휨(warp) 형상 - 검출됐으나 기준상 출하 [고객 유출]
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 최법인 <beopin.choi@example.com>
+        받는사람: 검사기술팀(AI Squad TF) <vision-ops@example.com>
+        제목: [중요][line_01] 휨 형상 출하 건 - 개선 요청
+        보낸시각: 2026-06-17 19:30
+
+        AI Squad TF 님,
+
+        아래 건 시급히 공유드립니다. 검사기는 검출했으나 출하까지 이어진
+        건으로 확인되어 원인 파악이 필요합니다.
+
+        ---------- 원본 메일 ----------
+        보낸사람: 박양품 <yangpum.park@example.com>
+        받는사람: 법인 MI팀 <mi-ops@example.com>
+        제목: [개선 요청] line_01 휨 형상 미검 유출
+        보낸시각: 2026-06-17 14:05
+
+        line_01 휨(warp) 형상 건입니다. 검사기는 이상으로 잡았는데
+        검사원이 그대로 출하시킨 이력이 확인됐습니다. 재발 방지 차원에서
+        원인 확인 부탁드립니다.
+        --------------------------------
+
+        --
+        최법인
+        법인 MI팀 / 가상제조 주식회사
+
+      email:
+        from_role: 법인MI담당자
+        thread_depth: 2
+        has_quoted_history: true
+        subject_matches_body: true
+
+      attachments:
+        - line_01/2026-06-16/LOT-20260616-003/img_0031.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-06-17T19:30:00
+# 노림: proceed / [중요] 태그 = 고객 유출 건. 검출 자체는 됐다는 정보가 이미 포함돼
+#       있어 threshold/뱅크 방향으로 잘못 진단하지 않는지가 핵심 함정
+
+# =====================================================================
+# SC-CR-002 : 휨 재발 - 동일 스펙 경계값 (과거 유사건 언급, duplicate 아님)
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 최법인 <beopin.choi@example.com>
+        받는사람: 검사기술팀(AI Squad TF) <vision-ops@example.com>
+        제목: [중요][line_02] 휨 관련 재발 건
+        보낸시각: 2026-07-01 08:50
+
+        AI Squad TF 님,
+
+        아래 건 공유드립니다. 지난번 line_01 휨 건과 유사한 것 같은데
+        확인 부탁드립니다.
+
+        ---------- 원본 메일 ----------
+        보낸사람: 김공기 <gonggi.kim@example.com>
+        받는사람: 법인 MI팀 <mi-ops@example.com>
+        제목: line_02 휨 재발
+        보낸시각: 2026-06-30 20:10
+
+        line_02 휨 관련 재발입니다. 지난번과 유사한 케이스로 보입니다.
+        --------------------------------
+
+        ---------- 참고: 지난 6월 회신 이력 ----------
+        보낸사람: 최이노 <ino.choi@example.com>
+        받는사람: 법인 MI팀 <mi-ops@example.com>
+        제목: RE: [중요][line_01] 휨 형상 출하 건 - 개선 요청
+        보낸시각: 2026-06-18 11:00
+
+        line_01 건은 판정 기준(스펙) 경계값 문제로 확인되어 기준 재검토를
+        진행 중입니다. 뱅크/threshold 조정 사안 아닙니다.
+        --------------------------------
+
+        --
+        최법인
+        법인 MI팀 / 가상제조 주식회사
+
+      email:
+        from_role: 법인MI담당자
+        thread_depth: 3
+        has_quoted_history: true
+        subject_matches_body: true
+
+      attachments:
+        - line_02/2026-06-30/LOT-20260630-014/img_0027.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-07-01T08:50:00
+# 노림: proceed (duplicate 아님) / 핵심 함정: AI Squad TF의 과거 회신 인용이 포함돼
+#       있어 "이미 처리된 건"으로 오판하기 쉬우나, line_02·다른 로트·다른 시점의
+#       신규 건 -> 인용된 값을 새 사건의 값으로 착각하지 않고 duplicate로 잘못
+#       끊지 않는지가 채점 포인트
+
+# =====================================================================
+# SC-CR-003 : 미검 접수됐으나 실제로는 기준 문제로 재확인된 건
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 최법인 <beopin.choi@example.com>
+        받는사람: 검사기술팀(AI Squad TF) <vision-ops@example.com>
+        제목: [중요][line_03] 휨 미검 신고 - 기준 문제 의심
+        보낸시각: 2026-07-10 13:15
+
+        ---------- 원본 메일 ----------
+        보낸사람: 박양품 <yangpum.park@example.com>
+        받는사람: 법인 MI팀 <mi-ops@example.com>
+        제목: line_03 휨 미검 건으로 접수됐으나 재확인 필요
+        보낸시각: 2026-07-10 08:30
+
+        line_03 미검 건으로 접수됐는데 저희 쪽에서 확인해보니 검사기는
+        실제로 잡았던 것 같습니다. 기준 문제인 것 같은데 정확한 원인
+        확인 부탁드립니다.
+        --------------------------------
+
+        --
+        최법인
+        법인 MI팀 / 가상제조 주식회사
+
+      email:
+        from_role: 법인MI담당자
+        thread_depth: 2
+        has_quoted_history: true
+        subject_matches_body: true
+
+      attachments:
+        - line_03/2026-07-09/LOT-20260709-006/img_0009.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-07-10T13:15:00
+# 노림: proceed / 제보자가 이미 "기준 문제"로 원인을 추정 - 에이전트가 이 추정에
+#       편향되지 않고 evidence 7종으로 독립 검증해야 하는 케이스
+
+# =====================================================================
+# SC-CR-004 : 스크래치 길이 기준 - 다른 결함유형에서의 기준 경계 사례
+# =====================================================================
+    input:
+      issue_text: |
+        보낸사람: 최법인 <beopin.choi@example.com>
+        받는사람: 검사기술팀(AI Squad TF) <vision-ops@example.com>
+        제목: [line_04] 미세 스크래치 미검 신고
+        보낸시각: 2026-07-26 09:55
+
+        ---------- 원본 메일 ----------
+        보낸사람: 박양품 <yangpum.park@example.com>
+        받는사람: 법인 MI팀 <mi-ops@example.com>
+        제목: line_04 미세 스크래치 미검
+        보낸시각: 2026-07-25 17:40
+
+        line_04 미세 스크래치 미검 신고입니다. 검출 자체는 됐던 것 같다는
+        의견이 있어서 같이 전달드립니다.
+        --------------------------------
+
+        --
+        최법인
+        법인 MI팀 / 가상제조 주식회사
+
+      email:
+        from_role: 법인MI담당자
+        thread_depth: 2
+        has_quoted_history: true
+        subject_matches_body: true
+
+      attachments:
+        - line_04/2026-07-25/LOT-20260725-010/img_0018.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-07-26T09:55:00
+# TODO(장영진): 현장 확인 필요 - 휨 외 결함유형에서의 기준 문제 실사례는 미확인,
+# 구조 다양성 확보 목적으로 구성됨. [중요] 태그 없음(고객 유출 확인 안 됨으로 가정).
