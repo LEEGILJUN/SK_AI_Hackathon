@@ -160,6 +160,59 @@ def test_contamination_without_candidates_stops():
     assert "특정하지 못했다" in plan.reason
 
 
+def test_isolation_alone_never_removes_an_image(embedder, tmp_path):
+    """고립도만 높은 이미지를 역추적 없이 빼면 안 된다.
+
+    VisA 실측에서 suspect_images() 가 낸 후보 1개 중 오염원은 0개였다. 오염은
+    패치 단위로 일어나는데 고립도는 이미지 단위 평균이라 정상부 패치에
+    희석된다. 이 경로를 열어 두면 멀쩡한 정상품을 버린다.
+    """
+    normal = write_set(tmp_path / "normal", 8, "normal", 0)
+    defect = write_set(tmp_path / "defect", 2, "defect", 500)
+    bank = build_bank(
+        list(normal) + list(defect), embedder,
+        coreset_ratio=0.5, seed=0, bank_version="v1", root=tmp_path,
+    )
+
+    # 역추적 결과를 주지 않는다. 고립도만 남는다.
+    plan = plan_curation(diagnosis("bank_contamination"), bank=bank, missed_results=[])
+
+    assert plan.touches_bank is False, "고립도만으로 뱅크를 건드리면 안 된다"
+    assert not plan.remove
+    assert "고립도는 단독 근거로 쓰지 않는다" in plan.reason
+
+
+def test_removal_plan_reports_what_it_costs(embedder, tmp_path):
+    """빼는 계획은 뱅크에서 무엇이 함께 빠지는지 숫자로 남겨야 한다.
+
+    오염 이미지를 통째로 빼면 그 이미지의 멀쩡한 정상 패치도 같이 빠진다.
+    실측에서 그 비율이 98.5% 였다. 막지는 않되 보이게 한다.
+    """
+    normal = write_set(tmp_path / "normal", 8, "normal", 0)
+    defect = write_set(tmp_path / "defect", 2, "defect", 500)
+    bank = build_bank(
+        list(normal) + list(defect), embedder,
+        coreset_ratio=0.5, seed=0, bank_version="v1", root=tmp_path,
+    )
+    target = bank.images[-1]
+
+    plan = plan_curation(
+        diagnosis("bank_contamination", nearest_image=target, patch_verdict="defect"),
+        bank=bank,
+        missed_results=[missed(target)] * 2,
+    )
+
+    assert plan.touches_bank is True
+    cost = plan.coverage_cost
+    assert cost is not None
+    assert cost.removed_images == 1
+    assert cost.removed_patches > 0
+    assert cost.bank_patches_before == len(bank)
+    assert 0 < cost.patch_share < 1
+    assert cost.describe() in plan.reason
+    assert plan.remove[0].patch_count == cost.removed_patches
+
+
 # ── 커버리지 부족 — 무엇을 채울 것인가 ─────────────────────────────────
 
 

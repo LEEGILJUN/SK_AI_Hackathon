@@ -105,6 +105,37 @@ class ToolRegistry:
 
 
 # ── 도구 명세 ───────────────────────────────────────────────────────────
+#
+# 명세만 여기 둔다. 실행 함수는 부르는 쪽이 붙인다. 같은 도구 이름이 데모와
+# 실운영에서 다른 구현을 가리킬 수 있어야 하기 때문이다.
+
+INTAKE_SPEC = ToolSpec(
+    name="intake_issue",
+    description=(
+        "현장에서 올라온 자연어 이슈를 구조화하고 진단으로 넘길지 판단한다. "
+        "정보가 모자라면 무엇이 필요한지 돌려주고, 이미 해결된 사례면 여기서 끊는다. "
+        "가장 먼저 부를 도구다."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "line": {"type": "string", "description": "라인 ID. 이슈 원문에 있으면 넣는다"},
+            "object_name": {"type": "string", "description": "대상 품목"},
+            "defect_type": {"type": "string", "description": "결함 유형"},
+        },
+    },
+)
+
+CHECKS_SPEC = ToolSpec(
+    name="run_checks",
+    description=(
+        "판별 항목 일곱 가지를 모은다 — 결함이 보이는가, 화질이 기준을 벗어났는가, "
+        "이상 점수가 임계값 대비 어디인가, 최근접 정상 패치가 무엇인가, 그 패치가 "
+        "결함인가, 현재 조건의 정상 패치가 뱅크에 있는가, 기준상 불량이 맞는가. "
+        "진단의 입력이며 인테이크 다음에 부른다."
+    ),
+    parameters={"type": "object", "properties": {}},
+)
 
 DIAGNOSE_SPEC = ToolSpec(
     name="diagnose_issue",
@@ -156,6 +187,34 @@ REBUILD_SPEC = ToolSpec(
 COMPARE_SPEC = ToolSpec(
     name="compare_banks",
     description="재구성 전후 뱅크의 구성 차이를 비교한다. 재구성을 먼저 실행해야 한다.",
+    parameters={"type": "object", "properties": {}},
+)
+
+GATE_SPEC = ToolSpec(
+    name="evaluate_gate",
+    description=(
+        "새 뱅크가 배포 후보가 될 만한지 홀드아웃으로 평가한다. "
+        "통과해도 배포되지 않는다 — 사람이 승인해야 한다. 재구성을 먼저 실행해야 한다."
+    ),
+    parameters={"type": "object", "properties": {}},
+)
+
+SHADOW_SPEC = ToolSpec(
+    name="shadow_compare",
+    description=(
+        "신규 뱅크를 실제 판정에 쓰지 않고 같은 이미지에 병렬로만 추론시켜, "
+        "기존 뱅크와 판정이 갈리는 케이스만 뽑는다. 양산 데이터에는 정답이 없으므로 "
+        "사람이 확인할 이미지 수를 줄이는 것이 목적이다. 게이트 다음에 부른다."
+    ),
+    parameters={"type": "object", "properties": {}},
+)
+
+RELEASE_SPEC = ToolSpec(
+    name="prepare_release",
+    description=(
+        "배포 패키지와 승인 요청 문서를 만든다. **배포하지 않는다.** "
+        "실제 장비 반영은 사람이 별도로 결정한다. 게이트와 섀도가 끝나야 한다."
+    ),
     parameters={"type": "object", "properties": {}},
 )
 

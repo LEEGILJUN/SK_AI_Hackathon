@@ -104,7 +104,30 @@ def _stage_html(stage: Stage) -> str:
     """
 
 
-def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str = "defect") -> str:
+def _driver_html(outcome: RunOutcome) -> str:
+    """도구 순서를 누가 정했는가.
+
+    모델이 안 붙어 있는데 화면이 아무 말도 하지 않으면 "에이전트가 판단한 것"
+    처럼 보인다. 시연에서 가장 오해받기 쉬운 지점이라 위에 못 박아 둔다.
+    """
+    by_model = outcome.driver == "model"
+    label = "언어 모델이 도구 순서를 정했습니다" if by_model else "고정 순서로 실행했습니다"
+    trace = "".join(
+        f'<tr><td>{i}. {escape(name)}</td><td>{escape(status)}</td></tr>'
+        for i, (name, status) in enumerate(outcome.tool_trace, start=1)
+    )
+    stopped = outcome.agent_run.stopped_reason if outcome.agent_run else ""
+    return f"""
+    <div class="banner{'' if by_model else ' warn'}">
+      <strong>{escape(label)}</strong> — {escape(outcome.driver_note)}
+      {f'<table>{trace}</table>' if trace else ''}
+      {f'<p class="note">{escape(stopped)}</p>' if stopped else ''}
+    </div>
+    """
+
+
+def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str = "defect",
+                context: dict[str, str] | None = None) -> str:
     options = [
         ("defect", "결함이다 → 뱅크 오염"),
         ("normal", "진짜 정상품이다 → 정상 분포 중첩"),
@@ -115,9 +138,18 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
         f'<option value="{v}"{" selected" if v == patch_verdict else ""}>{escape(t)}</option>'
         for v, t in options
     )
+    ctx = context or {"line": "line_02", "object_name": "capsules", "defect_type": "dent"}
+    fields = "".join(
+        f"""<div>
+          <label for="{key}">{escape(label)}</label>
+          <input id="{key}" name="{key}" value="{escape(ctx.get(key, ''))}">
+        </div>"""
+        for key, label in (("line", "라인"), ("object_name", "품목"), ("defect_type", "결함 유형"))
+    )
 
     body = ""
     if outcome:
+        body += _driver_html(outcome)
         body += '<div class="flow">' + "".join(_stage_html(s) for s in outcome.stages) + "</div>"
         if outcome.approval_markdown:
             body += f"""
@@ -151,6 +183,7 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
       <textarea id="issue" name="issue_text">{escape(issue_text)}</textarea>
     </div>
     <div class="controls">
+      {fields}
       <div>
         <label for="patch">판별 5번 — 최근접 패치가 무엇인가</label>
         <select id="patch" name="patch_verdict">{select}</select>

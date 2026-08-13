@@ -12,6 +12,36 @@
 계획은 실행과 분리되어 있다. 여기서는 무엇을 할지만 정하고, 실제 재구성은
 rebuild.py 가 한다. 사람이 계획을 보고 승인하거나 되돌릴 수 있어야 하기
 때문이다.
+
+── 제거 단위는 이미지다. 패치가 아니다 ──────────────────────────────────
+
+VisA 실측(2026-08-14)에서 오염 이미지 5장이 뱅크에 남긴 패치 404개 중 실제
+결함 위는 **6개뿐**이었다. 이미지 단위로 빼면 멀쩡한 정상 표면 398개(98.5%)를
+함께 버린다. "패치 6개만 빼면 되지 않나"가 자연스러운 반응이고, 그럼에도
+이미지 단위를 유지한다. 이유가 셋이다.
+
+1. **이웃 평균이 결함을 번지게 한다.** `FeatureConfig.neighborhood=3` 이라 각
+   패치의 임베딩에 주변 여덟 칸이 섞인다. 결함 칸만 빼면 그 둘레의 패치들은
+   결함 신호를 머금은 채 뱅크에 남는다. 해상도 실험에서 결함이 이웃 평균에
+   희석되던 것과 같은 기제가 반대로 작용한다.
+2. **재현성이 깨진다.** 재구성은 "구성 이미지 목록 + 같은 시드"로 처음부터
+   다시 만든다. 그래야 달라진 것이 구성뿐이고 성능 차이를 구성 변화로 읽을 수
+   있다. 특정 행만 사후에 덜어내면 그 뱅크는 같은 입력으로 재현되지 않고,
+   평가 게이트의 재현성 검사가 의미를 잃는다.
+3. **운영에는 마스크가 없다.** 위의 "6개"는 VisA 정답 마스크로 갈라서 안 값이다.
+   현장에서 어느 칸이 결함인지는 판별 5번이 패치마다 답해야 알 수 있고, 뱅크
+   수천 행에 그것을 다 물을 수는 없다.
+
+**대신 버리는 비용을 계획에 적는다.** 제거가 커버리지를 얼마나 깎는지 숫자로
+남기고, 특정 조건이 비게 되면 제거와 보충을 짝지어 요구한다. 오염을 고치려다
+커버리지 부족을 만드는 것은 여섯 원인 중 하나를 스스로 만드는 일이다.
+
+── 고립도는 단독 근거가 못 된다 ──────────────────────────────────────────
+
+같은 실측에서 `suspect_images()` 가 낸 후보 1개 중 오염원은 0개였다. 오염은
+패치 단위로 일어나는데 고립도는 이미지 단위 평균이라 정상부 패치에 희석된다.
+그래서 고립도만으로는 제거 후보를 만들지 않고, **역추적이 이미 지목한 이미지를
+보강하는 데만 쓴다.** 정상 이미지를 잘못 빼면 커버리지 부족을 스스로 만든다.
 """
 
 from __future__ import annotations
@@ -31,8 +61,15 @@ from .diagnose import CAUSE_LABEL_KO, REBUILD_REQUIRED, DiagnosisResult
 class RemovalCandidate:
     """뱅크에서 뺄 후보 한 건.
 
-    근거가 두 갈래로 들어온다. 역추적이 지목한 것과 고립도가 높은 것.
-    둘이 겹치면 확신이 올라간다.
+    근거가 세 갈래로 들어온다. 역추적이 반복해서 지목한 것, 판별 5번이 결함으로
+    확인한 것, 뱅크 안에서 고립도가 높은 것. 겹칠수록 오판 위험이 낮다.
+
+    **고립도는 단독으로 후보를 만들지 못한다.** 실측에서 오염원을 못 짚었고,
+    정상 이미지를 잘못 빼면 커버리지 부족을 스스로 만들기 때문이다. 역추적이
+    이미 지목한 이미지에 붙어 확신을 올리는 역할만 한다.
+
+    patch_count 는 이 이미지가 뱅크에 남긴 패치 수다. 빼는 비용이 얼마인지를
+    계획에 적기 위해 들고 있는다.
     """
 
     image: str
@@ -40,6 +77,7 @@ class RemovalCandidate:
     traced_hits: int = 0          # 미검출 건들이 이 이미지를 최근접으로 지목한 횟수
     isolation_z: float | None = None
     confirmed_by_vlm: bool = False
+    patch_count: int = 0
 
     @property
     def evidence_count(self) -> int:
@@ -69,6 +107,68 @@ class AdditionRequest:
 
 
 @dataclass
+class CoverageCost:
+    """제거가 뱅크에서 무엇을 함께 가져가는가.
+
+    오염 이미지를 통째로 빼면 그 이미지의 멀쩡한 정상 패치도 같이 빠진다.
+    VisA 실측에서 그 비율이 98.5% 였다 — 결함 위 6개를 빼려고 정상 표면 398개를
+    버린 셈이다. 그래도 이미지 단위로 빼는 이유는 curate 모듈 첫머리에 있다.
+
+    빼는 것 자체는 막지 않고, **얼마를 버리는지 숫자로 남긴다.** 커버리지
+    부족은 이 과제가 다루는 여섯 원인 중 하나이므로, 오염을 고치다 그것을
+    만들고 있지 않은지 사람이 볼 수 있어야 한다.
+    """
+
+    removed_images: int = 0
+    removed_patches: int = 0
+    bank_patches_before: int = 0
+    images_before: int = 0
+
+    @property
+    def patch_share(self) -> float:
+        if not self.bank_patches_before:
+            return 0.0
+        return self.removed_patches / self.bank_patches_before
+
+    @property
+    def image_share(self) -> float:
+        if not self.images_before:
+            return 0.0
+        return self.removed_images / self.images_before
+
+    #: 이 비중을 넘게 빼면 커버리지가 흔들릴 수 있다고 본다. 자리표시 값이며
+    #: 시나리오로 측정해 정해야 한다.
+    WARN_PATCH_SHARE = 0.20
+
+    @property
+    def is_heavy(self) -> bool:
+        return self.patch_share >= self.WARN_PATCH_SHARE
+
+    def describe(self) -> str:
+        if not self.removed_images:
+            return ""
+        text = (
+            f"제거하면 뱅크 이미지 {self.images_before}장 중 {self.removed_images}장"
+            f"({self.image_share:.1%}), 패치 {self.bank_patches_before:,}개 중 "
+            f"{self.removed_patches:,}개({self.patch_share:.1%})가 빠진다."
+        )
+        if self.is_heavy:
+            text += (
+                " 빠지는 양이 많다 — 빠진 조건을 보충하지 않으면 오염을 고치다"
+                " 커버리지 부족을 만들 수 있다."
+            )
+        return text
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self) | {
+            "patch_share": self.patch_share,
+            "image_share": self.image_share,
+            "is_heavy": self.is_heavy,
+            "note": self.describe(),
+        }
+
+
+@dataclass
 class CurationPlan:
     """뱅크를 어떻게 바꿀 것인가.
 
@@ -83,6 +183,7 @@ class CurationPlan:
     reason: str = ""
     needs_human: bool = True
     alternative_actions: list[str] = field(default_factory=list)
+    coverage_cost: CoverageCost | None = None
 
     @property
     def is_empty(self) -> bool:
@@ -108,6 +209,7 @@ class CurationPlan:
             "alternative_actions": self.alternative_actions,
             "remove": [r.to_dict() for r in self.remove],
             "add": [a.to_dict() for a in self.add],
+            "coverage_cost": self.coverage_cost.to_dict() if self.coverage_cost else None,
         }
 
 
@@ -136,6 +238,25 @@ def _blocked(cause: str, extra: str = "") -> CurationPlan:
         reason=reason,
         needs_human=False,
         alternative_actions=list(ALTERNATIVES.get(cause, [])),
+    )
+
+
+def _coverage_cost(bank: MemoryBank | None, images: Sequence[str]) -> CoverageCost | None:
+    """이 이미지들을 빼면 뱅크에서 무엇이 함께 빠지는가.
+
+    패치 수까지 세는 이유는 이미지 장수만으로는 비용이 안 보이기 때문이다.
+    coreset 이 특정 이미지를 과대 대표하면 5장을 빼도 뱅크의 상당 부분이 빠진다.
+    """
+    if bank is None:
+        return None
+    counts = bank.contributing_images()
+    total_patches = sum(counts.values())
+    removed = sum(counts.get(name, 0) for name in images)
+    return CoverageCost(
+        removed_images=len([n for n in images if n in counts]),
+        removed_patches=removed,
+        bank_patches_before=total_patches,
+        images_before=len(bank.images),
     )
 
 
@@ -203,8 +324,13 @@ def plan_curation(
                 ),
             )
 
-        # 근거 2. 뱅크 안에서 고립된 이미지
-        if bank is not None:
+        # 근거 2. 뱅크 안에서 고립된 이미지 — **보강만 한다.**
+        #
+        # 예전에는 고립도만으로도 후보를 만들었다. VisA 실측에서 후보 1개 중
+        # 오염원이 0개로 나와 그 경로를 닫았다. 오염은 패치 단위로 일어나는데
+        # 고립도는 이미지 단위 평균이라 정상부 패치에 희석된다. 지목되지 않은
+        # 이미지를 고립도만 보고 빼면 멀쩡한 정상품을 버리게 된다.
+        if bank is not None and candidates:
             try:
                 suspects: list[IsolationScore] = suspect_images(
                     bank, z_threshold=isolation_z_threshold, top_n=max_removals
@@ -216,12 +342,6 @@ def plan_curation(
                 if existing:
                     existing.isolation_z = score.z_mean
                     existing.reason += f", 뱅크 내 고립도도 높다(z={score.z_mean:+.2f})"
-                else:
-                    candidates[score.image] = RemovalCandidate(
-                        image=score.image,
-                        reason=f"뱅크 내에서 이웃이 멀다(z={score.z_mean:+.2f})",
-                        isolation_z=score.z_mean,
-                    )
 
         # 근거가 많은 순으로. 같으면 지목 횟수 순.
         ordered = sorted(
@@ -236,23 +356,35 @@ def plan_curation(
                 cause=cause,
                 reason=(
                     "뱅크 오염으로 진단됐으나 제거할 대상을 특정하지 못했다. "
-                    "역추적 결과와 고립도 모두 후보를 내지 못했으므로 사람이 확인해야 한다."
+                    "역추적이 반복해서 지목한 이미지가 없으므로 사람이 확인해야 한다. "
+                    "고립도는 단독 근거로 쓰지 않는다 — 실측에서 오염원을 짚지 못했다."
                 ),
                 needs_human=True,
             )
 
+        # 빼는 비용을 센다. 막지는 않고 숫자로 남긴다.
+        cost = _coverage_cost(bank, [c.image for c in ordered])
+        if bank is not None:
+            counts = bank.contributing_images()
+            for candidate in ordered:
+                candidate.patch_count = counts.get(candidate.image, 0)
+
         # 근거가 한 갈래뿐이면 사람 확인을 붙인다. 정상 이미지를 잘못 빼면
-        # 커버리지 부족을 스스로 만드는 셈이 된다.
+        # 커버리지 부족을 스스로 만드는 셈이 된다. 빼는 양이 많을 때도 마찬가지다.
         weak = [c for c in ordered if c.evidence_count < 2]
+        reason = (
+            f"오염 후보 {len(ordered)}장을 뱅크에서 제거한 뒤 재구성한다. "
+            f"근거가 겹친 것 {len(ordered) - len(weak)}장, 한 갈래뿐인 것 {len(weak)}장."
+        )
+        if cost and cost.describe():
+            reason += f" {cost.describe()}"
         return CurationPlan(
             touches_bank=True,
             cause=cause,
             remove=ordered,
-            reason=(
-                f"오염 후보 {len(ordered)}장을 뱅크에서 제거한 뒤 재구성한다. "
-                f"근거가 겹친 것 {len(ordered) - len(weak)}장, 한 갈래뿐인 것 {len(weak)}장."
-            ),
-            needs_human=bool(weak),
+            reason=reason,
+            needs_human=bool(weak) or bool(cost and cost.is_heavy),
+            coverage_cost=cost,
         )
 
     # ── 커버리지 부족 — 무엇을 채울 것인가 ─────────────────────────────

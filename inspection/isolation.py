@@ -6,23 +6,33 @@
 **이것은 판정이 아니라 선별이다.** 고립된 패치가 오염원일 수도 있지만,
 드물지만 진짜인 정상품일 수도 있다(조명이 다른 로트, 흔치 않은 형상).
 둘을 가르는 것은 여전히 판별 항목 5번의 몫이다. 여기서 하는 일은 5번에
-넘길 후보를 몇 개로 줄이는 것이며, 그 자체로 두 가지 값어치가 있다.
+넘길 후보를 몇 개로 줄이는 것이며, 시각 언어 모델 호출 수를 줄이는 값어치가
+있다.
 
-  - 시각 언어 모델 호출 수가 줄어든다
-  - 역추적이 지목한 패치가 고립도까지 높으면 근거가 겹쳐 단단해진다
+── 실데이터에서 이미지 단위 고립도는 오염을 못 찾았다 ──────────────────────
 
-측정으로 확인한 한계 두 가지를 코드에 반영해 두었다.
+VisA 실측(2026-08-14)에서 `suspect_images()` 가 낸 후보 1개 중 실제 오염원은
+**0개**였다. 기제는 분명하다. 오염 이미지 5장이 뱅크에 남긴 패치 404개 중
+결함 위는 6개뿐이고, 나머지 398개가 멀쩡한 정상 표면이라 **이미지 단위 평균이
+희석된다.** 오염은 패치 단위로 일어나는데 z_mean 은 이미지 단위로 잰다.
 
-1. coreset 비율이 낮을수록 신호가 나빠진다
-   greedy coreset 은 서로 먼 점을 우선 남기므로 결함 패치가 우선 선택된다.
-   합성 데이터에서 원본 이미지의 12.5% 였던 오염원이 뱅크의 50~70% 를
-   차지했다. 뱅크가 이미 오염 패치로 채워지면 "고립"의 기준선 자체가 올라가
-   대비가 흐려진다.
+그래서 두 가지를 바꿨다.
 
-2. 기여 패치가 적은 이미지는 순위가 요동친다
-   패치 한두 개만 남은 이미지는 평균이 우연에 좌우된다. 실제로 그런 정상
-   이미지가 오염원보다 높은 순위를 차지하는 경우를 확인했다. 그래서
-   min_patches 미만은 순위에서 제외한다.
+  - `agents/curate.py` 가 **고립도를 단독 제거 근거로 쓰지 않는다.** 역추적이
+    이미 지목한 이미지를 보강하는 데만 쓴다. 정상 이미지를 잘못 빼면 커버리지
+    부족을 스스로 만드는 셈이라, 한 갈래뿐인 근거로 빼면 안 된다.
+  - 패치 단위 순위를 `hot_count` / `hot_share` 로 함께 낸다. 평균 대신
+    "얼마나 많은 패치가 극단적인가"를 본다. **아직 실측하지 않았다** —
+    4090 에서 `scripts/measure_patch_judgment.py` 로 확인할 값이다.
+
+합성 데이터에서 관찰됐던 "coreset 이 오염을 뱅크의 50~70% 로 증폭한다"는
+**실데이터에서 반증됐다.** 오염 *이미지* 출신은 3.2% → 8.3% 로 늘지만 결함
+*위* 패치는 0.1% 로 묽어진다. 자세한 것은 `CLAUDE.md` 실측값 절.
+
+기여 패치가 적은 이미지는 순위가 요동친다는 것은 여전히 성립한다. 패치 한두
+개만 남은 이미지는 평균이 우연에 좌우되고, 실제로 그런 정상 이미지가 오염원보다
+높은 순위를 차지하는 경우를 확인했다. 그래서 min_patches 미만은 순위에서
+제외한다.
 """
 
 from __future__ import annotations
@@ -39,6 +49,9 @@ from .bank import MemoryBank
 #: 이보다 적으면 평균이 우연에 좌우되어 순위가 뒤집힌다.
 DEFAULT_MIN_PATCHES = 3
 
+#: 패치 하나를 "극단적"으로 볼 z 점수 기준. 자리표시이며 측정으로 정해야 한다.
+DEFAULT_HOT_Z = 2.0
+
 
 @dataclass
 class IsolationScore:
@@ -46,7 +59,15 @@ class IsolationScore:
 
     z_mean
         그 이미지가 남긴 패치들의 고립도 z 점수 평균. 클수록 뱅크의 다른
-        패치들과 멀다.
+        패치들과 멀다. **오염 탐지에는 약하다** — 결함이 이미지의 일부만
+        차지하면 나머지 정상 패치가 평균을 희석시킨다. VisA 실측에서 이
+        값으로는 오염원을 하나도 못 찾았다.
+    z_max
+        가장 고립된 패치 하나의 z. 단일 패치라 잡음에 흔들린다.
+    hot_count / hot_share
+        z 가 hot_z 를 넘는 패치의 수와 비중. 평균이 아니라 **극단이 몇 개나
+        뭉쳐 있는가**를 본다. 오염이 패치 단위로 일어나므로 이쪽이 원리에
+        맞지만 **아직 실측하지 않았다.** z_mean 을 대체할지는 측정 후 정한다.
     patch_count
         그 이미지가 뱅크에 남긴 패치 수. 적으면 z_mean 을 믿기 어렵다.
     ranked
@@ -58,6 +79,8 @@ class IsolationScore:
     z_max: float
     patch_count: int
     ranked: bool
+    hot_count: int = 0
+    hot_share: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -105,16 +128,28 @@ def image_isolation(
     k: int = 8,
     min_patches: int = DEFAULT_MIN_PATCHES,
     device: torch.device | None = None,
+    hot_z: float = DEFAULT_HOT_Z,
+    rank_by: str = "z_mean",
 ) -> list[IsolationScore]:
     """이미지 단위로 고립도를 모아 순위를 매긴다.
 
-    패치 하나하나보다 이미지 단위가 쓸모 있다. 큐레이션에서 빼고 넣는 단위가
-    이미지이고, 여러 패치의 평균이라 우연에 덜 흔들리기 때문이다.
+    큐레이션에서 빼고 넣는 단위가 이미지라 결과도 이미지 단위로 낸다. 다만
+    **무엇으로 순위를 매길지는 별개 문제**다.
 
-    반환은 z_mean 내림차순이며, 기여 패치가 min_patches 미만인 이미지는
-    ranked=False 로 표시해 뒤로 보낸다. 지우지 않고 남기는 이유는 "왜 이
-    이미지는 순위에 없나"에 답할 수 있어야 하기 때문이다.
+    rank_by
+        "z_mean"   패치 z 의 평균. 기본값이지만 오염 탐지에는 약하다 —
+                   결함이 이미지의 일부만 차지하면 나머지가 평균을 희석시킨다.
+                   VisA 실측에서 오염원을 하나도 못 짚었다.
+        "hot_count" z 가 hot_z 를 넘는 패치의 수. 오염이 패치 단위로 일어나므로
+                   원리에는 이쪽이 맞다. **아직 실측하지 않았다.**
+
+    기여 패치가 min_patches 미만인 이미지는 ranked=False 로 표시해 뒤로 보낸다.
+    지우지 않고 남기는 이유는 "왜 이 이미지는 순위에 없나"에 답할 수 있어야
+    하기 때문이다.
     """
+    if rank_by not in ("z_mean", "hot_count"):
+        raise ValueError(f"rank_by 는 'z_mean' 또는 'hot_count' 여야 한다: {rank_by!r}")
+
     z = patch_isolation(bank, k=k, device=device)
 
     grouped: dict[str, list[float]] = {}
@@ -122,19 +157,25 @@ def image_isolation(
         name = bank.origin_of(row_index).source_image
         grouped.setdefault(name, []).append(float(z[row_index]))
 
-    scores = [
-        IsolationScore(
-            image=name,
-            z_mean=float(np.mean(values)),
-            z_max=float(np.max(values)),
-            patch_count=len(values),
-            ranked=len(values) >= min_patches,
+    scores = []
+    for name, values in grouped.items():
+        hot = sum(1 for v in values if v >= hot_z)
+        scores.append(
+            IsolationScore(
+                image=name,
+                z_mean=float(np.mean(values)),
+                z_max=float(np.max(values)),
+                patch_count=len(values),
+                ranked=len(values) >= min_patches,
+                hot_count=hot,
+                hot_share=hot / len(values),
+            )
         )
-        for name, values in grouped.items()
-    ]
 
-    # 순위에 드는 것부터, 그 안에서 z_mean 내림차순.
-    scores.sort(key=lambda s: (s.ranked, s.z_mean), reverse=True)
+    # 순위에 드는 것부터, 그 안에서 고른 지표 내림차순.
+    key = (lambda s: (s.ranked, s.hot_count, s.z_max)) if rank_by == "hot_count" \
+        else (lambda s: (s.ranked, s.z_mean))
+    scores.sort(key=key, reverse=True)
     return scores
 
 
@@ -144,20 +185,31 @@ def suspect_images(
     min_patches: int = DEFAULT_MIN_PATCHES,
     z_threshold: float = 1.0,
     top_n: int | None = None,
+    rank_by: str = "z_mean",
+    hot_z: float = DEFAULT_HOT_Z,
 ) -> list[IsolationScore]:
     """오염이 의심되는 이미지 후보를 추린다.
 
+    **여기서 나온 것을 단독 근거로 뱅크에서 빼면 안 된다.** VisA 실측에서
+    후보 1개 중 오염원은 0개였다. `agents/curate.py` 는 이것을 역추적이 이미
+    지목한 이미지의 보강 근거로만 쓴다.
+
     z_threshold
         이 값을 넘는 이미지만 후보로 본다. 1.0 은 자리표시이며, 실제 값은
-        시나리오로 측정해 정해야 한다.
+        시나리오로 측정해 정해야 한다. rank_by="hot_count" 면 z_mean 대신
+        극단 패치가 하나라도 있는지로 거른다.
     top_n
         주면 상위 이 개수까지만 돌려준다. 시각 언어 모델 호출 수를 묶는 용도다.
 
     후보가 비어 있을 수 있다. 그때는 "고립도로는 의심 대상을 찾지 못했다"가
     결론이며, 억지로 상위 몇 개를 뽑아 오염으로 몰지 않는다.
     """
-    candidates = [s for s in image_isolation(bank, k=k, min_patches=min_patches) if s.ranked]
-    candidates = [s for s in candidates if s.z_mean >= z_threshold]
+    ranked = image_isolation(bank, k=k, min_patches=min_patches, rank_by=rank_by, hot_z=hot_z)
+    candidates = [s for s in ranked if s.ranked]
+    if rank_by == "hot_count":
+        candidates = [s for s in candidates if s.hot_count > 0]
+    else:
+        candidates = [s for s in candidates if s.z_mean >= z_threshold]
     return candidates[:top_n] if top_n else candidates
 
 

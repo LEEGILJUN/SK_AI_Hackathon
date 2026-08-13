@@ -50,18 +50,30 @@ def index() -> str:
 def run(
     issue_text: str = Form(DEFAULT_ISSUE),
     patch_verdict: str = Form("defect"),
+    line: str = Form(""),
+    object_name: str = Form(""),
+    defect_type: str = Form(""),
 ) -> str:
     """이슈를 접수하고 전 구간을 실행한다.
 
+    라인·품목·결함 유형은 **양식에서 받는다.** 인테이크가 추측으로 채우면
+    엉뚱한 라인의 뱅크를 건드릴 수 있어서, 사람이 고른 값을 우선한다.
+    파이프라인 코드에 박아 두지 않는 이유이기도 하다.
+
     patch_verdict
-        판별 5번을 손으로 지정한다. 시각 언어 모델이 아직 붙지 않았으므로,
-        시연에서는 이 값을 바꿔 가며 같은 이미지·같은 점수에서 조치가
-        정반대로 갈리는 것을 보여준다.
+        판별 5번을 손으로 지정한다. 시연에서 이 값을 바꿔 가며 같은 이미지·
+        같은 점수에서 조치가 정반대로 갈리는 것을 보여준다. "ask_model" 이면
+        역추적이 가리킨 자리를 잘라 시각 언어 모델에 묻는다.
     """
     global _last
     override = None if patch_verdict == "ask_model" else patch_verdict
-    _last = run_pipeline(factory(), issue_text=issue_text, patch_override=override)
-    return render_page(_last, issue_text, patch_verdict)
+    context = {k: v for k, v in
+               (("line", line), ("object_name", object_name), ("defect_type", defect_type)) if v}
+    _last = run_pipeline(
+        factory(), issue_text=issue_text, patch_override=override,
+        context=context or None,
+    )
+    return render_page(_last, issue_text, patch_verdict, context or None)
 
 
 @app.get("/approval", response_class=PlainTextResponse)
