@@ -59,7 +59,7 @@ intake_verdicts:
 
 scenarios:
  
-  # ===================== THRESHOLD (Coreset 재구성 불필요) =====================
+  # ===================== THRESHOLD (재구성 불필요) =====================
  
   - id: SC-TH-001
     title: PCB 엣지 크랙 미검 - threshold 과보수 설정
@@ -86,7 +86,7 @@ scenarios:
       params:
         original_threshold: 0.42
         evaluation_threshold: 0.50
-        note: "초기 Threshold 설정시 정상 스코어 상위 극단값 기준으로 과도하게 보수적으로(높게) 설정"
+        note: "초기 캘리브레이션 시 정상 스코어 상위 극단값 기준으로 과도하게 보수적으로(높게) 설정"
  
     ground_truth:
       intake_verdict: proceed
@@ -130,7 +130,7 @@ scenarios:
       date_range: [2026-06-20, 2026-06-22]
  
     input:
-      issue_text: "line_02 요즘 자꾸 미검나는 것 같은데 확인좀요 ㅠㅠ"
+      issue_text: "line_02 요즘 자꾸 놓치는거 같은데 확인좀요 ㅠㅠ"
       attachments:
         - line_02/2026-06-21/LOT-20260622-011/img_0203.png
       reporter_role: 라인관리자
@@ -173,13 +173,13 @@ scenarios:
         라인만으로 진단 진행 가능해야 하며, score_ratio 0.94(near)로 threshold 재산출이 정답.
  
   - id: SC-TH-003
-    title: macaroni1 표면 결함 미검 재현
+    title: pcb3 표면 결함 미검 재현
     cause_group: threshold
     priority: mvp
  
     target:
       line: line_03
-      object: macaroni1
+      object: pcb3
       bank_version: v2
       lot_ids: [LOT-20260701-005]
       date_range: [2026-06-30, 2026-07-02]
@@ -209,7 +209,7 @@ scenarios:
         score_vs_threshold: below
         score_ratio: 0.91
         nearest_patch_ref:
-          source_image: macaroni1/Data/Images/Normal/0150.JPG
+          source_image: pcb3/Data/Images/Normal/0150.JPG
           patch_index: null
         nearest_patch_is_defect: false
         coverage_present: true
@@ -228,19 +228,19 @@ scenarios:
         nearest_patch_is_defect:false + coverage_present:true로 뱅크는 정상임을 확인해야 함.
  
   - id: SC-TH-004
-    title: capsules 미검 1건 - threshold 경계 근접
+    title: pcb4 미검 1건 - threshold 경계 근접
     cause_group: threshold
     priority: extended
  
     target:
       line: line_04
-      object: capsules
+      object: pcb4
       bank_version: v4
       lot_ids: [LOT-20260715-002]
       date_range: [2026-07-14, 2026-07-16]
  
     input:
-      issue_text: "line_04 캡슐 표면 미검 1건, threshold 관련 의심됨"
+      issue_text: "line_04 PCB 표면 미검 1건, threshold 관련 의심됨"
       attachments:
         - line_04/2026-07-15/LOT-20260715-002/img_0044.png
       reporter_role: 공정엔지니어
@@ -264,7 +264,7 @@ scenarios:
         score_vs_threshold: near
         score_ratio: 0.97
         nearest_patch_ref:
-          source_image: capsules/Data/Images/Normal/0304.JPG
+          source_image: pcb4/Data/Images/Normal/0304.JPG
           patch_index: null
         nearest_patch_is_defect: false
         coverage_present: true
@@ -291,7 +291,7 @@ scenarios:
  
     target:
       line: line_01
-      object: pcb3
+      object: pcb1
       bank_version: v3
       lot_ids: [LOT-20260605-014]
       date_range: [2026-06-05, 2026-06-07]
@@ -307,7 +307,7 @@ scenarios:
       method: bank_contamination
       seed: 20260605
       params:
-        contaminated_images: [pcb3/Data/Images/Anomaly/004.JPG]
+        contaminated_images: [pcb1/Data/Images/Anomaly/004.JPG]
         contaminated_count: 3
         note: "v3 뱅크 구성 시 결함 이미지 일부가 정상 세트로 오분류되어 유입"
  
@@ -322,7 +322,7 @@ scenarios:
         score_vs_threshold: below
         score_ratio: 0.86
         nearest_patch_ref:
-          source_image: pcb3/Data/Images/Anomaly/004.JPG
+          source_image: pcb1/Data/Images/Anomaly/004.JPG
           patch_index: null
         nearest_patch_is_defect: true
         coverage_present: true
@@ -348,7 +348,7 @@ scenarios:
  
     target:
       line: line_02
-      object: pcb1
+      object: pcb2
       bank_version: v2
       lot_ids: [LOT-20260618-007]
       date_range: [2026-06-17, 2026-06-19]
@@ -365,7 +365,7 @@ scenarios:
       method: bank_contamination
       seed: 20260618
       params:
-        contaminated_images: [pcb1/Data/Images/Anomaly/011.JPG, pcb1/Data/Images/Anomaly/012.JPG]
+        contaminated_images: [pcb2/Data/Images/Anomaly/011.JPG, pcb2/Data/Images/Anomaly/012.JPG]
         contaminated_count: 5
  
     ground_truth:
@@ -379,7 +379,7 @@ scenarios:
         score_vs_threshold: below
         score_ratio: 0.80
         nearest_patch_ref:
-          source_image: pcb1/Data/Images/Anomaly/011.JPG
+          source_image: pcb2/Data/Images/Anomaly/011.JPG
           patch_index: null
         nearest_patch_is_defect: true
         coverage_present: true
@@ -398,19 +398,19 @@ scenarios:
         threshold와 거리가 있어 threshold 문제로 오인하기 쉬우나 원인은 뱅크 오염.
  
   - id: SC-BC-003
-    title: cashew 표면 결함 통과 반복 - 현장 은어 표현
+    title: pcb3 표면 결함 통과 반복 - 현장 은어 표현
     cause_group: bank_contamination
     priority: mvp
  
     target:
       line: line_03
-      object: cashew
+      object: pcb3
       bank_version: v3
       lot_ids: [LOT-20260625-009]
       date_range: [2026-06-24, 2026-06-26]
  
     input:
-      issue_text: "line_03 검사 먹통(불량인데 그냥 통과) 계속 나옴. 뭐가 문제인지 봐주세요"
+      issue_text: "line_03 먹통(불량인데 그냥 통과) 계속 나옴. 뭐가 문제인지 봐주세요"
       attachments:
         - line_03/2026-06-25/LOT-20260625-009/img_0071.png
       reporter_role: 라인관리자
@@ -420,7 +420,7 @@ scenarios:
       method: bank_contamination
       seed: 20260625
       params:
-        contaminated_images: [cashew/Data/Images/Anomaly/007.JPG]
+        contaminated_images: [pcb3/Data/Images/Anomaly/007.JPG]
         contaminated_count: 2
  
     ground_truth:
@@ -434,7 +434,7 @@ scenarios:
         score_vs_threshold: below
         score_ratio: 0.83
         nearest_patch_ref:
-          source_image: cashew/Data/Images/Anomaly/007.JPG
+          source_image: pcb3/Data/Images/Anomaly/007.JPG
           patch_index: null
         nearest_patch_is_defect: true
         coverage_present: true
@@ -449,7 +449,7 @@ scenarios:
       evidence_required: [nearest_patch_is_defect, defect_visible]
       tolerance: {score_ratio: 0.10}
       notes: >
-        "검사 먹통"은 미검을 뜻하는 현장 비표준 표현 — 인테이크 단계에서 용어를 정규화해야
+        "먹통"은 미검을 뜻하는 현장 비표준 표현 — 인테이크 단계에서 용어를 정규화해야
         진단으로 넘어갈 수 있는 케이스. 원인은 뱅크 오염.
  
   - id: SC-BC-004
@@ -516,7 +516,7 @@ scenarios:
  
     target:
       line: line_01
-      object: pcb2
+      object: pcb1
       bank_version: v2
       lot_ids: [LOT-20260608-004]
       date_range: [2026-06-07, 2026-06-09]
@@ -546,7 +546,7 @@ scenarios:
         score_vs_threshold: below
         score_ratio: 0.90
         nearest_patch_ref:
-          source_image: pcb2/Data/Images/Normal/0198.JPG
+          source_image: pcb1/Data/Images/Normal/0198.JPG
           patch_index: null
         nearest_patch_is_defect: false
         coverage_present: false
@@ -572,7 +572,7 @@ scenarios:
  
     target:
       line: line_02
-      object: chewinggum
+      object: pcb2
       bank_version: v3
       lot_ids: [LOT-20260619-006]
       date_range: [2026-06-18, 2026-06-20]
@@ -602,7 +602,7 @@ scenarios:
         score_vs_threshold: below
         score_ratio: 0.87
         nearest_patch_ref:
-          source_image: chewinggum/Data/Images/Normal/0120.JPG
+          source_image: pcb2/Data/Images/Normal/0120.JPG
           patch_index: null
         nearest_patch_is_defect: false
         coverage_present: false
@@ -626,7 +626,7 @@ scenarios:
  
     target:
       line: line_03
-      object: pcb1
+      object: pcb3
       bank_version: v4
       lot_ids: [LOT-20260628-010]
       date_range: [2026-06-27, 2026-06-29]
@@ -656,7 +656,7 @@ scenarios:
         score_vs_threshold: below
         score_ratio: 0.84
         nearest_patch_ref:
-          source_image: pcb1/Data/Images/Normal/0055.JPG
+          source_image: pcb3/Data/Images/Normal/0055.JPG
           patch_index: null
         nearest_patch_is_defect: false
         coverage_present: false
@@ -681,7 +681,7 @@ scenarios:
  
     target:
       line: line_04
-      object: macaroni2
+      object: pcb4
       bank_version: v2
       lot_ids: [LOT-20260710-013]
       date_range: [2026-07-08, 2026-07-11]
@@ -711,7 +711,7 @@ scenarios:
         score_vs_threshold: below
         score_ratio: 0.92
         nearest_patch_ref:
-          source_image: macaroni2/Data/Images/Normal/0077.JPG
+          source_image: pcb4/Data/Images/Normal/0077.JPG
           patch_index: null
         nearest_patch_is_defect: false
         coverage_present: false
@@ -738,7 +738,7 @@ scenarios:
  
     target:
       line: line_01
-      object: pcb4
+      object: pcb1
       bank_version: v3
       lot_ids: [LOT-20260612-002]
       date_range: [2026-06-11, 2026-06-13]
@@ -754,7 +754,7 @@ scenarios:
       method: overlap_select
       seed: 20260612
       params:
-        selected_defect_image: pcb4/Data/Images/Anomaly/019.JPG
+        selected_defect_image: pcb1/Data/Images/Anomaly/019.JPG
         similarity_note: "결함부 형상이 정상 배선 패턴의 자연스러운 굴곡과 유사"
  
     ground_truth:
@@ -768,7 +768,7 @@ scenarios:
         score_vs_threshold: below
         score_ratio: 0.93
         nearest_patch_ref:
-          source_image: pcb4/Data/Images/Normal/0301.JPG
+          source_image: pcb1/Data/Images/Normal/0301.JPG
           patch_index: null
         nearest_patch_is_defect: false
         coverage_present: true
@@ -793,7 +793,7 @@ scenarios:
  
     target:
       line: line_02
-      object: fryum
+      object: pcb2
       bank_version: v2
       lot_ids: [LOT-20260624-005]
       date_range: [2026-06-23, 2026-06-25]
@@ -823,7 +823,7 @@ scenarios:
         score_vs_threshold: below
         score_ratio: 0.95
         nearest_patch_ref:
-          source_image: fryum/Data/Images/Normal/0044.JPG
+          source_image: pcb2/Data/Images/Normal/0044.JPG
           patch_index: null
         nearest_patch_is_defect: false
         coverage_present: true
@@ -848,7 +848,7 @@ scenarios:
  
     target:
       line: line_03
-      object: pcb2
+      object: pcb3
       bank_version: v3
       lot_ids: [LOT-20260702-008]
       date_range: [2026-07-01, 2026-07-03]
@@ -878,7 +878,7 @@ scenarios:
         score_vs_threshold: below
         score_ratio: 0.96
         nearest_patch_ref:
-          source_image: pcb2/Data/Images/Normal/0410.JPG
+          source_image: pcb3/Data/Images/Normal/0410.JPG
           patch_index: null
         nearest_patch_is_defect: false
         coverage_present: true
@@ -903,7 +903,7 @@ scenarios:
  
     target:
       line: line_04
-      object: pipe_fryum
+      object: pcb4
       bank_version: v4
       lot_ids: [LOT-20260718-011]
       date_range: [2026-07-17, 2026-07-19]
@@ -919,7 +919,7 @@ scenarios:
       method: overlap_select
       seed: 20260718
       params:
-        selected_defect_image: pipe_fryum/Data/Images/Anomaly/006.JPG
+        selected_defect_image: pcb4/Data/Images/Anomaly/006.JPG
         similarity_note: "결함 형상이 정상품의 자연 변형 범위 경계에 위치"
  
     ground_truth:
@@ -933,7 +933,7 @@ scenarios:
         score_vs_threshold: near
         score_ratio: 0.98
         nearest_patch_ref:
-          source_image: pipe_fryum/Data/Images/Normal/0089.JPG
+          source_image: pcb4/Data/Images/Normal/0089.JPG
           patch_index: null
         nearest_patch_is_defect: false
         coverage_present: true
@@ -1020,7 +1020,7 @@ scenarios:
  
     target:
       line: line_02
-      object: pcb3
+      object: pcb2
       bank_version: v2
       lot_ids: [LOT-20260626-012]
       date_range: [2026-06-25, 2026-06-27]
@@ -1051,7 +1051,7 @@ scenarios:
         score_vs_threshold: below
         score_ratio: 0.91
         nearest_patch_ref:
-          source_image: pcb3/Data/Images/Normal/0203.JPG
+          source_image: pcb2/Data/Images/Normal/0203.JPG
           patch_index: null
         nearest_patch_is_defect: false
         coverage_present: true
@@ -1076,7 +1076,7 @@ scenarios:
  
     target:
       line: line_03
-      object: candle
+      object: pcb3
       bank_version: v3
       lot_ids: [LOT-20260704-004]
       date_range: [2026-07-03, 2026-07-05]
@@ -1107,7 +1107,7 @@ scenarios:
         score_vs_threshold: near
         score_ratio: 0.95
         nearest_patch_ref:
-          source_image: candle/Data/Images/Normal/0066.JPG
+          source_image: pcb3/Data/Images/Normal/0066.JPG
           patch_index: null
         nearest_patch_is_defect: false
         coverage_present: true
@@ -1133,7 +1133,7 @@ scenarios:
  
     target:
       line: line_04
-      object: pcb2
+      object: pcb4
       bank_version: v4
       lot_ids: [LOT-20260722-009]
       date_range: [2026-07-21, 2026-07-23]
@@ -1164,7 +1164,7 @@ scenarios:
         score_vs_threshold: below
         score_ratio: 0.86
         nearest_patch_ref:
-          source_image: pcb2/Data/Images/Normal/0512.JPG
+          source_image: pcb4/Data/Images/Normal/0512.JPG
           patch_index: null
         nearest_patch_is_defect: false
         coverage_present: true
@@ -1192,7 +1192,7 @@ scenarios:
  
     target:
       line: line_01
-      object: pcb3
+      object: pcb1
       bank_version: v3
       lot_ids: [LOT-20260616-003]
       date_range: [2026-06-15, 2026-06-17]
@@ -1222,7 +1222,7 @@ scenarios:
         score_vs_threshold: above
         score_ratio: 1.22
         nearest_patch_ref:
-          source_image: pcb3/Data/Images/Anomaly/031.JPG
+          source_image: pcb1/Data/Images/Anomaly/031.JPG
           patch_index: null
         nearest_patch_is_defect: true
         coverage_present: true
@@ -1248,7 +1248,7 @@ scenarios:
  
     target:
       line: line_02
-      object: pcb1
+      object: pcb2
       bank_version: v2
       lot_ids: [LOT-20260630-014]
       date_range: [2026-06-29, 2026-07-01]
@@ -1278,7 +1278,7 @@ scenarios:
         score_vs_threshold: above
         score_ratio: 1.18
         nearest_patch_ref:
-          source_image: pcb1/Data/Images/Anomaly/027.JPG
+          source_image: pcb2/Data/Images/Anomaly/027.JPG
           patch_index: null
         nearest_patch_is_defect: true
         coverage_present: true
@@ -1303,13 +1303,13 @@ scenarios:
  
     target:
       line: line_03
-      object: pcb4
+      object: pcb3
       bank_version: v3
       lot_ids: [LOT-20260709-006]
       date_range: [2026-07-08, 2026-07-10]
  
     input:
-      issue_text: "line_03 미검 건으로 접수됐는데 확인해보니 검사기는 잡았던 것 같음. 한도 기준 문제인듯"
+      issue_text: "line_03 미검 건으로 접수됐는데 확인해보니 검사기는 잡았던 것 같음. 기준 문제인듯"
       attachments:
         - line_03/2026-07-09/LOT-20260709-006/img_0009.png
       reporter_role: 법인MI담당자
@@ -1320,7 +1320,7 @@ scenarios:
       seed: 20260709
       params:
         spec_field: warp_tolerance
-        spec_note: "제보자가 이미 한도 기준 문제를 의심한 상태로 접수"
+        spec_note: "제보자가 이미 기준 문제를 의심한 상태로 접수"
  
     ground_truth:
       intake_verdict: proceed
@@ -1333,7 +1333,7 @@ scenarios:
         score_vs_threshold: above
         score_ratio: 1.30
         nearest_patch_ref:
-          source_image: pcb4/Data/Images/Anomaly/009.JPG
+          source_image: pcb3/Data/Images/Anomaly/009.JPG
           patch_index: null
         nearest_patch_is_defect: true
         coverage_present: true
@@ -1348,7 +1348,7 @@ scenarios:
       evidence_required: [score_vs_threshold, criteria_verdict]
       tolerance: {score_ratio: 0.10}
       notes: >
-        제보자가 이미 원인을 추측(한도 기준 문제)해 접수한 케이스 — 에이전트가 이 추측에
+        제보자가 이미 원인을 추측(기준 문제)해 접수한 케이스 — 에이전트가 이 추측에
         편향되지 않고 evidence 7종을 직접 검증해 동일 결론에 도달하는지가 포인트.
  
   - id: SC-CR-004
@@ -1358,7 +1358,7 @@ scenarios:
  
     target:
       line: line_04
-      object: pcb2
+      object: pcb4
       bank_version: v4
       lot_ids: [LOT-20260725-010]
       date_range: [2026-07-24, 2026-07-26]
@@ -1390,7 +1390,7 @@ scenarios:
         score_vs_threshold: above
         score_ratio: 1.12
         nearest_patch_ref:
-          source_image: pcb2/Data/Images/Anomaly/018.JPG
+          source_image: pcb4/Data/Images/Anomaly/018.JPG
           patch_index: null
         nearest_patch_is_defect: true
         coverage_present: true
