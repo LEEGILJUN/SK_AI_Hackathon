@@ -290,3 +290,51 @@ def test_product_name_alone_is_enough_to_proceed(factory):
     assert outcome.intake is not None
     assert outcome.intake.verdict == "proceed"
     assert not outcome.intake.report.attachments, "첨부 없이 진행한 경로를 재고 있다"
+
+
+# ── 라인 시뮬레이터 ─────────────────────────────────────────────────────
+
+
+def test_shadow_keeps_every_case_not_only_disagreements(factory):
+    """시뮬레이터가 흘려보내려면 통과한 것도 남아 있어야 한다.
+
+    갈린 것만 남기면 "몇 장을 어떻게 통과시켰는가"를 보여줄 수 없다.
+    """
+    outcome = run(factory, patch_override="defect")
+    if outcome.shadow is None:
+        pytest.skip("이 실행에서는 섀도까지 가지 않았다")
+
+    shadow = outcome.shadow
+    assert len(shadow.cases) == shadow.total
+    assert sum(1 for c in shadow.cases if c.agreed) == shadow.agreed
+    assert sum(1 for c in shadow.cases if not c.agreed) == shadow.review_count
+
+
+def test_simulator_replays_real_numbers_not_invented_ones(factory):
+    """시뮬레이터의 집계가 섀도 결과와 정확히 같아야 한다.
+
+    화면에서 숫자가 따로 놀면 보기 좋은 애니메이션일 뿐 근거가 아니다.
+    """
+    from app.view import render_page
+
+    outcome = run(factory, patch_override="defect")
+    if outcome.shadow is None:
+        pytest.skip("이 실행에서는 섀도까지 가지 않았다")
+
+    html = render_page(outcome, outcome.issue_text)
+    assert "코어셋 검증 — 가상 라인" in html
+    assert "코어셋 검증 중입니다" in html
+    # 흘려보내는 자료가 섀도 사례 전부여야 한다.
+    for case in outcome.shadow.cases:
+        assert f"/image/{case.image}" in html
+
+
+def test_simulator_is_absent_when_there_was_no_shadow_run(factory):
+    """섀도까지 못 갔으면 시뮬레이터도 없어야 한다. 빈 벨트를 띄우지 않는다."""
+    from app.view import render_page
+
+    outcome = run(factory, patch_override="defect",
+                  adapters=(ScriptedLLM([("intake_issue", {})]), StubAdapter()))
+    html = render_page(outcome, outcome.issue_text)
+    assert outcome.shadow is None
+    assert "코어셋 검증 — 가상 라인" not in html

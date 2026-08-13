@@ -50,6 +50,26 @@ class Disagreement:
 
 
 @dataclass
+class ShadowCase:
+    """섀도로 돌린 이미지 한 장의 전·후 판정.
+
+    갈린 것만이 아니라 **전부** 남긴다. 사람이 확인할 것은 갈린 건뿐이지만,
+    "몇 장을 어떻게 통과시켰는가"를 보여주려면 통과한 것도 있어야 한다.
+    라인 시뮬레이터가 이것을 한 장씩 흘려보낸다.
+    """
+
+    image: str
+    current_score: float
+    candidate_score: float
+    current_verdict: str
+    candidate_verdict: str
+    agreed: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class ShadowReport:
     """섀도 비교 결과.
 
@@ -60,6 +80,8 @@ class ShadowReport:
     total: int
     agreed: int
     disagreements: list[Disagreement] = field(default_factory=list)
+    #: 갈린 것 포함 전부. 순서는 입력 순서와 같다.
+    cases: list[ShadowCase] = field(default_factory=list)
     current_version: str = ""
     candidate_version: str = ""
     current_threshold: float = 0.0
@@ -101,6 +123,7 @@ class ShadowReport:
             "candidate_version": self.candidate_version,
             "summary": self.summary(),
             "disagreements": [d.to_dict() for d in self.disagreements],
+            "cases": [c.to_dict() for c in self.cases],
         }
 
 
@@ -128,6 +151,7 @@ def shadow_compare(
 
     agreed = 0
     disagreements: list[Disagreement] = []
+    cases: list[ShadowCase] = []
 
     for path in image_paths:
         current: InferenceResult = score_image(path, current_bank, embedder, root=root, top_k=1)
@@ -135,8 +159,20 @@ def shadow_compare(
 
         current_verdict = current.verdict(current_threshold)
         candidate_verdict = candidate.verdict(candidate_threshold)
+        same = current_verdict == candidate_verdict
 
-        if current_verdict == candidate_verdict:
+        cases.append(
+            ShadowCase(
+                image=current.image,
+                current_score=current.score,
+                candidate_score=candidate.score,
+                current_verdict=current_verdict,
+                candidate_verdict=candidate_verdict,
+                agreed=same,
+            )
+        )
+
+        if same:
             agreed += 1
             continue
 
@@ -162,6 +198,7 @@ def shadow_compare(
         total=len(image_paths),
         agreed=agreed,
         disagreements=disagreements,
+        cases=cases,
         current_version=current_bank.version,
         candidate_version=candidate_bank.version,
         current_threshold=current_threshold,

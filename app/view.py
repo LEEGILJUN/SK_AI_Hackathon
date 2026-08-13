@@ -9,7 +9,9 @@
 
 from __future__ import annotations
 
+import json
 from html import escape
+from pathlib import Path
 
 from app.pipeline import RunOutcome, Stage
 
@@ -82,7 +84,53 @@ pre{background:var(--panel2);border:1px solid var(--rule2);border-radius:6px;
   line-height:1.55;margin:0;max-height:460px}
 .banner{background:var(--panel2);border:1px solid var(--rule);border-left:3px solid var(--accent);
   border-radius:6px;padding:12px 15px;font-size:13.5px;color:var(--ink2)}
+input{width:100%;font:inherit;color:var(--ink);background:var(--panel2);
+  border:1px solid var(--rule);border-radius:5px;padding:9px 10px}
+.supplement{border-top:1px dashed var(--rule2);padding-top:12px;margin-top:2px}
+.supplement summary{font-size:13px;color:var(--ink3);cursor:pointer;padding:2px 0}
+.supplement[open] summary{color:var(--ink2);margin-bottom:10px}
+.supplement .controls{margin-top:10px}
+.ask{margin:0 0 8px;color:var(--stop);font-size:14px;font-weight:600}
 a{color:var(--accent)}
+
+/* ── 라인 시뮬레이터 ───────────────────────────────────────────────── */
+.sim{background:var(--panel);border:1px solid var(--rule);border-radius:8px;
+  padding:18px;display:flex;flex-direction:column;gap:14px}
+.sim-head{display:flex;justify-content:space-between;align-items:baseline;
+  gap:12px;flex-wrap:wrap}
+.sim-title{font-size:16px;font-weight:680}
+.sim-state{font-family:var(--mono);font-size:12px;letter-spacing:.06em;
+  color:var(--accent);font-weight:600}
+.belt{position:relative;background:var(--panel2);border:1px solid var(--rule2);
+  border-radius:6px;height:150px;overflow:hidden}
+.belt::after{content:"";position:absolute;left:0;right:0;bottom:26px;height:2px;
+  background:repeating-linear-gradient(90deg,var(--rule) 0 14px,transparent 14px 28px)}
+.piece{position:absolute;bottom:34px;width:74px;transition:left .5s linear;
+  display:flex;flex-direction:column;align-items:center;gap:4px}
+.piece img{width:64px;height:64px;object-fit:cover;border-radius:4px;
+  border:2px solid var(--rule);background:var(--panel)}
+.piece.defect img{border-color:var(--stop)}
+.piece.pass img{border-color:var(--ok)}
+.piece .tag{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:3px;
+  white-space:nowrap}
+.piece.defect .tag{color:var(--stop);background:var(--stop-bg)}
+.piece.pass .tag{color:var(--ok);background:var(--ok-bg)}
+.scanner{position:absolute;top:0;bottom:24px;left:50%;width:2px;
+  background:var(--accent);opacity:.55}
+.scanner::before{content:"검사 지점";position:absolute;top:4px;left:6px;
+  font-family:var(--mono);font-size:10px;color:var(--accent);letter-spacing:.1em;
+  white-space:nowrap}
+.bar{height:5px;background:var(--rule2);border-radius:3px;overflow:hidden}
+.bar>span{display:block;height:100%;width:0;background:var(--accent);
+  transition:width .4s ease}
+.tally{display:flex;gap:10px;flex-wrap:wrap}
+.tally div{flex:1;min-width:120px;background:var(--panel2);border:1px solid var(--rule2);
+  border-radius:6px;padding:9px 12px}
+.tally b{display:block;font-size:20px;font-variant-numeric:tabular-nums;line-height:1.2}
+.tally span{font-size:11.5px;color:var(--ink3);font-family:var(--mono);letter-spacing:.05em}
+.tally .good b{color:var(--ok)}
+.tally .bad b{color:var(--stop)}
+@media (prefers-reduced-motion:reduce){.piece{transition:none}}
 """
 
 
@@ -101,6 +149,134 @@ def _stage_html(stage: Stage) -> str:
       {f'<table>{rows}</table>' if rows else ''}
       {f'<p class="note">{escape(stage.note)}</p>' if stage.note else ''}
     </section>
+    """
+
+
+def _simulator_html(outcome: RunOutcome) -> str:
+    """가상 라인 시뮬레이터 — 새 코어셋이 실제로 무엇을 잡는지 흘려 보여준다.
+
+    **지어낸 애니메이션이 아니다.** 흘러가는 판정은 전부 `shadow_compare` 가
+    실제로 낸 값이고, 화면은 그것을 한 장씩 재생할 뿐이다. 그래서 마지막에
+    쌓인 숫자가 게이트 지표와 정확히 같다.
+
+    두 뱅크를 나란히 보여주는 것이 요점이다. 신규 뱅크만 돌려서는 "좋아졌다"를
+    말할 수 없다 — 양산 데이터에는 정답이 없으므로 **같은 이미지에 두 모델을
+    돌려 갈리는 것을 보는 것**이 섀도 평가다.
+    """
+    shadow = outcome.shadow
+    if shadow is None or not shadow.cases:
+        return ""
+
+    cases = json.dumps(
+        [
+            {
+                "src": f"/image/{c.image}",
+                "name": Path(c.image).name,
+                "before": c.current_verdict,
+                "after": c.candidate_verdict,
+                "beforeScore": round(c.current_score, 3),
+                "afterScore": round(c.candidate_score, 3),
+                "agreed": c.agreed,
+            }
+            for c in shadow.cases
+        ],
+        ensure_ascii=False,
+    )
+    return f"""
+    <div class="sim">
+      <div class="sim-head">
+        <span class="sim-title">코어셋 검증 — 가상 라인</span>
+        <span class="sim-state" id="sim-state">대기</span>
+      </div>
+      <p class="detail">
+        신규 코어셋 <code>{escape(shadow.candidate_version)}</code> 을 현행
+        <code>{escape(shadow.current_version)}</code> 과 나란히 돌립니다.
+        <strong>신규 뱅크는 실제 판정에 쓰이지 않습니다.</strong>
+      </p>
+      <div class="belt" id="belt"><div class="scanner"></div></div>
+      <div class="bar"><span id="sim-bar"></span></div>
+      <div class="tally">
+        <div><b id="t-total">0</b><span>검사 완료</span></div>
+        <div class="good"><b id="t-caught">0</b><span>새로 잡음</span></div>
+        <div class="bad"><b id="t-lost">0</b><span>새로 놓침</span></div>
+        <div><b id="t-same">0</b><span>판정 동일</span></div>
+      </div>
+      <p class="note" id="sim-note">
+        흘러가는 판정은 전부 섀도 비교가 실제로 낸 값입니다. 화면은 그것을
+        한 장씩 재생합니다.
+      </p>
+    </div>
+    <script>
+    (function() {{
+      const cases = {cases};
+      const belt = document.getElementById("belt");
+      const state = document.getElementById("sim-state");
+      const bar = document.getElementById("sim-bar");
+      const out = {{
+        total: document.getElementById("t-total"),
+        caught: document.getElementById("t-caught"),
+        lost: document.getElementById("t-lost"),
+        same: document.getElementById("t-same"),
+      }};
+      let done = 0, caught = 0, lost = 0, same = 0, i = 0;
+
+      function release() {{
+        if (i >= cases.length) {{
+          state.textContent = "검증 완료 — 사람 승인 대기";
+          document.getElementById("sim-note").textContent =
+            "판정이 갈린 " + (caught + lost) + "장만 사람이 확인하면 됩니다. " +
+            "나머지 " + same + "장은 두 뱅크가 같게 판정했습니다.";
+          return;
+        }}
+        const c = cases[i++];
+        state.textContent = "코어셋 검증 중입니다 \\u2014 " + i + "/" + cases.length;
+
+        const piece = document.createElement("div");
+        piece.className = "piece " + (c.after === "defect" ? "defect" : "pass");
+        piece.style.left = "-80px";
+        piece.innerHTML =
+          '<img src="' + c.src + '" alt="' + c.name + '">' +
+          '<span class="tag">' + (c.after === "defect" ? "불량" : "양품") +
+          " " + c.afterScore + "</span>";
+        belt.appendChild(piece);
+
+        requestAnimationFrame(function() {{ piece.style.left = "45%"; }});
+
+        setTimeout(function() {{
+          done++;
+          if (c.agreed) same++;
+          else if (c.before === "pass" && c.after === "defect") caught++;
+          else lost++;
+          out.total.textContent = done;
+          out.caught.textContent = caught;
+          out.lost.textContent = lost;
+          out.same.textContent = same;
+          bar.style.width = (done / cases.length * 100) + "%";
+          piece.style.left = "108%";
+          setTimeout(function() {{ piece.remove(); }}, 600);
+        }}, 620);
+
+        setTimeout(release, 780);
+      }}
+
+      const start = function() {{ setTimeout(release, 300); }};
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {{
+        // 애니메이션을 끈 환경에서는 결과만 즉시 채운다.
+        cases.forEach(function(c) {{
+          done++;
+          if (c.agreed) same++;
+          else if (c.before === "pass" && c.after === "defect") caught++;
+          else lost++;
+        }});
+        out.total.textContent = done; out.caught.textContent = caught;
+        out.lost.textContent = lost; out.same.textContent = same;
+        bar.style.width = "100%";
+        state.textContent = "검증 완료 — 사람 승인 대기";
+      }} else {{
+        start();
+      }}
+    }})();
+    </script>
     """
 
 
@@ -138,28 +314,61 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
         f'<option value="{v}"{" selected" if v == patch_verdict else ""}>{escape(t)}</option>'
         for v, t in options
     )
-    # 양식은 **비어 있는 것이 기본**이다. 언어 모델이 이슈 원문에서 뽑고,
-    # 못 뽑은 자리만 여기서 채운다. 다 채워 넣으면 추출이 할 일이 없어져
-    # 언어 모델을 쓰는 의미가 사라진다.
+    # ── 입력은 프롬프트 하나다 ──────────────────────────────────────────
+    #
+    # 라인·품목·제품명 칸을 처음부터 띄워 놓으면 사람이 그것부터 채우게 되고,
+    # 그러면 언어 모델이 원문에서 뽑을 일이 없어져 자연어 입력이 장식이 된다.
+    # 그래서 **기본 화면은 이슈 원문과 실행 단추뿐**이다.
+    #
+    # 칸은 인테이크가 되물었을 때만 열린다. 그것이 원래 설계된 동작이다 —
+    # 정보가 부족하면 추측하지 않고 무엇이 필요한지 되묻는다. 모델이 붙어
+    # 있으면 원문에서 뽑으므로 이 칸은 끝까지 안 나온다.
+    asked = bool(outcome and outcome.intake and outcome.intake.verdict == "need_more_info")
     ctx = context or {}
+    if outcome and outcome.intake:
+        report = outcome.intake.report
+        ctx = {k: (ctx.get(k) or getattr(report, k, "") or "")
+               for k in ("line", "object_name", "defect_type", "product_id")}
+
     fields = "".join(
         f"""<div>
           <label for="{key}">{escape(label)}</label>
-          <input id="{key}" name="{key}" value="{escape(ctx.get(key, ''))}"
+          <input id="{key}" name="{key}" value="{escape(ctx.get(key, '') or '')}"
                  placeholder="{escape(hint)}">
         </div>"""
         for key, label, hint in (
-            ("line", "라인", "원문에서 추출"),
-            ("object_name", "품목", "원문에서 추출"),
-            ("defect_type", "결함 유형", "원문에서 추출"),
-            ("product_id", "제품명", "원문에서 추출"),
+            ("line", "라인", "예: line_02"),
+            ("object_name", "품목", "예: capsules"),
+            ("defect_type", "결함 유형", "예: dent"),
+            ("product_id", "제품명", "예: CAPSULES-02-defect_002"),
         )
     )
+
+    question = outcome.intake.question if asked else ""
+    supplement = f"""
+    <details class="supplement"{' open' if asked else ''}>
+      <summary>{escape('인테이크가 되물었습니다 — 값을 채워 주세요' if asked
+                       else '보충 입력 (모델이 원문에서 못 뽑을 때만 필요)')}</summary>
+      {f'<p class="ask">{escape(question)}</p>' if question else ''}
+      <p class="hint">
+        언어 모델이 붙어 있으면 <strong>이슈 원문에서 직접 뽑습니다.</strong>
+        여기 채운 값은 모델이 못 뽑은 자리에만 들어갑니다.
+      </p>
+      <div class="controls">{fields}</div>
+    </details>
+    """
 
     body = ""
     if outcome:
         body += _driver_html(outcome)
-        body += '<div class="flow">' + "".join(_stage_html(s) for s in outcome.stages) + "</div>"
+        # 시뮬레이터는 섀도 단계 바로 앞에 끼운다. 숫자만 적힌 표보다
+        # 무엇이 어떻게 갈렸는지가 먼저 보여야 한다.
+        stages_html = []
+        for stage in outcome.stages:
+            if stage.key == "shadow":
+                stages_html.append(_simulator_html(outcome))
+            stages_html.append(_stage_html(stage))
+        body += '<div class="flow">' + "".join(stages_html) + "</div>"
         if outcome.approval_markdown:
             body += f"""
             <div class="doc">
@@ -188,22 +397,23 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
 
   <form method="post" action="/run">
     <div>
-      <label for="issue">이슈 내용</label>
-      <textarea id="issue" name="issue_text">{escape(issue_text)}</textarea>
+      <label for="issue">현장에서 올라온 이슈</label>
+      <textarea id="issue" name="issue_text"
+                placeholder="예) 2라인 캡슐 표면 찍힘이 며칠째 계속 빠집니다. 제품 CAPSULES-02-defect_002 건입니다."
+      >{escape(issue_text)}</textarea>
+      <span class="hint">
+        이것만 적으면 됩니다. 라인·품목·제품명은 <strong>언어 모델이 여기서 뽑습니다.</strong>
+      </span>
     </div>
     <div class="controls">
-      {fields}
+      <button type="submit">접수하고 실행</button>
       <div>
-        <label for="patch">판별 5번 — 최근접 패치가 무엇인가</label>
+        <label for="patch">시연 조정 · 판별 5번</label>
         <select id="patch" name="patch_verdict">{select}</select>
         <span class="hint">이 값 하나로 조치가 정반대로 갈립니다.</span>
       </div>
-      <p class="hint" style="flex-basis:100%">
-        아래 네 칸은 <strong>언어 모델이 이슈 원문에서 뽑는 것이 우선</strong>입니다.
-        모델이 붙어 있으면 비워 두세요. 못 뽑은 자리만 채워집니다.
-      </p>
-      <button type="submit">접수하고 실행</button>
     </div>
+    {supplement}
   </form>
 
   {body}

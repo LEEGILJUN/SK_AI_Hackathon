@@ -21,8 +21,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from fastapi import FastAPI, Form  # noqa: E402
-from fastapi.responses import HTMLResponse, PlainTextResponse  # noqa: E402
+from fastapi import FastAPI, Form, HTTPException  # noqa: E402
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse  # noqa: E402
 
 from app.pipeline import DemoFactory, RunOutcome, default_issue, run_pipeline  # noqa: E402
 from app.view import render_page  # noqa: E402
@@ -43,17 +43,16 @@ def factory() -> DemoFactory:
 
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
-    """첫 화면.
+    """첫 화면 — **입력은 이슈 원문 하나다.**
 
-    이슈 원문에 제품명이 들어 있다. 언어 모델이 뽑을 것이 있어야 MES 조회가
-    의미를 가진다. **모델이 붙어 있으면 아래 칸을 비워 두면 되고**, 안 붙어
-    있으면 채워야 한다 — 인테이크가 추측으로 채우지 않기 때문이다. 그래서
-    Mac 처럼 모델이 없는 환경에서는 미리 채워 둔다.
+    라인·품목 칸을 미리 띄워 채워 두면 사람이 그것부터 채우게 되고, 언어 모델이
+    원문에서 뽑을 일이 없어져 자연어 입력이 장식이 된다. 그래서 비워 둔다.
+
+    모델이 없으면 추출이 비고 인테이크가 되묻는다. 그것을 감추지 않는다 —
+    "정보가 부족하면 추측하지 않고 되묻는다"가 인테이크의 설계이고, 되물었을
+    때 비로소 보충 칸이 열린다.
     """
-    f = factory()
-    prefill = {"line": "line_02", "object_name": "capsules",
-               "defect_type": "dent", "product_id": f.reported_product}
-    return render_page(None, default_issue(f), context=prefill)
+    return render_page(None, default_issue(factory()))
 
 
 @app.post("/run", response_class=HTMLResponse)
@@ -96,6 +95,26 @@ def approval() -> str:
     if _last is None or not _last.approval_markdown:
         return "아직 생성된 승인 요청이 없습니다."
     return _last.approval_markdown
+
+
+@app.get("/image/{relative_path:path}")
+def image(relative_path: str) -> FileResponse:
+    """가상 공장 이미지 한 장. 라인 시뮬레이터가 가져다 쓴다.
+
+    **공장 루트 밖으로 나가지 못하게 막는다.** 경로를 그대로 이어 붙이면
+    `../../etc/passwd` 같은 요청에 파일을 내주게 된다. 실제 경로로 풀어서
+    루트 아래인지 확인한 뒤에만 응답한다.
+    """
+    root = factory().root.resolve()
+    try:
+        target = (root / relative_path).resolve()
+        target.relative_to(root)
+    except (ValueError, OSError):
+        raise HTTPException(status_code=404, detail="없는 경로입니다.")
+
+    if not target.is_file() or target.suffix.lower() not in {".png", ".jpg", ".jpeg"}:
+        raise HTTPException(status_code=404, detail="없는 이미지입니다.")
+    return FileResponse(target)
 
 
 @app.get("/health", response_class=PlainTextResponse)

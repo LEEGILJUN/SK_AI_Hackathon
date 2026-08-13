@@ -89,10 +89,6 @@ def default_issue(factory: "DemoFactory") -> str:
     """
     return f"{DEFAULT_ISSUE} 제품 {factory.reported_product} 건입니다."
 
-#: 웹 양식이 아무것도 안 주면 쓰는 값. 인테이크가 추측으로 채우지 않게 하려면
-#: 사람이 고른 값이 있어야 한다. **코드에 박힌 정답이 아니라 양식의 기본값이다.**
-DEFAULT_CONTEXT = {"line": "line_02", "object_name": "capsules", "defect_type": "dent"}
-
 #: 모델이 없을 때 재생할 고정 순서. 언어 모델이 붙으면 이 순서를 모델이 정한다.
 FALLBACK_SEQUENCE: list[tuple[str, dict[str, Any]]] = [
     ("intake_issue", {}),
@@ -944,15 +940,17 @@ def run_pipeline(
         보여줄 수 있다. None 이면 역추적이 가리킨 자리를 잘라 시각 언어 모델에
         묻고, 모델이 없으면 판정이 보류된다.
     context
-        웹 양식에서 받은 라인·품목·결함 유형. 인테이크가 추측으로 채우지
-        않게 하려면 사람이 고른 값이 있어야 한다.
+        보충 입력. **비워 두는 것이 기본이다.** 언어 모델이 이슈 원문에서 뽑고,
+        못 뽑은 자리만 여기서 채운다. 기본값을 코드에 두면 화면에 값이 어디선가
+        나타나고, 사람이 "모델이 뽑은 것"으로 오해한다. 아무것도 없고 모델도
+        없으면 인테이크가 되묻는다 — 그것이 옳은 동작이다.
 
     언어 모델이 붙어 있으면 모델이 도구 순서를 정하고, 없으면 같은 도구들을
     고정 순서로 재생한다. 어느 쪽이었는지는 outcome.driver 에 남는다.
     """
     llm, vlm = adapters or build_adapters()
     session = _DemoSession(
-        factory, issue_text, dict(context or DEFAULT_CONTEXT),
+        factory, issue_text, dict(context or {}),
         patch_override, (llm, vlm), threshold,
     )
     registry = session.registry()
