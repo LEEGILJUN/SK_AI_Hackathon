@@ -59,7 +59,7 @@ intake_verdicts:
 
 scenarios:
  
-  # ===================== THRESHOLD (재구성 불필요) =====================
+  # ===================== THRESHOLD (Coreset 재구성 불필요) =====================
  
   - id: SC-TH-001
     title: PCB 엣지 크랙 미검 - threshold 과보수 설정
