@@ -182,6 +182,14 @@ def main() -> int:
         print("작성 예시는 examples/scenarios_예시.yaml 을 보세요.")
         return 0
 
+    # ID 중복 — 채점이 ID 를 키로 모으면 하나가 조용히 덮인다.
+    # 실제로 골격 시절 예시 템플릿이 파일 끝에 남아 SC-BC-001 이 두 번 나왔다.
+    ids = [s.get("id") for s in scenarios if s.get("id")]
+    for sid, n in Counter(ids).items():
+        if n > 1:
+            problem(sid, f"ID 가 {n}번 나옵니다. 채점이 ID 로 모으면 하나가 덮입니다. "
+                         f"골격 시절 예시 템플릿이 파일 끝에 남아 있지 않은지 확인하세요.")
+
     causes = [check_scenario(i, s) for i, s in enumerate(scenarios)]
     counts = Counter(c for c in causes if c)
 

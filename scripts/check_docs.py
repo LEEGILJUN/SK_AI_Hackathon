@@ -78,13 +78,19 @@ def documents() -> list[Path]:
 
 
 def actual_test_count() -> int | None:
-    """실제 테스트 건수를 센다. pytest 수집만 하고 실행하지 않는다."""
+    """실제 테스트 건수를 센다. pytest 수집만 하고 실행하지 않는다.
+
+    수집만 하는데도 2분이 걸린다. 테스트 모듈이 torch 를 부르고 CUDA 를
+    초기화하기 때문이며, 콜드 스타트면 더 걸린다. 180초로 잡았더니 GPU
+    장비에서 매번 제한시간에 걸려 "세지 못했습니다" 만 떴다. 넉넉히 준다 —
+    이 검사는 자주 돌리는 것이 아니라 오래 걸려도 문제가 없다.
+    """
     venv_python = REPO_ROOT / ".venv" / "bin" / "python"
     python = str(venv_python) if venv_python.exists() else sys.executable
     try:
         result = subprocess.run(
             [python, "-m", "pytest", "tests/", "--collect-only", "-q"],
-            cwd=REPO_ROOT, capture_output=True, text=True, timeout=180,
+            cwd=REPO_ROOT, capture_output=True, text=True, timeout=900,
         )
     except Exception:
         return None
