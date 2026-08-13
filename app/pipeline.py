@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import tempfile
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -45,7 +46,9 @@ from agents.tools import (
     CHECKS_SPEC,
     DIAGNOSE_SPEC,
     GATE_SPEC,
+    INSPECT_SPEC,
     INTAKE_SPEC,
+    MES_SPEC,
     PLAN_SPEC,
     REBUILD_SPEC,
     RELEASE_SPEC,
@@ -71,9 +74,20 @@ from inspection.crop import crop_patch, crop_with_context
 from inspection.quality import assess_quality
 from inspection.shadow import ShadowReport
 from lookup import MockLookup
+from lookup.base import DefectDistribution, ImageRecord
 
 DEMO_CONFIG = FeatureConfig(backbone="resnet18", resize=64, crop=64)
 DEFAULT_ISSUE = "2라인 캡슐 표면 찍힘이 며칠째 계속 빠집니다. 육안으로는 명확한데 검사에서 양품으로 나옵니다."
+
+
+def default_issue(factory: "DemoFactory") -> str:
+    """시연용 이슈 원문. **제품명을 본문에 넣는다.**
+
+    현장 이슈는 이미지를 첨부해서 오기보다 "이 제품이 계속 빠진다"로 온다.
+    제품명이 본문에 있어야 언어 모델이 뽑을 것이 생기고, MES 조회가 의미를
+    가진다. 양식에 제품명 칸만 두고 본문에서 빼면 추출이 할 일이 없어진다.
+    """
+    return f"{DEFAULT_ISSUE} 제품 {factory.reported_product} 건입니다."
 
 #: 웹 양식이 아무것도 안 주면 쓰는 값. 인테이크가 추측으로 채우지 않게 하려면
 #: 사람이 고른 값이 있어야 한다. **코드에 박힌 정답이 아니라 양식의 기본값이다.**
@@ -82,6 +96,8 @@ DEFAULT_CONTEXT = {"line": "line_02", "object_name": "capsules", "defect_type": 
 #: 모델이 없을 때 재생할 고정 순서. 언어 모델이 붙으면 이 순서를 모델이 정한다.
 FALLBACK_SEQUENCE: list[tuple[str, dict[str, Any]]] = [
     ("intake_issue", {}),
+    ("lookup_mes", {}),
+    ("run_inspection", {}),
     ("run_checks", {}),
     ("diagnose_issue", {}),
     ("plan_curation", {}),
@@ -96,8 +112,9 @@ AGENT_PROMPT = """현장에서 미검출 이슈가 하나 접수됐다. 접수�
 이슈 원문:
 {issue}
 
-먼저 접수하고, 판별 항목을 모은 뒤 진단하라. 원인이 뱅크 재구성으로 풀리는
-것이 아니면 재구성을 부르지 말고 거기서 멈춰라."""
+먼저 접수하고, MES 에서 해당 제품·로트의 이미지를 찾아 그 품목의 뱅크로
+추론하라. 미검이 나오면 판별 항목을 모아 진단하라. 원인이 뱅크 재구성으로
+풀리는 것이 아니면 재구성을 부르지 말고 거기서 멈춰라."""
 
 
 @dataclass
@@ -133,6 +150,9 @@ class RunOutcome:
     driver: str = "fallback"
     driver_note: str = ""
     agent_run: AgentRun | None = None
+    #: MES 조회·추론으로 가려낸 미검 건. 로트 집중도 집계의 재료다.
+    missed_records: list[ImageRecord] = field(default_factory=list)
+    distribution: DefectDistribution | None = None
 
     @property
     def finished(self) -> bool:
@@ -149,45 +169,137 @@ class RunOutcome:
         ]
 
 
+#: 시연 공장의 품목 구성. (라인, 품목) → 합성 무늬 이름.
+#:
+#: **뱅크는 품목마다 따로 있습니다.** 캡슐의 정상 패치로 PCB 를 판정할 수
+#: 없습니다. 품목이 하나뿐이면 그 사실이 코드에서 드러나지 않아 뱅크가
+#: 하나뿐인 전제가 조용히 박힙니다.
+DEMO_ITEMS: list[tuple[str, str, str]] = [
+    ("line_02", "capsules", "capsules"),
+    ("line_02", "pcb1", "pcb1"),
+    ("line_03", "macaroni1", "macaroni1"),
+]
+
+#: 오염을 넣을 품목 하나. 나머지는 깨끗하다.
+#: 전 품목을 오염시키면 "이 품목만 문제다"를 보여줄 수 없습니다.
+CONTAMINATED_ITEM = ("line_02", "capsules")
+
+
+@dataclass
+class ItemLine:
+    """품목 하나의 이미지와 뱅크.
+
+    뱅크·홀드아웃·오염원이 품목 단위로 묶입니다. 이 묶음이 흐려지면 다른
+    품목의 이미지를 다른 품목 뱅크로 재는 실수가 조용히 지나갑니다.
+    """
+
+    line: str
+    object_name: str
+    bank: MemoryBank
+    bank_normal: list[Path]
+    holdout_normal: list[Path]
+    holdout_defect: list[Path]
+    contaminants: list[Path]
+
+    @property
+    def key(self) -> tuple[str, str]:
+        return (self.line, self.object_name)
+
+
 class DemoFactory:
-    """합성 이미지로 만든 가상 공장. 한 번 만들어 두고 재사용한다."""
+    """합성 이미지로 만든 가상 공장. 한 번 만들어 두고 재사용한다.
+
+    품목이 여럿이고 **품목마다 뱅크가 따로** 있습니다. MES 가 아는 이미지
+    목록(`catalog`)도 함께 만들어, 제품명·로트로 이미지를 찾는 경로가 실제로
+    돌아갑니다. 이동현의 가상 공장이 오면 이 클래스가 빠집니다.
+    """
 
     def __init__(self, normal_count: int = 16, defect_count: int = 6, contaminants: int = 2):
         from tests.synthetic import write_set
 
         self.root = Path(tempfile.mkdtemp(prefix="shvo_demo_"))
-        self.normal = write_set(self.root / "normal", normal_count, "normal", seed_offset=0)
-        self.defect = write_set(self.root / "defect", defect_count, "defect", seed_offset=500)
-        self.contaminants = self.defect[:contaminants]
-        self.query = self.defect[contaminants]
-        self.holdout_normal = self.normal[-4:]
-        self.holdout_defect = self.defect[contaminants + 1 :]
-        self.bank_normal = self.normal[:-4]
-
         self.embedder = PatchEmbedder(DEMO_CONFIG)
-        self.bank: MemoryBank = build_bank(
-            list(self.bank_normal) + list(self.contaminants),
-            self.embedder,
-            coreset_ratio=0.25,
-            seed=42,
-            bank_version="v3",
-            root=self.root,
+        self.items: dict[tuple[str, str], ItemLine] = {}
+        self.catalog: list[ImageRecord] = []
+
+        for index, (line, object_name, variant) in enumerate(DEMO_ITEMS):
+            base = self.root / line / object_name
+            normal = write_set(base / "normal", normal_count, "normal",
+                               seed_offset=index * 1000, variant=variant)
+            defect = write_set(base / "defect", defect_count, "defect",
+                               seed_offset=index * 1000 + 500, variant=variant)
+
+            dirty = (line, object_name) == CONTAMINATED_ITEM
+            mixed_in = list(defect[:contaminants]) if dirty else []
+            bank_normal = normal[:-4]
+
+            bank = build_bank(
+                list(bank_normal) + mixed_in,
+                self.embedder,
+                coreset_ratio=0.25,
+                seed=42,
+                bank_version=f"{object_name}-v3",
+                root=self.root,
+            )
+            self.items[(line, object_name)] = ItemLine(
+                line=line, object_name=object_name, bank=bank,
+                bank_normal=list(bank_normal),
+                holdout_normal=list(normal[-4:]),
+                holdout_defect=list(defect[contaminants:]) if dirty else list(defect),
+                contaminants=mixed_in,
+            )
+            self._register(line, object_name, normal, defect, index)
+
+        contaminated = self.items[CONTAMINATED_ITEM]
+        #: 이슈로 접수될 미검 제품. MES 조회로 찾아내는 대상이다.
+        self.reported_product = self._product_id(
+            CONTAMINATED_ITEM[0], CONTAMINATED_ITEM[1], contaminated.holdout_defect[0]
         )
-        self.clean_reference: MemoryBank = build_bank(
-            self.bank_normal,
-            self.embedder,
-            coreset_ratio=0.25,
-            seed=42,
-            bank_version="v3-clean",
-            root=self.root,
-        )
+
+    # ── MES 가 아는 것 ──────────────────────────────────────────────────
+
+    def _product_id(self, line: str, object_name: str, path: Path) -> str:
+        return f"{object_name.upper()}-{line[-2:]}-{Path(path).stem}"
+
+    def _register(self, line: str, object_name: str, normal, defect, index: int) -> None:
+        """이미지마다 MES 레코드를 만든다. 로트와 설비를 붙여 집계가 되게 한다."""
+        lots = [f"LOT-2026060{index + 1}-{n:03d}" for n in (1, 2)]
+        for group, kind in ((normal, "pass"), (defect, "defect")):
+            for i, path in enumerate(group):
+                #: 결함은 첫 로트에 몰아 넣는다. 로트 집중도가 화면에 뜨는지
+                #: 확인하려면 실제로 몰려 있는 데이터가 있어야 한다.
+                lot = lots[0] if kind == "defect" else lots[i % len(lots)]
+                self.catalog.append(
+                    ImageRecord(
+                        product_id=self._product_id(line, object_name, path),
+                        path=self.relative(path),
+                        line=line,
+                        object_name=object_name,
+                        lot=lot,
+                        captured_at=date(2026, 6, index + 1),
+                        # 미검 상황을 만든다 — 실제로는 결함인데 설비가 양품이라 했다.
+                        verdict="pass",
+                        ground_truth=kind,
+                        equipment=f"CAM-{line[-2:]}-{(i % 2) + 1}",
+                    )
+                )
+
+    def bank_versions(self) -> dict[tuple[str, str], str]:
+        return {key: item.bank.version for key, item in self.items.items()}
+
+    def item_for(self, line: str, object_name: str) -> ItemLine | None:
+        return self.items.get((line, object_name))
 
     def relative(self, path: Path) -> str:
         return Path(path).relative_to(self.root).as_posix()
 
+    def resolve(self, relative_path: str) -> Path:
+        return self.root / relative_path
+
     @property
     def contaminant_names(self) -> set[str]:
-        return {self.relative(p) for p in self.contaminants}
+        return {self.relative(p)
+                for item in self.items.values() for p in item.contaminants}
 
 
 class _DemoSession:
@@ -213,30 +325,68 @@ class _DemoSession:
         self.patch_override = patch_override
         self.llm, self.vlm = adapters
         self.threshold = threshold
-        self.lookup = MockLookup(threshold=threshold)
+        self.lookup = MockLookup(
+            threshold=threshold,
+            catalog=factory.catalog,
+            banks=factory.bank_versions(),
+        )
         self.outcome = RunOutcome(issue_text=issue_text, patch_override=patch_override)
 
         self.evidence: list[Any] | None = None
         self.inference = None
         self.new_threshold: float | None = None
         self.baseline_curve = None
+        #: MES 조회로 특정된 것들. 여기가 비면 뒤 단계가 돌지 않는다.
+        self.item: ItemLine | None = None
+        self.records: list[ImageRecord] = []
+        self.query: Path | None = None
 
     # ── 도구 1. 인테이크 ────────────────────────────────────────────────
 
-    def intake_issue(self, line: str = "", object_name: str = "", defect_type: str = "") -> dict:
-        """자연어 이슈를 구조화하고 진단으로 넘길지 판단한다."""
-        f = self.factory
-        known = dict(self.context)
-        # 모델이 인자로 준 값이 있으면 그것을 쓴다. 없으면 양식에서 받은 값.
-        for key, value in (("line", line), ("object_name", object_name), ("defect_type", defect_type)):
-            if value:
-                known[key] = value
+    def intake_issue(self, line: str = "", object_name: str = "",
+                     defect_type: str = "", product_id: str = "", lot: str = "") -> dict:
+        """자연어 이슈를 구조화하고 진단으로 넘길지 판단한다.
 
-        intake = receive(
-            self.issue_text, self.llm, lookup=self.lookup,
-            known=known, attachments=[str(f.query)],
-        )
+        **자연어가 주 입력이다.** 언어 모델이 이슈 원문에서 라인·품목·제품명을
+        뽑고, 양식에서 받은 값은 모델이 못 뽑은 자리만 채운다. 양식이 다 채워져
+        있으면 추출이 할 일이 없어져 언어 모델을 쓰는 의미가 사라진다.
+
+        모델이 없으면 추출이 비고, 그때는 양식 값이 그대로 쓰인다. 그것도 없으면
+        인테이크가 되묻는다 — 추측으로 채우면 엉뚱한 라인의 뱅크를 건드린다.
+        """
+        # 1) 언어 모델이 원문에서 먼저 뽑는다. known 은 주지 않는다.
+        intake = receive(self.issue_text, self.llm, lookup=self.lookup)
+        report = intake.report
+        extracted = {k: getattr(report, k) for k in
+                     ("line", "object_name", "defect_type", "product_id", "lot")}
+
+        # 2) 모델이 못 뽑은 자리만 채운다. 도구 인자 → 양식 순.
+        fallback = dict(self.context)
+        for key, value in (("line", line), ("object_name", object_name),
+                           ("defect_type", defect_type), ("product_id", product_id),
+                           ("lot", lot)):
+            if value:
+                fallback[key] = value
+
+        filled_by_form = []
+        for key, value in fallback.items():
+            if value and hasattr(report, key) and not getattr(report, key):
+                setattr(report, key, value)
+                filled_by_form.append(key)
+
+        # 3) 채우고 나서 다시 충분성을 본다.
+        intake = receive(self.issue_text, self.llm, lookup=self.lookup,
+                         known={k: getattr(report, k) for k in extracted})
         self.outcome.intake = intake
+
+        source = (
+            f"언어 모델이 {sum(1 for v in extracted.values() if v)}개 항목을 원문에서 뽑았습니다."
+            if any(extracted.values()) else
+            "언어 모델이 연결되지 않아 원문에서 뽑지 못했습니다. 양식 값을 씁니다."
+        )
+        if filled_by_form:
+            source += f" 못 뽑은 {len(filled_by_form)}개는 양식에서 채웠습니다."
+
         self.outcome.stages.append(
             Stage(
                 key="intake",
@@ -244,41 +394,197 @@ class _DemoSession:
                 status="done" if intake.verdict == "proceed" else "blocked",
                 headline={"proceed": "진단으로 넘김", "need_more_info": "정보 부족 — 되물음",
                           "duplicate": "이미 해결된 사례 — 중단"}[intake.verdict],
-                detail=intake.note,
-                rows=[("라인", intake.report.line or "—"),
-                      ("품목", intake.report.object_name or "—"),
-                      ("결함 유형", intake.report.defect_type or "—"),
-                      ("첨부", f"{len(intake.report.attachments)}장")],
-                note=intake.question,
+                detail=f"{intake.note} {source}",
+                rows=[(label, f"{getattr(intake.report, key) or '—'}"
+                              f"{'  (양식)' if key in filled_by_form else '  (원문 추출)' if extracted.get(key) else ''}")
+                      for key, label in (("line", "라인"), ("object_name", "품목"),
+                                         ("defect_type", "결함 유형"),
+                                         ("product_id", "제품명"), ("lot", "로트"))],
+                note=intake.question or "라인·품목이 없으면 추측하지 않고 되묻습니다.",
             )
         )
         return {
             "verdict": intake.verdict,
             "line": intake.report.line,
             "object_name": intake.report.object_name,
+            "product_id": intake.report.product_id,
+            "lot": intake.report.lot,
+            "extracted_from_text": [k for k, v in extracted.items() if v],
             "missing": intake.missing,
-            "next": "run_checks" if intake.verdict == "proceed" else "중단. 사람에게 되물어야 한다.",
+            "next": "lookup_mes" if intake.verdict == "proceed" else "중단. 사람에게 되물어야 한다.",
         }
 
-    # ── 도구 2. 판별 7항목 ──────────────────────────────────────────────
+    # ── 도구 2. MES 조회 ────────────────────────────────────────────────
 
-    def run_checks(self) -> dict:
-        """판별 항목 일곱 가지를 모은다. 진단의 입력이다."""
+    def lookup_mes(self, product_id: str = "", lot: str = "",
+                   line: str = "", object_name: str = "") -> dict:
+        """제품명·로트로 MES 에서 이미지를 찾고, 그 품목의 뱅크를 확인한다.
+
+        이슈는 이미지가 아니라 제품명이나 로트로 온다. 이 단계가 없으면
+        "어느 이미지를 볼 것인가"가 코드에 박히게 된다.
+
+        **조인으로 답한다. 임베딩하지 않는다.** 언어 모델이 하는 일은 "MES 를
+        조회해야겠다"고 판단해 이 도구를 부르는 데까지다.
+        """
         intake = self.outcome.intake
         if intake is None:
             raise RuntimeError("먼저 intake_issue 를 불러야 한다.")
         if intake.verdict != "proceed":
             raise RuntimeError(f"인테이크가 진행하지 않기로 했다: {intake.verdict}")
 
-        f = self.factory
-        line = intake.report.line or self.context["line"]
-        obj = intake.report.object_name or self.context["object_name"]
+        line = line or intake.report.line or ""
+        obj = object_name or intake.report.object_name or ""
+        product_id = product_id or intake.report.product_id or ""
 
-        result = score_image(f.query, f.bank, f.embedder, root=f.root)
-        self.inference = result
+        # 뱅크부터. 품목에 걸린 모델이 없으면 볼 것도 없다.
+        profile = self.lookup.resolve_bank(line, obj)
+        records = self.lookup.find_images(
+            line=line or None, object_name=obj or None,
+            lot=lot or None, product_id=product_id or None,
+        )
+
+        # 제품 하나만 지목됐으면 **그 제품이 속한 로트를 함께 가져온다.**
+        # 한 장만 보고 "미검 1건"이라 하는 것은 의미가 없다. 같은 로트를 함께
+        # 봐야 이 문제가 그 제품 하나인지 로트 전체인지 갈린다. 현장에서
+        # 담당자가 하는 일도 같다.
+        if product_id and len(records) == 1 and records[0].lot:
+            batch = self.lookup.find_images(
+                line=records[0].line, object_name=records[0].object_name,
+                lot=records[0].lot,
+            )
+            if len(batch) > len(records):
+                records = batch
+                lot = lot or records[0].lot
+        self.records = records
+        self.item = self.factory.item_for(line, obj)
+
+        missing = profile is None or self.item is None
+        found_note = (
+            f"{obj} 에 배포된 뱅크가 없다. 이 품목은 아직 검사 모델이 없다."
+            if missing else
+            f"뱅크 {profile.bank_version} · MES 이미지 {len(records)}장"
+        )
+        self.outcome.stages.append(
+            Stage(
+                key="mes",
+                title="2. MES 조회",
+                status="blocked" if missing or not records else "done",
+                headline=found_note,
+                detail=(
+                    f"제품명·로트로 이미지를 찾았습니다. 조인으로 답한 값이며 "
+                    f"벡터 검색이 아닙니다."
+                ),
+                rows=[("조회 조건", " · ".join(
+                    f"{k}={v}" for k, v in
+                    (("제품", product_id), ("로트", lot), ("라인", line), ("품목", obj)) if v) or "—"),
+                    ("품목 뱅크", profile.bank_version if profile else "없음"),
+                    ("찾은 이미지", f"{len(records)}장"),
+                    ("결함으로 확인된 것", f"{sum(1 for r in records if r.ground_truth == 'defect')}장")],
+                note="뱅크는 품목마다 다릅니다. 캡슐 뱅크로 PCB 를 판정할 수 없습니다.",
+            )
+        )
+        if missing:
+            raise RuntimeError(f"{line}/{obj} 에 배포된 뱅크가 없다.")
+        if not records:
+            raise RuntimeError("MES 에서 해당 조건의 이미지를 찾지 못했다.")
+
+        return {
+            "bank_version": profile.bank_version,
+            "images": len(records),
+            "defects": sum(1 for r in records if r.ground_truth == "defect"),
+            "next": "run_inspection",
+        }
+
+    # ── 도구 3. 추론 ────────────────────────────────────────────────────
+
+    def run_inspection(self) -> dict:
+        """찾은 이미지를 그 품목 뱅크로 돌려 미검·과검을 가려낸다.
+
+        사람이 개입하지 않습니다. 화면은 처리 과정을 보여줄 뿐입니다.
+        """
+        if self.item is None or not self.records:
+            raise RuntimeError("먼저 lookup_mes 를 불러야 한다.")
+
+        f = self.factory
+        paths = [f.resolve(r.path) for r in self.records]
+        results = score_images(paths, self.item.bank, f.embedder, root=f.root)
+        by_path = {r.image: r for r in results}
+
+        missed, overkill, rows = [], [], []
+        for record in self.records:
+            inferred = by_path.get(record.path)
+            if inferred is None:
+                continue
+            verdict = inferred.verdict(self.threshold)
+            if record.ground_truth == "defect" and verdict == "pass":
+                missed.append((record, inferred))
+            elif record.ground_truth == "pass" and verdict == "defect":
+                overkill.append((record, inferred))
+
+        #: 이상 점수가 이보다 낮으면 그 이미지 자신이 뱅크에 들어 있다는 뜻이다.
+        #: 자기 패치와의 거리라 0 에 가깝게 나온다. 오염의 가장 뚜렷한 흔적이다.
+        in_bank_score = 0.05
+
+        for record, inferred in (missed + overkill)[:8]:
+            kind = "미검" if record.ground_truth == "defect" else "과검"
+            mark = "  ← 이 이미지가 뱅크 안에 있다" if inferred.score < in_bank_score else ""
+            rows.append((f"{kind} · {record.product_id}",
+                         f"점수 {inferred.score:.3f} (임계값 {self.threshold}) · "
+                         f"로트 {record.lot}{mark}"))
+
+        self_matched = [r for r, i in missed if i.score < in_bank_score]
+
+        # 진단은 미검 한 건을 대표로 본다. 없으면 볼 것이 없다.
+        self.query = f.resolve(missed[0][0].path) if missed else None
+        self.inference = missed[0][1] if missed else None
+
+        self.outcome.missed_records = [r for r, _ in missed]
+        self.outcome.stages.append(
+            Stage(
+                key="inspect",
+                title="3. 추론 — 미검·과검",
+                status="done" if missed else "blocked",
+                headline=f"{len(self.records)}장 중 미검 {len(missed)}장 · 과검 {len(overkill)}장",
+                detail=(
+                    f"{self.item.object_name} 뱅크 {self.item.bank.version} 로 판정했습니다. "
+                    f"설비 판정과 사람 확인이 갈린 건만 추렸습니다."
+                ),
+                rows=rows or [("갈린 건", "없음")],
+                note=(
+                    (f"미검 {len(self_matched)}건은 이상 점수가 0 에 가깝습니다 — "
+                     f"그 이미지 자신이 뱅크에 들어 있다는 뜻이고, 뱅크 오염의 "
+                     f"가장 뚜렷한 흔적입니다. ") if self_matched else ""
+                ) + "사람이 개입하지 않습니다. 처리 과정을 보는 화면입니다.",
+            )
+        )
+        if not missed:
+            raise RuntimeError("미검이 없다. 진단할 대상이 없다.")
+
+        return {
+            "total": len(self.records),
+            "missed": len(missed),
+            "overkill": len(overkill),
+            "next": "run_checks",
+        }
+
+    # ── 도구 4. 판별 7항목 ──────────────────────────────────────────────
+
+    def run_checks(self) -> dict:
+        """판별 항목 일곱 가지를 모은다. 진단의 입력이다."""
+        intake = self.outcome.intake
+        if self.query is None or self.item is None or self.inference is None:
+            raise RuntimeError("먼저 run_inspection 을 불러야 한다.")
+
+        f = self.factory
+        item = self.item
+        line, obj = item.line, item.object_name
+
+        result = self.inference
         baseline = self.lookup.get_quality_baseline(line, obj)
-        quality = assess_quality([f.query], baseline.stats, min_images=1)
-        visible = judge_defect_visible(self.vlm, f.query, reported_defect=intake.report.defect_type or "표면 결함")
+        quality = assess_quality([self.query], baseline.stats, min_images=1)
+        visible = judge_defect_visible(
+            self.vlm, self.query, reported_defect=intake.report.defect_type or "표면 결함"
+        )
 
         patch_judgment = self._judge_nearest_patch(result)
 
@@ -289,9 +595,9 @@ class _DemoSession:
             defect_visible=visible,
             quality=quality,
             inference=result,
-            threshold=self.lookup.get_threshold(line, obj, f.bank.version),
+            threshold=self.lookup.get_threshold(line, obj, item.bank.version),
             patch_judgment=patch_judgment,
-            bank_profile=self.lookup.get_bank_profile(f.bank.version),
+            bank_profile=self.lookup.get_bank_profile(item.bank.version),
             conditions={"date": "2026-06-01"},
             criteria=self.lookup.get_criteria(line, obj, intake.report.defect_type or "dent"),
             defect_area=hot * cell,
@@ -299,7 +605,7 @@ class _DemoSession:
         self.outcome.stages.append(
             Stage(
                 key="evidence",
-                title="2. 판별 7항목",
+                title="4. 판별 7항목",
                 status="done",
                 headline=f"{sum(1 for e in self.evidence if e.usable)}/7 확인",
                 rows=[
@@ -360,7 +666,7 @@ class _DemoSession:
         self.outcome.stages.append(
             Stage(
                 key="diagnose",
-                title="3. 진단",
+                title="5. 진단",
                 status="done" if diagnosis.cause else "blocked",
                 headline=diagnosis.cause_label,
                 detail=diagnosis.reasoning or diagnosis.blocking_reason,
@@ -391,13 +697,16 @@ class _DemoSession:
             raise RuntimeError("먼저 diagnose_issue 를 불러야 한다.")
 
         f = self.factory
-        missed = score_images(f.holdout_defect, f.bank, f.embedder, root=f.root)
-        plan = plan_curation(diagnosis, bank=f.bank, missed_results=missed)
+        item = self.item
+        if item is None:
+            raise RuntimeError("먼저 lookup_mes 를 불러야 한다.")
+        missed = score_images(item.holdout_defect, item.bank, f.embedder, root=f.root)
+        plan = plan_curation(diagnosis, bank=item.bank, missed_results=missed)
         self.outcome.plan = plan
         self.outcome.stages.append(
             Stage(
                 key="curate",
-                title="4. 데이터 큐레이션",
+                title="6. 데이터 큐레이션",
                 status="done" if plan.touches_bank else "skipped",
                 headline=plan.summary(),
                 detail=plan.reason,
@@ -427,15 +736,16 @@ class _DemoSession:
             return {"executed": False, "reason": "confirm=true 로 다시 불러야 실행한다."}
 
         f = self.factory
+        item = self.item
         rebuild = execute_rebuild(
-            plan, f.bank, DirectoryImageSource(f.root), f.embedder,
+            plan, item.bank, DirectoryImageSource(f.root), f.embedder,
             triggered_by=self.issue_text,
         )
         self.outcome.rebuild = rebuild
         self.outcome.stages.append(
             Stage(
                 key="rebuild",
-                title="5. 뱅크 재구성",
+                title="7. 뱅크 재구성",
                 status="done" if rebuild.executed else "blocked",
                 headline=(f"{rebuild.record.from_version} → {rebuild.record.to_version}"
                           if rebuild.record else "실행 안 함"),
@@ -461,14 +771,15 @@ class _DemoSession:
             raise RuntimeError("먼저 rebuild_bank 를 실행해야 한다.")
 
         f = self.factory
-        normals = score_images(f.holdout_normal, rebuild.bank, f.embedder, root=f.root)
-        defects = score_images(f.holdout_defect, rebuild.bank, f.embedder, root=f.root)
+        item = self.item
+        normals = score_images(item.holdout_normal, rebuild.bank, f.embedder, root=f.root)
+        defects = score_images(item.holdout_defect, rebuild.bank, f.embedder, root=f.root)
         curve = sweep_from_results(normals, defects)
         self.new_threshold = (curve.threshold_for_detection(1.0) or curve.points[0]).threshold
 
         self.baseline_curve = sweep_from_results(
-            score_images(f.holdout_normal, f.bank, f.embedder, root=f.root),
-            score_images(f.holdout_defect, f.bank, f.embedder, root=f.root),
+            score_images(item.holdout_normal, item.bank, f.embedder, root=f.root),
+            score_images(item.holdout_defect, item.bank, f.embedder, root=f.root),
         )
         gate = evaluate_gate(
             [r.score for r in normals], [r.score for r in defects],
@@ -479,7 +790,7 @@ class _DemoSession:
         self.outcome.stages.append(
             Stage(
                 key="gate",
-                title="6. 평가 게이트",
+                title="8. 평가 게이트",
                 status="done" if gate.passed else "blocked",
                 headline="통과" if gate.passed else "미통과",
                 detail=gate.reason,
@@ -498,9 +809,10 @@ class _DemoSession:
             raise RuntimeError("먼저 evaluate_gate 를 불러야 한다.")
 
         f = self.factory
+        item = self.item
         shadow = shadow_compare(
-            list(f.holdout_normal) + list(f.holdout_defect),
-            f.bank, rebuild.bank,
+            list(item.holdout_normal) + list(item.holdout_defect),
+            item.bank, rebuild.bank,
             current_threshold=self.threshold, candidate_threshold=self.new_threshold,
             embedder=f.embedder, root=f.root,
         )
@@ -508,7 +820,7 @@ class _DemoSession:
         self.outcome.stages.append(
             Stage(
                 key="shadow",
-                title="7. 섀도 비교",
+                title="9. 섀도 비교",
                 status="done",
                 headline=f"{shadow.total}장 중 {shadow.review_count}장만 확인",
                 detail=shadow.summary(),
@@ -538,23 +850,33 @@ class _DemoSession:
         )
         o.reproducibility = reproducibility
 
+        # 결함이 한 로트에 몰려 있으면 자재나 설비를 먼저 봐야 한다. 그 판단을
+        # 승인하는 사람이 하려면 집계가 문서에 있어야 한다.
+        item = self.item
+        o.distribution = self.lookup.defect_distribution(
+            line=item.line if item else None,
+            object_name=item.object_name if item else None,
+        )
+
         package = prepare_release(
             self.factory.root / "release" / o.rebuild.bank.version,
             bank=o.rebuild.bank, record=o.rebuild.record, diagnosis=o.diagnosis, plan=o.plan,
             gate=o.gate, shadow=o.shadow, reproducibility=reproducibility,
             issue_text=self.issue_text,
+            distribution=o.distribution, affected=o.missed_records,
         )
         o.package = package
         o.approval_markdown = package.approval_document.read_text(encoding="utf-8")
         o.stages.append(
             Stage(
                 key="release",
-                title="8. 승인 요청",
+                title="10. 승인 요청",
                 status="done",
                 headline="배포 대기 — 자동 반영 없음",
                 detail=f"승인 요청 문서를 생성했습니다. 재현성 {reproducibility.runs}회 "
                        f"{'일치' if reproducibility.identical else '불일치'}.",
-                rows=[("배포 승인", "아니오 (사람이 결정)")]
+                rows=[("배포 승인", "아니오 (사람이 결정)"),
+                      ("결함 분포", o.distribution.describe() if o.distribution else "—")]
                      + [("승인 보류 사유", r) for r in package.blocking_reasons],
                 note="릴리즈 에이전트는 배포 패키지와 승인 요청까지만 만듭니다.",
             )
@@ -571,6 +893,8 @@ class _DemoSession:
     def registry(self) -> ToolRegistry:
         return ToolRegistry([
             Tool(INTAKE_SPEC, self.intake_issue),
+            Tool(MES_SPEC, self.lookup_mes),
+            Tool(INSPECT_SPEC, self.run_inspection),
             Tool(CHECKS_SPEC, self.run_checks),
             Tool(DIAGNOSE_SPEC, self.diagnose_issue),
             Tool(PLAN_SPEC, self.plan_curation),

@@ -33,7 +33,8 @@ Use null for anything not mentioned.
 
 Respond with a single JSON object, no code fences:
 {"line": string|null, "object_name": string|null, "defect_type": string|null,
- "area_hint": string|null, "observed_from": "YYYY-MM-DD"|null, "lot": string|null}
+ "area_hint": string|null, "observed_from": "YYYY-MM-DD"|null, "lot": string|null,
+ "product_id": string|null}
 
 Report text:
 """
@@ -48,6 +49,8 @@ class IssueReport:
     object_name: str | None = None
     defect_type: str | None = None
     lot: str | None = None
+    #: 제품명. MES 조회의 열쇠다 — 이슈는 보통 이미지가 아니라 이것으로 온다.
+    product_id: str | None = None
     observed_from: date | None = None
     attachments: list[str] = field(default_factory=list)
     extracted_by: str = ""  # 무엇이 추출했는가. 빈 값이면 사람이 채운 것
@@ -163,12 +166,18 @@ def receive(
             note="추측으로 채우지 않는다. 잘못된 라인의 뱅크를 건드릴 수 있다.",
         )
 
-    if not report.attachments:
+    # 이미지가 있어야 진단할 수 있다. 다만 **첨부만이 길은 아니다** — 제품명이나
+    # 로트를 알면 MES 조회로 이미지를 찾아낼 수 있고, 현장에서는 그쪽이 더 흔하다
+    # ("A-217 로트가 계속 빠집니다"). 둘 다 없을 때만 되묻는다.
+    if not report.attachments and not (report.product_id or report.lot):
         return IntakeResult(
             verdict="need_more_info",
             report=report,
             missing=["attachments"],
-            question="해당 이미지를 첨부해 주세요. 이미지 없이는 원인을 규명할 수 없습니다.",
+            question=(
+                "해당 이미지를 첨부하시거나 제품명·로트를 알려 주세요. "
+                "제품명이 있으면 MES 에서 이미지를 찾을 수 있습니다."
+            ),
             note="판별 1·4·5번이 전부 이미지에 걸려 있다.",
         )
 

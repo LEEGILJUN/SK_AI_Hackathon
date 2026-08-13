@@ -12,11 +12,14 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from datetime import date
 
 from .base import (
     BankProfile,
     CriteriaRule,
+    DefectDistribution,
+    ImageRecord,
     PastIssue,
     QualityBaselineRecord,
     ThresholdRecord,
@@ -46,7 +49,20 @@ class MockLookup:
         bank_version: str = "v3",
         line: str = "line_02",
         object_name: str = "capsules",
+        catalog: list[ImageRecord] | None = None,
+        banks: dict[tuple[str, str], str] | None = None,
     ):
+        """
+        catalog
+            MES 가 안다고 치는 이미지 목록. 가상 공장(작업 1·4)이 오기 전까지의
+            대체물이다. 비워 두면 find_images 가 빈 목록을 돌려주고, 그때는
+            "MES 에서 못 찾았다"가 화면에 그대로 뜬다. 지어낸 이미지를
+            돌려주는 것보다 낫다.
+        banks
+            {(라인, 품목): 뱅크 버전}. 품목마다 뱅크가 다르다는 것을 목에서도
+            지킨다. 여기 없는 품목은 resolve_bank 가 None 을 돌려주고,
+            "그 품목에는 배포된 모델이 없다"가 답이 된다.
+        """
         self.threshold = threshold
         self.quality_stats = quality_stats or {
             # 합성 이미지의 실제 분포에 대략 맞춘 자리표시 값이다.
@@ -65,6 +81,8 @@ class MockLookup:
         self.bank_version = bank_version
         self.line = line
         self.object_name = object_name
+        self.catalog = list(catalog or [])
+        self.banks = dict(banks or {(line, object_name): bank_version})
 
         #: 호출 기록. 진단이 실제로 어떤 조회를 했는지 검증할 때 쓴다.
         self.calls: list[tuple[str, dict]] = []
@@ -151,6 +169,69 @@ class MockLookup:
             "find_similar_issues", line=line, object_name=object_name, defect_type=defect_type
         )
         return self.similar_issues[:limit]
+
+    # ── MES 쪽 ──────────────────────────────────────────────────────────
+
+    def resolve_bank(self, line: str, object_name: str) -> BankProfile | None:
+        """품목에 걸린 뱅크를 찾는다. 없으면 None — 배포된 모델이 없다는 뜻이다."""
+        self._record("resolve_bank", line=line, object_name=object_name)
+        version = self.banks.get((line, object_name))
+        if version is None:
+            return None
+        profile = self.get_bank_profile(version)
+        if profile is not None:
+            # get_bank_profile 은 목이라 생성자 값을 그대로 쓴다. 실제로 물어본
+            # 품목으로 맞춰 돌려줘야 호출한 쪽이 헷갈리지 않는다.
+            profile.line = line
+            profile.object_name = object_name
+        return profile
+
+    def find_images(
+        self,
+        line: str | None = None,
+        object_name: str | None = None,
+        lot: str | None = None,
+        product_id: str | None = None,
+        limit: int = 50,
+    ) -> list[ImageRecord]:
+        """조건에 맞는 이미지를 목록에서 걸러 낸다. 조인 흉내다."""
+        self._record("find_images", line=line, object_name=object_name,
+                     lot=lot, product_id=product_id)
+        if not any((line, object_name, lot, product_id)):
+            # 조건 없이 전체를 훑는 것은 실수일 가능성이 높다.
+            return []
+        found = [
+            r for r in self.catalog
+            if (line is None or r.line == line)
+            and (object_name is None or r.object_name == object_name)
+            and (lot is None or r.lot == lot)
+            and (product_id is None or r.product_id == product_id)
+        ]
+        return found[:limit]
+
+    def defect_distribution(
+        self,
+        line: str | None = None,
+        object_name: str | None = None,
+        defect_type: str | None = None,
+        since: date | None = None,
+    ) -> DefectDistribution:
+        """결함으로 확인된 건이 어느 라인·로트에 몰렸는지 센다."""
+        self._record("defect_distribution", line=line, object_name=object_name,
+                     defect_type=defect_type, since=since)
+        rows = [
+            r for r in self.catalog
+            if r.ground_truth == "defect"
+            and (line is None or r.line == line)
+            and (object_name is None or r.object_name == object_name)
+            and (since is None or (r.captured_at is not None and r.captured_at >= since))
+        ]
+        return DefectDistribution(
+            total=len(rows),
+            by_lot=dict(Counter(r.lot for r in rows if r.lot)),
+            by_line=dict(Counter(r.line for r in rows)),
+            by_equipment=dict(Counter(r.equipment for r in rows if r.equipment)),
+        )
 
 
 def resolved_duplicate(

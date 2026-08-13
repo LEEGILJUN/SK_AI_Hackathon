@@ -25,13 +25,30 @@
 
 ## 이 테스트가 요구하는 것
 
-1. 함수 5개가 있고 이름·인자가 맞을 것
+1. 함수 8개가 있고 이름·인자가 맞을 것
 2. 못 찾으면 **예외가 아니라 None** 을 돌려줄 것
 3. 돌려주는 값이 정해진 자료형일 것
 4. `get_criteria(at=...)` 가 그 시점의 기준을 줄 것
 5. `BankProfile.covers()` 가 동작할 것
+6. MES 쪽 셋이 동작할 것 — `resolve_bank` `find_images` `defect_distribution`
 
 하나씩 초록으로 만들면 됩니다. 한 번에 다 맞추려 하지 마세요.
+
+## 나중에 추가된 MES 쪽 셋
+
+접수된 이슈는 이미지가 아니라 **제품명이나 로트로** 옵니다. 그것을 이미지로
+바꾸고 그 품목의 뱅크를 찾는 앞 단계가 필요해서 늘었습니다.
+
+    resolve_bank(line, object_name)        이 품목은 어느 뱅크로 판정하는가
+    find_images(...)                        이 제품·로트의 이미지가 무엇인가
+    defect_distribution(...)                결함이 특정 라인·로트에 몰렸는가
+
+**셋 다 조인으로 답합니다. 임베딩하지 마세요.** "3라인 A-217 로트 캡슐 이미지
+목록"은 정확히 답할 문제고, 벡터 검색을 쓰면 비슷한 로트를 섞어 옵니다.
+
+`find_images` 는 없으면 **빈 목록**, `defect_distribution` 은 없으면
+**total=0 인 빈 집계**입니다(None 아님). "몰린 곳이 없다"와 "못 셌다"를
+부르는 쪽이 구분할 수 있어야 하기 때문입니다.
 """
 
 from __future__ import annotations
@@ -43,6 +60,8 @@ import pytest
 from lookup.base import (
     BankProfile,
     CriteriaRule,
+    DefectDistribution,
+    ImageRecord,
     PastIssue,
     QualityBaselineRecord,
     ThresholdRecord,
@@ -55,6 +74,10 @@ REQUIRED_METHODS = (
     "get_criteria",
     "get_bank_profile",
     "find_similar_issues",
+    # MES 쪽. 판별 항목 앞 단계다.
+    "resolve_bank",
+    "find_images",
+    "defect_distribution",
 )
 
 
@@ -98,7 +121,7 @@ def lookup(request):
 
 
 def test_all_required_methods_exist(lookup):
-    """함수 5개가 있어야 진단이 판별 항목을 채울 수 있다."""
+    """함수 8개가 있어야 접수부터 진단까지가 이어진다."""
     missing = [m for m in REQUIRED_METHODS if not callable(getattr(lookup, m, None))]
     assert not missing, (
         f"함수가 없습니다: {missing}\n"
@@ -300,3 +323,75 @@ def test_diagnosis_runs_with_this_lookup(lookup):
         "threshold", "bank_contamination", "coverage_gap",
         "normal_overlap", "equipment_optics", "criteria",
     }
+
+
+# ── 6. MES 쪽 셋 ───────────────────────────────────────────────────────
+
+
+def test_resolve_bank_returns_profile_or_none(lookup):
+    """품목마다 뱅크가 다르다. 없는 품목이면 None 이어야 한다.
+
+    None 은 "그 품목에는 배포된 모델이 없다"는 뜻이고, 예외가 아니다.
+    캡슐 뱅크를 PCB 에 돌려주는 것보다 없다고 말하는 편이 낫다.
+    """
+    try:
+        missing = lookup.resolve_bank("없는라인", "없는품목")
+    except Exception as exc:
+        pytest.fail(
+            f"없는 품목을 물었더니 예외가 났습니다: {type(exc).__name__}: {exc}\n"
+            f"찾지 못하면 None 을 돌려주세요."
+        )
+    assert missing is None or isinstance(missing, BankProfile), (
+        f"resolve_bank 가 {type(missing).__name__} 을 돌려줬습니다. "
+        f"BankProfile 또는 None 이어야 합니다."
+    )
+
+    known = lookup.resolve_bank("line_02", "capsules")
+    if known is not None:
+        assert known.line == "line_02" and known.object_name == "capsules", (
+            "물어본 품목과 다른 프로파일이 왔습니다. "
+            "뱅크가 하나뿐인 전제가 남아 있지 않은지 보세요."
+        )
+
+
+def test_find_images_returns_list_never_none(lookup):
+    """못 찾으면 빈 목록이다. None 이 아니다."""
+    try:
+        result = lookup.find_images(line="없는라인", object_name="없는품목")
+    except Exception as exc:
+        pytest.fail(f"find_images 에서 예외가 났습니다: {type(exc).__name__}: {exc}")
+
+    assert isinstance(result, list), (
+        f"find_images 가 {type(result).__name__} 을 돌려줬습니다. list 여야 합니다."
+    )
+    assert all(isinstance(r, ImageRecord) for r in result), "항목은 ImageRecord 여야 합니다."
+
+
+def test_find_images_without_any_filter_returns_nothing(lookup):
+    """조건을 하나도 안 주면 전체를 훑어 오지 않는다.
+
+    조건 없는 호출은 실수일 가능성이 높다. 공장 전체 이미지를 돌려주면
+    그다음 단계가 통째로 막힌다.
+    """
+    assert lookup.find_images() == [], (
+        "조건 없이 불렀는데 결과가 왔습니다. 빈 목록을 돌려주세요."
+    )
+
+
+def test_defect_distribution_is_never_none(lookup):
+    """집계할 것이 없어도 빈 집계다. None 이 아니다.
+
+    "몰린 곳이 없다"와 "못 셌다"는 다르다. 부르는 쪽이 구분할 수 있어야 한다.
+    """
+    try:
+        dist = lookup.defect_distribution(line="없는라인", object_name="없는품목")
+    except Exception as exc:
+        pytest.fail(f"defect_distribution 에서 예외가 났습니다: {type(exc).__name__}: {exc}")
+
+    assert isinstance(dist, DefectDistribution), (
+        f"defect_distribution 이 {type(dist).__name__} 을 돌려줬습니다. "
+        f"DefectDistribution 이어야 하며, 없으면 total=0 인 빈 집계입니다."
+    )
+    assert dist.total == 0
+    assert dist.concentrated_in() == {}, "집계가 비었는데 몰린 곳이 나왔습니다."
+    assert isinstance(dist.describe(), str)

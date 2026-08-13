@@ -17,7 +17,7 @@ import pytest
 
 from agents.adapters.base import ChatResponse, ModelAdapter, ToolCall
 from agents.adapters.stub import StubAdapter
-from app.pipeline import DemoFactory, run_pipeline
+from app.pipeline import DemoFactory, default_issue, run_pipeline
 
 
 class ScriptedLLM(ModelAdapter):
@@ -56,6 +56,8 @@ class ScriptedLLM(ModelAdapter):
 
 FULL_PLAN = [
     ("intake_issue", {}),
+    ("lookup_mes", {}),
+    ("run_inspection", {}),
     ("run_checks", {}),
     ("diagnose_issue", {}),
     ("plan_curation", {}),
@@ -74,13 +76,27 @@ def factory():
         pytest.skip(str(exc))
 
 
+def run(factory, **kwargs):
+    """모델 없이 도는 기본 실행.
+
+    이슈 원문에 제품명이 들어 있고, 언어 모델이 없으므로 양식 값이 쓰인다.
+    실제 화면도 같은 조합이다.
+    """
+    kwargs.setdefault("adapters", (StubAdapter(), StubAdapter()))
+    kwargs.setdefault("issue_text", default_issue(factory))
+    kwargs.setdefault("context", {
+        "line": "line_02", "object_name": "capsules",
+        "defect_type": "dent", "product_id": factory.reported_product,
+    })
+    return run_pipeline(factory, **kwargs)
+
+
 # ── 모델이 없을 때 ──────────────────────────────────────────────────────
 
 
 def test_without_a_model_it_replays_a_fixed_order_and_says_so(factory):
     """모델이 없어도 끝까지 돌되, 순서를 모델이 정한 것처럼 보이면 안 된다."""
-    outcome = run_pipeline(factory, patch_override="defect",
-                           adapters=(StubAdapter(), StubAdapter()))
+    outcome = run(factory, patch_override="defect")
 
     assert outcome.finished, "고정 순서로도 승인 요청까지 가야 한다"
     assert outcome.driver == "fallback"
@@ -93,10 +109,8 @@ def test_without_a_model_it_replays_a_fixed_order_and_says_so(factory):
 
 
 def test_the_model_drives_the_tool_order(factory):
-    outcome = run_pipeline(
-        factory, patch_override="defect",
-        adapters=(ScriptedLLM(FULL_PLAN), StubAdapter()),
-    )
+    outcome = run(factory, patch_override="defect",
+                  adapters=(ScriptedLLM(FULL_PLAN), StubAdapter()))
 
     assert outcome.driver == "model"
     assert outcome.finished
@@ -109,10 +123,9 @@ def test_out_of_order_calls_are_refused_with_a_reason(factory):
 
     삼키고 진행하면 화면에 빈 칸이 생기고 왜 비었는지 알 수 없다.
     """
-    outcome = run_pipeline(
-        factory, patch_override="defect",
-        adapters=(ScriptedLLM([("diagnose_issue", {}), ("plan_curation", {})]), StubAdapter()),
-    )
+    outcome = run(factory, patch_override="defect",
+                  adapters=(ScriptedLLM([("diagnose_issue", {}), ("plan_curation", {})]),
+                            StubAdapter()))
 
     statuses = dict(outcome.tool_trace)
     assert "run_checks" in statuses["diagnose_issue"]
@@ -126,10 +139,8 @@ def test_rebuild_is_refused_when_the_plan_forbids_it(factory):
 
     정량 목표 "재구성이 답이 아닌 케이스 전건 차단"이 여기 걸려 있다.
     """
-    outcome = run_pipeline(
-        factory, patch_override="normal",   # 최근접 패치가 진짜 정상품
-        adapters=(ScriptedLLM(FULL_PLAN), StubAdapter()),
-    )
+    outcome = run(factory, patch_override="normal",   # 최근접 패치가 진짜 정상품
+                  adapters=(ScriptedLLM(FULL_PLAN), StubAdapter()))
 
     assert outcome.plan is not None
     if outcome.plan.touches_bank:
@@ -148,8 +159,7 @@ def test_asking_the_model_for_the_patch_verdict_withholds_when_unconnected(facto
     독스트링만 그렇게 적혀 있고 분기가 없던 자리다. 지어낸 답이 근거로
     올라가면 안 되므로 보류가 옳은 동작이다.
     """
-    outcome = run_pipeline(factory, patch_override=None,
-                           adapters=(StubAdapter(), StubAdapter()))
+    outcome = run(factory, patch_override=None)
 
     assert outcome.intake is not None
     stage = next(s for s in outcome.stages if s.key == "evidence")
@@ -163,12 +173,120 @@ def test_asking_the_model_for_the_patch_verdict_withholds_when_unconnected(facto
 
 def test_context_comes_from_the_caller_not_the_code(factory):
     """양식에서 받은 라인·품목이 그대로 인테이크에 들어가야 한다."""
-    outcome = run_pipeline(
-        factory, patch_override="defect",
-        adapters=(StubAdapter(), StubAdapter()),
-        context={"line": "line_07", "object_name": "pcb1", "defect_type": "scratch"},
-    )
+    outcome = run(factory, patch_override="defect",
+                  context={"line": "line_07", "object_name": "pcb1",
+                           "defect_type": "scratch", "product_id": "PCB1-07-x"})
 
     assert outcome.intake is not None
     assert outcome.intake.report.line == "line_07"
     assert outcome.intake.report.object_name == "pcb1"
+
+
+# ── MES 조회와 품목별 뱅크 ──────────────────────────────────────────────
+
+
+def test_bank_is_resolved_per_item_not_shared(factory):
+    """품목마다 뱅크가 따로 있어야 한다.
+
+    캡슐 정상 패치로 PCB 를 판정할 수 없다. 뱅크가 하나뿐이면 품목을 잘못
+    고르는 실수가 드러나지 않는다.
+    """
+    versions = factory.bank_versions()
+    assert len(set(versions.values())) == len(versions), "품목이 뱅크를 공유하고 있다"
+
+    outcome = run(factory, patch_override="defect")
+    stage = next(s for s in outcome.stages if s.key == "mes")
+    used = dict(stage.rows)["품목 뱅크"]
+    assert used == versions[("line_02", "capsules")]
+
+
+def test_unknown_item_has_no_bank_and_stops(factory):
+    """배포된 뱅크가 없는 품목이면 거기서 멈춘다.
+
+    없는 품목에 다른 품목 뱅크를 물려 판정하면 결과가 전부 헛것이 된다.
+    """
+    outcome = run(factory, patch_override="defect",
+                  context={"line": "line_09", "object_name": "없는품목",
+                           "defect_type": "dent", "product_id": "X-1"})
+
+    statuses = dict(outcome.tool_trace)
+    assert "lookup_mes" in statuses
+    assert "뱅크가 없다" in statuses["lookup_mes"]
+    assert not outcome.finished
+
+
+def test_mes_lookup_finds_images_from_the_product_name(factory):
+    """이슈는 이미지가 아니라 제품명으로 온다. MES 가 이미지를 찾아야 한다."""
+    outcome = run(factory, patch_override="defect")
+
+    stage = next(s for s in outcome.stages if s.key == "mes")
+    assert stage.status == "done"
+    assert int(dict(stage.rows)["찾은 이미지"].rstrip("장")) > 0
+
+
+def test_inspection_reports_missed_and_overkill(factory):
+    """추론 결과가 미검·과검으로 갈려 화면에 떠야 한다. 사람은 보기만 한다."""
+    outcome = run(factory, patch_override="defect")
+
+    stage = next(s for s in outcome.stages if s.key == "inspect")
+    assert "미검" in stage.headline and "과검" in stage.headline
+    assert outcome.missed_records, "미검 건이 기록되어야 로트 집계가 된다"
+
+
+# ── 리포트에 로트 집중도가 실리는가 ─────────────────────────────────────
+
+
+def test_approval_document_reports_where_defects_cluster(factory):
+    """결함이 한 로트에 몰려 있으면 승인 문서가 그것을 말해야 한다.
+
+    자재나 설비 문제인데 뱅크부터 다시 만들면 증상만 덮는다. 승인하는 사람이
+    그 판단을 하려면 집계가 문서에 있어야 한다.
+    """
+    outcome = run(factory, patch_override="defect")
+    if not outcome.finished:
+        pytest.skip("이 실행에서는 승인 문서까지 가지 않았다")
+
+    assert outcome.distribution is not None
+    assert outcome.distribution.total > 0
+
+    document = outcome.approval_markdown
+    assert "## 결함이 어디에 몰렸나" in document
+    assert "## 대상 이미지" in document
+    for record in outcome.missed_records[:1]:
+        assert record.product_id in document
+        assert (record.lot or "") in document
+
+
+# ── 인테이크가 자연어를 먼저 보는가 ─────────────────────────────────────
+
+
+def test_extraction_runs_before_the_form_is_consulted(factory):
+    """언어 모델이 원문에서 뽑은 값이 양식보다 우선이다.
+
+    양식이 다 채워져 있어도 모델이 뽑았으면 그쪽을 쓴다. 반대로 두면
+    자연어 입력이 장식이 되고 언어 모델을 쓰는 의미가 사라진다.
+    """
+    extracted = '{"line": "line_03", "object_name": "macaroni1", "defect_type": "crack"}'
+    outcome = run(
+        factory, patch_override="defect",
+        adapters=(ScriptedLLM(FULL_PLAN, extraction=extracted), StubAdapter()),
+        context={"line": "line_02", "object_name": "capsules",
+                 "defect_type": "dent", "product_id": factory.reported_product},
+    )
+
+    assert outcome.intake is not None
+    assert outcome.intake.report.line == "line_03", "양식이 원문 추출을 덮어썼다"
+    assert outcome.intake.report.object_name == "macaroni1"
+
+
+def test_product_name_alone_is_enough_to_proceed(factory):
+    """이미지 첨부가 없어도 제품명이 있으면 진행한다.
+
+    현장 이슈는 "이 로트가 계속 빠집니다"로 오지 이미지를 첨부해서 오지
+    않는다. MES 가 이미지를 찾아 주므로 첨부를 요구할 이유가 없다.
+    """
+    outcome = run(factory, patch_override="defect")
+
+    assert outcome.intake is not None
+    assert outcome.intake.verdict == "proceed"
+    assert not outcome.intake.report.attachments, "첨부 없이 진행한 경로를 재고 있다"

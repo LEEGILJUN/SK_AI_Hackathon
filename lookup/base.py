@@ -19,6 +19,24 @@
 
 판별 1·5번은 시각 언어 모델(agents/vision.py), 4번은 뱅크 역추적
 (inspection/trace.py)이 맡는다. 여기서 다루지 않는다.
+
+── MES 쪽 세 개는 판별 항목이 아니라 그 앞 단계다 ──────────────────────
+
+    resolve_bank         이 품목은 어느 뱅크로 판정하는가
+    find_images          이 제품·로트의 이미지가 무엇인가
+    defect_distribution  결함이 특정 라인·로트에 몰렸는가
+
+접수된 이슈는 보통 이미지가 아니라 **제품명이나 로트로** 온다("A-217 로트
+캡슐이 계속 빠집니다"). 그것을 이미지로 바꾸고, 그 품목의 뱅크를 찾아 추론해야
+비로소 판별 항목을 잴 수 있다. 그 앞단이 여기다.
+
+**이 셋은 벡터 검색이 아니다.** "3라인 A-217 로트 캡슐 이미지 목록"은 조인으로
+정확히 답할 문제이고, 임베딩하면 비슷한 로트를 섞어 온다. 언어 모델이 하는 일은
+"MES 를 조회해야겠다"고 판단해 도구를 부르는 데까지고, 조회 자체는 결정론적이다.
+그래프 검색은 find_similar_issues 하나뿐이며 역할은 중복 차단이다.
+
+뱅크는 **품목마다 따로 있다.** 캡슐의 정상 패치로 PCB 를 판정할 수 없다.
+resolve_bank 가 없으면 뱅크가 하나뿐인 전제가 코드 곳곳에 박힌다.
 """
 
 from __future__ import annotations
@@ -139,6 +157,110 @@ class BankProfile:
 
 
 @dataclass
+class ImageRecord:
+    """MES 가 아는 이미지 한 장.
+
+    이슈는 이미지가 아니라 제품명이나 로트로 온다. 그것을 실제 파일로 바꾸는
+    것이 이 자료형이며, **판정에 필요한 맥락을 함께 들고 온다.** 어느 라인
+    어느 로트에서 언제 찍혔는지가 있어야 커버리지 부족도 로트 집중도도 잴 수
+    있다.
+
+    path
+        저장소 기준 상대 경로. 절대 경로를 넣으면 장비가 바뀔 때 깨진다.
+    verdict
+        그때 검사 설비가 낸 판정. 사람이 나중에 확인한 값이 있으면
+        ground_truth 에 들어가고, 둘이 다르면 미검 또는 과검이다.
+    """
+
+    product_id: str
+    path: str
+    line: str
+    object_name: str
+    lot: str | None = None
+    captured_at: date | None = None
+    verdict: str | None = None          # 설비 판정 defect | pass
+    ground_truth: str | None = None     # 사람 확인 defect | pass. 없으면 미확인
+    equipment: str | None = None
+
+    @property
+    def is_missed(self) -> bool:
+        """미검 — 실제 불량인데 설비가 양품이라 했다."""
+        return self.ground_truth == "defect" and self.verdict == "pass"
+
+    @property
+    def is_overkill(self) -> bool:
+        """과검 — 실제 양품인데 설비가 불량이라 했다."""
+        return self.ground_truth == "pass" and self.verdict == "defect"
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self) | {
+            "captured_at": self.captured_at.isoformat() if self.captured_at else None,
+            "is_missed": self.is_missed,
+            "is_overkill": self.is_overkill,
+        }
+
+
+@dataclass
+class DefectDistribution:
+    """결함이 어디에 몰렸는가 — 승인 문서에 싣는 집계.
+
+    "이 결함이 특정 라인이나 로트에 몰려 있는가"는 조치를 가르는 질문이다.
+    한 로트에만 몰려 있으면 그 로트의 자재나 설비를 의심해야 하고, 라인 전반에
+    고르게 퍼져 있으면 모델 쪽 문제로 본다. **뱅크를 다시 만들기 전에 봐야 할
+    값**이며, 몰려 있는데 재구성부터 하면 원인을 놔둔 채 증상만 덮는다.
+
+    by_lot / by_line
+        키별 {값: 결함 건수}.
+    total
+        집계에 들어간 전체 건수. 비중을 내려면 필요하다.
+    """
+
+    total: int
+    by_lot: dict[str, int] = field(default_factory=dict)
+    by_line: dict[str, int] = field(default_factory=dict)
+    by_equipment: dict[str, int] = field(default_factory=dict)
+
+    #: 한 키가 이 비중을 넘게 차지하면 "몰려 있다"고 본다. 자리표시 값이며
+    #: 시나리오로 측정해 정해야 한다.
+    CONCENTRATION_THRESHOLD = 0.60
+
+    def _top(self, counts: dict[str, int]) -> tuple[str, float] | None:
+        if not counts or not self.total:
+            return None
+        key = max(counts, key=lambda k: counts[k])
+        return key, counts[key] / self.total
+
+    def concentrated_in(self) -> dict[str, tuple[str, float]]:
+        """기준을 넘게 몰린 축만 돌려준다. 비어 있으면 고르게 퍼진 것이다."""
+        found = {}
+        for name, counts in (("lot", self.by_lot), ("line", self.by_line),
+                             ("equipment", self.by_equipment)):
+            top = self._top(counts)
+            if top and top[1] >= self.CONCENTRATION_THRESHOLD:
+                found[name] = top
+        return found
+
+    def describe(self) -> str:
+        if not self.total:
+            return "집계할 결함 건수가 없다."
+        hits = self.concentrated_in()
+        if not hits:
+            return f"결함 {self.total}건이 특정 라인·로트에 몰려 있지 않다. 고르게 퍼져 있다."
+        parts = [f"{name} {key} 에 {share:.0%}" for name, (key, share) in hits.items()]
+        return (
+            f"결함 {self.total}건 중 {', '.join(parts)} 가 몰려 있다. "
+            f"뱅크를 다시 만들기 전에 그쪽 원인을 먼저 확인해야 한다."
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self) | {
+            "concentrated_in": {k: {"value": v[0], "share": v[1]}
+                                for k, v in self.concentrated_in().items()},
+            "note": self.describe(),
+        }
+
+
+@dataclass
 class PastIssue:
     """그래프 검색 결과 — 유사 사례 한 건.
 
@@ -209,4 +331,49 @@ class LookupLayer(Protocol):
         limit: int = 5,
     ) -> list[PastIssue]:
         """유사 사례. 중복 차단 전용이며 진단 근거가 아니다."""
+        ...
+
+    # ── MES 쪽. 판별 항목 앞 단계 ───────────────────────────────────────
+
+    def resolve_bank(self, line: str, object_name: str) -> BankProfile | None:
+        """이 품목을 판정하는 뱅크는 무엇인가.
+
+        뱅크는 품목마다 따로 있다. 캡슐의 정상 패치로 PCB 를 판정할 수 없다.
+        운영 중인 뱅크가 없으면 None 이고, 그때는 "아직 배포된 모델이 없다"가
+        답이며 진단으로 넘어가지 않는다.
+        """
+        ...
+
+    def find_images(
+        self,
+        line: str | None = None,
+        object_name: str | None = None,
+        lot: str | None = None,
+        product_id: str | None = None,
+        limit: int = 50,
+    ) -> list[ImageRecord]:
+        """제품명·로트·라인으로 이미지를 찾는다.
+
+        **조인으로 답한다. 임베딩하지 않는다.** 조건을 하나도 주지 않으면 빈
+        목록을 돌려준다 — 전체를 훑어 오는 것은 실수일 가능성이 높다.
+
+        찾지 못하면 빈 목록이다. 예외를 내지 않는다.
+        """
+        ...
+
+    def defect_distribution(
+        self,
+        line: str | None = None,
+        object_name: str | None = None,
+        defect_type: str | None = None,
+        since: date | None = None,
+    ) -> DefectDistribution:
+        """결함이 어느 라인·로트에 몰렸는가.
+
+        승인 문서에 싣는 값이다. 한 로트에 몰려 있으면 자재나 설비를 먼저
+        의심해야 하고, 그때 뱅크부터 다시 만들면 증상만 덮는다.
+
+        집계할 것이 없으면 total=0 인 빈 집계를 돌려준다. None 이 아니다 —
+        "몰린 곳이 없다"와 "못 셌다"를 호출하는 쪽이 구분할 수 있어야 한다.
+        """
         ...

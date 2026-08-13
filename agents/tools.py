@@ -126,6 +126,35 @@ INTAKE_SPEC = ToolSpec(
     },
 )
 
+MES_SPEC = ToolSpec(
+    name="lookup_mes",
+    description=(
+        "제품명·로트·라인으로 MES 에서 이미지를 찾고, 그 품목에 배포된 뱅크를 확인한다. "
+        "이슈는 이미지가 아니라 제품명이나 로트로 오므로 이 단계가 있어야 무엇을 볼지 정해진다. "
+        "**뱅크는 품목마다 다르다** — 캡슐 뱅크로 PCB 를 판정할 수 없다. "
+        "조인으로 답하는 결정론적 조회이며 유사도 검색이 아니다. 인테이크 다음에 부른다."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "product_id": {"type": "string", "description": "제품명. 이슈 원문에 있으면 넣는다"},
+            "lot": {"type": "string", "description": "로트 번호"},
+            "line": {"type": "string", "description": "라인 ID"},
+            "object_name": {"type": "string", "description": "품목"},
+        },
+    },
+)
+
+INSPECT_SPEC = ToolSpec(
+    name="run_inspection",
+    description=(
+        "찾은 이미지를 그 품목의 뱅크로 추론해 미검과 과검을 가려낸다. "
+        "설비 판정과 사람이 확인한 값이 갈린 건만 추린다. "
+        "여기서 미검이 나와야 진단할 대상이 생긴다. MES 조회를 먼저 해야 한다."
+    ),
+    parameters={"type": "object", "properties": {}},
+)
+
 CHECKS_SPEC = ToolSpec(
     name="run_checks",
     description=(

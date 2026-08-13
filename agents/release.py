@@ -17,10 +17,11 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from inspection.bank import MemoryBank
 from inspection.shadow import ShadowReport
+from lookup.base import DefectDistribution, ImageRecord
 
 from .curate import CurationPlan
 from .diagnose import CAUSE_LABEL_KO, DiagnosisResult
@@ -94,6 +95,8 @@ def write_approval_document(
     shadow: ShadowReport | None = None,
     reproducibility: ReproducibilityResult | None = None,
     issue_text: str = "",
+    distribution: "DefectDistribution | None" = None,
+    affected: "Sequence[ImageRecord]" = (),
 ) -> Path:
     """승인 요청 문서를 쓴다.
 
@@ -123,6 +126,49 @@ def write_approval_document(
     if issue_text:
         parts.append("## 접수된 이슈\n")
         parts.append(f"> {issue_text}\n")
+
+    # ── 무엇이 걸렸나 ───────────────────────────────────────────────
+    #
+    # 결함이 한 로트에 몰려 있으면 자재나 설비를 먼저 의심해야 한다. 그때
+    # 뱅크부터 다시 만들면 원인을 놔둔 채 증상만 덮는 셈이다. 승인하는 사람이
+    # 그 판단을 하려면 집계가 문서에 있어야 한다.
+    if affected:
+        parts.append("## 대상 이미지\n")
+        parts.append(f"미검으로 확인된 {len(affected)}건입니다.\n")
+        parts.append("| 제품 | 라인 | 로트 | 설비 | 촬영일 |")
+        parts.append("|---|---|---|---|---|")
+        # 반복 변수를 record 로 두면 인자 record(RebuildRecord)를 덮어쓴다.
+        # 파이썬 for 변수는 함수 스코프에 남는다.
+        for image in list(affected)[:12]:
+            parts.append(
+                f"| `{image.product_id}` | {image.line} | {image.lot or '—'} | "
+                f"{image.equipment or '—'} | "
+                f"{image.captured_at.isoformat() if image.captured_at else '—'} |"
+            )
+        if len(affected) > 12:
+            parts.append(f"| … | | | | 외 {len(affected) - 12}건 |")
+        parts.append("")
+
+    if distribution is not None and distribution.total:
+        parts.append("## 결함이 어디에 몰렸나\n")
+        parts.append(f"{distribution.describe()}\n")
+        for title, counts in (("로트", distribution.by_lot),
+                              ("라인", distribution.by_line),
+                              ("설비", distribution.by_equipment)):
+            if not counts:
+                continue
+            ordered = sorted(counts.items(), key=lambda kv: -kv[1])
+            inline = ", ".join(
+                f"{key} {n}건({n / distribution.total:.0%})" for key, n in ordered[:5]
+            )
+            parts.append(f"- **{title}**: {inline}")
+        parts.append("")
+        if distribution.concentrated_in():
+            parts.append(
+                "> 한쪽에 몰려 있습니다. **뱅크 재구성으로 덮기 전에 그쪽 원인을 "
+                "먼저 확인해 주세요.** 자재나 설비 문제라면 뱅크를 다시 만들어도 "
+                "같은 일이 반복됩니다.\n"
+            )
 
     # ── 진단 ────────────────────────────────────────────────────────
     parts.append("## 진단\n")
@@ -231,6 +277,8 @@ def prepare_release(
     shadow: ShadowReport | None = None,
     reproducibility: ReproducibilityResult | None = None,
     issue_text: str = "",
+    distribution: "DefectDistribution | None" = None,
+    affected: "Sequence[ImageRecord]" = (),
 ) -> ReleasePackage:
     """배포 패키지를 만든다. 배포하지는 않는다.
 
@@ -260,11 +308,16 @@ def prepare_release(
         dump("shadow.json", shadow.to_dict())
     if reproducibility:
         dump("reproducibility.json", reproducibility.to_dict())
+    if distribution is not None:
+        dump("defect_distribution.json", distribution.to_dict())
+    if affected:
+        dump("affected_images.json", [r.to_dict() for r in affected])
 
     document = write_approval_document(
         directory / "승인요청.md",
         bank=bank, record=record, diagnosis=diagnosis, plan=plan,
         gate=gate, shadow=shadow, reproducibility=reproducibility, issue_text=issue_text,
+        distribution=distribution, affected=affected,
     )
 
     blocking: list[str] = []

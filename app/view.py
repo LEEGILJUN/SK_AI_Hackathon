@@ -138,13 +138,22 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
         f'<option value="{v}"{" selected" if v == patch_verdict else ""}>{escape(t)}</option>'
         for v, t in options
     )
-    ctx = context or {"line": "line_02", "object_name": "capsules", "defect_type": "dent"}
+    # 양식은 **비어 있는 것이 기본**이다. 언어 모델이 이슈 원문에서 뽑고,
+    # 못 뽑은 자리만 여기서 채운다. 다 채워 넣으면 추출이 할 일이 없어져
+    # 언어 모델을 쓰는 의미가 사라진다.
+    ctx = context or {}
     fields = "".join(
         f"""<div>
           <label for="{key}">{escape(label)}</label>
-          <input id="{key}" name="{key}" value="{escape(ctx.get(key, ''))}">
+          <input id="{key}" name="{key}" value="{escape(ctx.get(key, ''))}"
+                 placeholder="{escape(hint)}">
         </div>"""
-        for key, label in (("line", "라인"), ("object_name", "품목"), ("defect_type", "결함 유형"))
+        for key, label, hint in (
+            ("line", "라인", "원문에서 추출"),
+            ("object_name", "품목", "원문에서 추출"),
+            ("defect_type", "결함 유형", "원문에서 추출"),
+            ("product_id", "제품명", "원문에서 추출"),
+        )
     )
 
     body = ""
@@ -189,6 +198,10 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
         <select id="patch" name="patch_verdict">{select}</select>
         <span class="hint">이 값 하나로 조치가 정반대로 갈립니다.</span>
       </div>
+      <p class="hint" style="flex-basis:100%">
+        아래 네 칸은 <strong>언어 모델이 이슈 원문에서 뽑는 것이 우선</strong>입니다.
+        모델이 붙어 있으면 비워 두세요. 못 뽑은 자리만 채워집니다.
+      </p>
       <button type="submit">접수하고 실행</button>
     </div>
   </form>

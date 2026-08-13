@@ -24,7 +24,7 @@ if str(REPO_ROOT) not in sys.path:
 from fastapi import FastAPI, Form  # noqa: E402
 from fastapi.responses import HTMLResponse, PlainTextResponse  # noqa: E402
 
-from app.pipeline import DEFAULT_ISSUE, DemoFactory, RunOutcome, run_pipeline  # noqa: E402
+from app.pipeline import DemoFactory, RunOutcome, default_issue, run_pipeline  # noqa: E402
 from app.view import render_page  # noqa: E402
 
 app = FastAPI(title="검사 AI 자율 운영 에이전트")
@@ -43,22 +43,34 @@ def factory() -> DemoFactory:
 
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
-    return render_page(None, DEFAULT_ISSUE)
+    """첫 화면.
+
+    이슈 원문에 제품명이 들어 있다. 언어 모델이 뽑을 것이 있어야 MES 조회가
+    의미를 가진다. **모델이 붙어 있으면 아래 칸을 비워 두면 되고**, 안 붙어
+    있으면 채워야 한다 — 인테이크가 추측으로 채우지 않기 때문이다. 그래서
+    Mac 처럼 모델이 없는 환경에서는 미리 채워 둔다.
+    """
+    f = factory()
+    prefill = {"line": "line_02", "object_name": "capsules",
+               "defect_type": "dent", "product_id": f.reported_product}
+    return render_page(None, default_issue(f), context=prefill)
 
 
 @app.post("/run", response_class=HTMLResponse)
 def run(
-    issue_text: str = Form(DEFAULT_ISSUE),
+    issue_text: str = Form(""),
     patch_verdict: str = Form("defect"),
     line: str = Form(""),
     object_name: str = Form(""),
     defect_type: str = Form(""),
+    product_id: str = Form(""),
 ) -> str:
     """이슈를 접수하고 전 구간을 실행한다.
 
-    라인·품목·결함 유형은 **양식에서 받는다.** 인테이크가 추측으로 채우면
-    엉뚱한 라인의 뱅크를 건드릴 수 있어서, 사람이 고른 값을 우선한다.
-    파이프라인 코드에 박아 두지 않는 이유이기도 하다.
+    라인·품목·제품명은 **이슈 원문에서 언어 모델이 뽑는 것이 우선**이고,
+    양식은 모델이 못 뽑은 자리만 채운다. 양식이 다 채워져 있으면 추출이 할 일이
+    없어져 언어 모델을 쓰는 의미가 사라진다. 모델이 없을 때만 양식이 주 입력이
+    되며, 그때도 인테이크는 추측으로 채우지 않고 비면 되묻는다.
 
     patch_verdict
         판별 5번을 손으로 지정한다. 시연에서 이 값을 바꿔 가며 같은 이미지·
@@ -68,7 +80,9 @@ def run(
     global _last
     override = None if patch_verdict == "ask_model" else patch_verdict
     context = {k: v for k, v in
-               (("line", line), ("object_name", object_name), ("defect_type", defect_type)) if v}
+               (("line", line), ("object_name", object_name),
+                ("defect_type", defect_type), ("product_id", product_id)) if v}
+    issue_text = issue_text or default_issue(factory())
     _last = run_pipeline(
         factory(), issue_text=issue_text, patch_override=override,
         context=context or None,
