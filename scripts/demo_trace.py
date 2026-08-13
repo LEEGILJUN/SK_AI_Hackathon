@@ -33,6 +33,7 @@ from inspection import (  # noqa: E402
     FeatureConfig,
     PatchEmbedder,
     assess_threshold_feasibility,
+    bank_contribution,
     build_bank,
     describe,
     format_curve,
@@ -146,7 +147,7 @@ def main() -> None:
     if top is None:
         raise SystemExit("최근접 패치를 찾지 못했다.")
 
-    print("\n최근접 패치 역추적")
+    print("\n최근접 패치 역추적 — 이 한 건")
     print(f"  질의  {top.query.source_image}  격자({top.query.row},{top.query.col})")
     print(f"    ↓ 거리 {top.distance:.4f}  (뱅크 행 {top.bank_row_index})")
     print(f"  뱅크  {top.bank.source_image}  격자({top.bank.row},{top.bank.col})")
@@ -158,12 +159,48 @@ def main() -> None:
         except ValueError:
             contaminant_names.add(Path(path).as_posix())
 
-    if top.bank.source_image in contaminant_names:
-        print("\n  → 지목된 것이 섞여 들어간 결함 이미지다. 원인은 뱅크 오염.")
-        print("     다음 단계: 이 패치가 결함인지 진짜 정상품인지 판독(판별 항목 5번).")
-        print("     결함이면 오염 제거 후 재구성, 진짜 정상품이면 정상 분포 중첩이라 재구성은 답이 아니다.")
-    else:
-        print("\n  → 지목된 것이 원래 정상 이미지다. 오염이 아닐 수 있다.")
+    print(
+        "  → 오염원 지목" if top.bank.source_image in contaminant_names
+        else "  → 원래 정상 이미지를 지목"
+    )
+
+    # ── 여러 건을 모아 본다 ──────────────────────────────────────────
+    # 한 건만 보면 우연에 좌우된다. 오염률이 낮을수록 특정 미검출 이미지
+    # 하나의 최근접 패치가 오염원일 확률이 떨어지기 때문이다. 실제로
+    # 정상 225장에 오염 3장(1.3%) 조건에서 위 한 건이 오염을 못 짚었다.
+    #
+    # 운영 코드는 원래 여러 건을 모아 본다 — agents/curate.py 가
+    # bank_contribution() 의 반복 지목을 오염 후보의 근거로 쓴다.
+    # "한 장의 우연이 아니라 반복이 근거"다. 시연도 같은 방식이어야 한다.
+    missed = [p for p in defect if p not in set(contaminants)]
+    if len(missed) >= 2:
+        results = score_images(missed, dirty, embedder, root=root)
+        ranking = bank_contribution(results)
+
+        print(f"\n최근접 패치 역추적 — 미검출 {len(results)}건을 모아서")
+        print(f"  {'뱅크 이미지':<52} {'지목':>4}  실제")
+        print(f"  {'-' * 52} {'-' * 4}  {'-' * 6}")
+        for name, hits in list(ranking.items())[:6]:
+            mark = "오염원" if name in contaminant_names else ""
+            print(f"  {name:<52} {hits:>4}  {mark}")
+
+        top_source = next(iter(ranking), None)
+        hit_total = sum(n for s, n in ranking.items() if s in contaminant_names)
+        print(
+            f"\n  오염원을 지목한 건수 {hit_total}/{len(results)}"
+            f"   (뱅크 {len(dirty.images)}장 중 오염 {len(contaminants)}장 = "
+            f"{len(contaminants) / len(dirty.images):.1%})"
+        )
+        if top_source in contaminant_names:
+            print("  → 가장 많이 지목된 것이 섞여 들어간 결함 이미지다. 원인은 뱅크 오염.")
+            print("     다음 단계: 이 패치가 결함인지 진짜 정상품인지 판독(판별 항목 5번).")
+            print("     결함이면 오염 제거 후 재구성, 진짜 정상품이면 정상 분포 중첩이라")
+            print("     재구성은 답이 아니다.")
+        elif hit_total:
+            print("  → 오염원이 지목되긴 했으나 1위는 아니다. 근거가 약하므로 사람 확인이 필요하다.")
+        else:
+            print("  → 오염원을 한 번도 지목하지 못했다. 오염률이 낮으면 역추적만으로는")
+            print("     부족하다는 뜻이며, 고립도(inspection/isolation.py)를 함께 봐야 한다.")
 
     # ── 임계값 스윕 ──────────────────────────────────────────────────
     # 뱅크에 쓰지 않은 양품과 불량이 있어야 검출률·과검률을 잴 수 있다.
