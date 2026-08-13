@@ -113,8 +113,10 @@ MES 데이터와 이미지 메타데이터는 **벡터화하지 않습니다.** 
 ```
 
 **경로는 다 이어졌다. 그런데 언어 모델이 아무 데서도 돌지 않는다.**
-어댑터는 5군데 붙어 있지만 전부 스텁이고, 웹 데모는 도구 호출 루프
-(`agents/tools.py` 의 `run_agent`)를 쓰지 않고 함수를 순서대로 직접 부른다.
+어댑터는 5군데 붙어 있고 `agents/adapters/openai_compat.py` 구현도 있지만,
+`SHVO_*_PROVIDER` 기본값이 `stub` 이라 실제로는 대체 구현이 답한다.
+**코드가 없어서가 아니라 설정이 안 돼서 안 도는 것이다.** 웹 데모는 도구 호출
+루프(`agents/tools.py` 의 `run_agent`)를 쓰지 않고 함수를 순서대로 직접 부른다.
 지금 화면은 "에이전트가 판단하는 것"이 아니라 "파이프라인이 도는 것"이다.
 
 이어서 작업할 때는 [`docs/이어서작업.md`](docs/이어서작업.md) 를 먼저 읽을 것.
@@ -151,6 +153,10 @@ MES 데이터와 이미지 메타데이터는 **벡터화하지 않습니다.** 
    `requires_bank_rebuild` 는 원인이 정해지면 따라오는 값이다.
 
 ### 확인 명령
+
+아래 `.venv/bin/python` 은 Mac 기준 표기다. **Windows 4090 노트북은 conda 환경
+`Hackathon` 을 쓴다** (`%LOCALAPPDATA%\anaconda3\envs\Hackathon\python.exe`).
+환경별 경로는 [`docs/이어서작업.md`](docs/이어서작업.md) 1장 표에 있다.
 
 ```bash
 .venv/bin/python -m pytest tests/ -q            # 전체 테스트
