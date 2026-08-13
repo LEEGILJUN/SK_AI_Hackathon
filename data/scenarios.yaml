@@ -57,7 +57,177 @@ intake_verdicts:
 #   id 규칙: SC-<원인 약어>-<일련번호>
 # ═══════════════════════════════════════════════════════════════════════
 scenarios:
+  - id: SC-EQ-001
+    title: 렌즈 이물로 인한 블러 저하, 과검 클레임 후 미검출 발견
+    cause_group: equipment_optics
+    priority: mvp
 
+    target:
+      line: line_04
+      object: pcb2                # VisA 객체명
+      bank_version: v3
+      lot_ids: [LOT-20260610-021]
+      date_range: [2026-06-08, 2026-06-10]
+
+    input:
+      issue_text: "카메라 렌즈에 먼지가 낀 것 같습니다. 최근 line_04 pcb2에서 과검이 계속 늘어나고 있다는 클레임이 있어서 확인 요청드립니다. 첨부 이미지는 실제로는 결함인데 검사기가 놓친 케이스로 보입니다."
+      attachments:
+        - pcb2/Data/Images/Anomaly/001.JPG
+      reporter_role: 설비엔지니어
+      submitted_at: 2026-06-10T14:05:00
+
+    injection:
+      method: image_degrade
+      seed: 20260610
+      params:
+        degrade_type: blur
+        blur_kernel: 5
+        affected_images: [pcb2/Data/Images/Anomaly/001.JPG]
+
+    ground_truth:
+      intake_verdict: proceed
+      cause: equipment_optics
+      requires_bank_rebuild: false
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: false
+        score_vs_threshold: below
+        score_ratio: 0.88
+        nearest_patch_ref:
+          source_image: pcb2/Data/Images/Normal/014.JPG
+          patch_index: null
+        nearest_patch_is_defect: false
+        coverage_present: true
+        criteria_verdict: defect
+      expected_actions: [equipment_inspection, lens_cleaning, quality_baseline_recheck]
+      forbidden_actions: [rebuild_bank, lower_threshold]
+
+    scoring:
+      weight: 1.0
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [quality_within_baseline, nearest_patch_is_defect]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        접수 자체가 설비 의심으로 명시된 케이스. 정상 패치가 최근접이었다는 점(뱅크 오염 아님)과
+        화질 지표 이탈(quality_within_baseline: false)을 함께 잡아야 정답. rebuild_bank를
+        제안하면 오답 처리.
+
+  - id: SC-EQ-002
+    title: 렌즈 오염 의심, 라인 미기재 야간 메모성 접수
+    cause_group: equipment_optics
+    priority: mvp
+
+    target:
+      line: line_04
+      object: pcb2
+      bank_version: v3
+      lot_ids: [LOT-20260611-009]
+      date_range: [2026-06-11, 2026-06-11]
+
+    input:
+      issue_text: "요즘 pcb 쪽에서 자꾸 놓치는 거 같은데 확인좀. 사진 밝기가 좀 이상해 보임."
+      attachments:
+        - pcb2/Data/Images/Anomaly/003.JPG
+      reporter_role: 공정엔지니어
+      submitted_at: 2026-06-11T23:47:00
+
+    injection:
+      method: image_degrade
+      seed: 20260611
+      params:
+        degrade_type: brightness_contrast
+        brightness_shift: -18
+        contrast_scale: 0.82
+        affected_images: [pcb2/Data/Images/Anomaly/003.JPG]
+
+    ground_truth:
+      intake_verdict: proceed
+      cause: equipment_optics
+      requires_bank_rebuild: false
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: false
+        score_vs_threshold: near
+        score_ratio: 0.93
+        nearest_patch_ref:
+          source_image: pcb2/Data/Images/Normal/027.JPG
+          patch_index: null
+        nearest_patch_is_defect: false
+        coverage_present: true
+        criteria_verdict: defect
+      expected_actions: [equipment_inspection, lens_cleaning, quality_baseline_recheck]
+      forbidden_actions: [rebuild_bank, lower_threshold]
+
+    scoring:
+      weight: 1.0
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [quality_within_baseline, nearest_patch_is_defect]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        라인 정보 누락 + 결함명 대신 "밝기가 이상하다"는 표현만 있는 불완전 입력. 인테이크가
+        line_04로 정확히 되묻거나 매핑해야 하고, 진단은 밝기/대비 이탈을 근거로 설비·광학을
+        잡아야 함. 뱅크 재구성이나 임계값 조정 제안 시 오답.
+
+  - id: SC-EQ-003
+    title: 노이즈 증가, 과검 클레임 급증 후 특정 로트 미검출 확인
+    cause_group: equipment_optics
+    priority: mvp
+
+    target:
+      line: line_07
+      object: macaroni2
+      bank_version: v2
+      lot_ids: [LOT-20260612-033]
+      date_range: [2026-06-11, 2026-06-12]
+
+    input:
+      issue_text: "최근 2주간 line_07 macaroni2에서 과검 클레임이 급증했다는 보고를 받았습니다. 확인해보니 이 로트 이미지 노이즈가 유독 심한 것 같습니다. 실제 불량인데 검사기가 놓친 게 아닌가 싶어 첨부합니다."
+      attachments:
+        - macaroni2/Data/Images/Anomaly/005.JPG
+      reporter_role: 품질엔지니어
+      submitted_at: 2026-06-12T10:20:00
+
+    injection:
+      method: image_degrade
+      seed: 20260612
+      params:
+        degrade_type: noise
+        noise_sigma: 12
+        affected_images: [macaroni2/Data/Images/Anomaly/005.JPG]
+
+    ground_truth:
+      intake_verdict: proceed
+      cause: equipment_optics
+      requires_bank_rebuild: false
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: false
+        score_vs_threshold: below
+        score_ratio: 0.90
+        nearest_patch_ref:
+          source_image: macaroni2/Data/Images/Normal/041.JPG
+          patch_index: null
+        nearest_patch_is_defect: false
+        coverage_present: true
+        criteria_verdict: defect
+      expected_actions: [equipment_inspection, quality_baseline_recheck, monitor_after_fix]
+      forbidden_actions: [rebuild_bank, lower_threshold]
+
+    scoring:
+      weight: 1.0
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [quality_within_baseline, nearest_patch_is_defect]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        "과검이 늘었다"는 클레임(전반적 화질 저하의 간접 신호)과 "미검출 1건"이 동시에 보고된
+        케이스. 노이즈로 인한 quality_within_baseline: false를 근거로 설비·광학을 잡아야 하며,
+        커버리지나 뱅크 오염으로 오판하면 오답.
   # ───────────────────────────────────────────────────────────────────
   # 예시 1건 — 뱅크 오염 (MVP 필수 시나리오)
   # 아래 형식을 그대로 복제해 나머지를 채웁니다.
