@@ -82,14 +82,21 @@ def actual_test_count() -> int | None:
     venv_python = REPO_ROOT / ".venv" / "bin" / "python"
     python = str(venv_python) if venv_python.exists() else sys.executable
     try:
-        output = subprocess.run(
+        result = subprocess.run(
             [python, "-m", "pytest", "tests/", "--collect-only", "-q"],
             cwd=REPO_ROOT, capture_output=True, text=True, timeout=180,
-        ).stdout
+        )
     except Exception:
         return None
 
-    match = re.search(r"(\d+)\s+tests? collected", output)
+    # 수집이 깨지면 pytest 는 일부만 세고도 "N tests collected" 를 출력한다.
+    # 그 숫자를 그대로 믿으면 멀쩡한 문서를 틀린 값으로 고치게 된다.
+    # 실제로 torch 가 안 깔린 환경에서 "146건" 을 "10건" 으로 바꾸라고 했다.
+    # 환경이 깨진 것이지 문서가 틀린 것이 아니므로 세지 않은 것으로 본다.
+    if result.returncode != 0:
+        return None
+
+    match = re.search(r"(\d+)\s+tests? collected", result.stdout)
     return int(match.group(1)) if match else None
 
 
@@ -125,7 +132,11 @@ def check_renamed() -> None:
 
 def check_test_counts(actual: int | None) -> None:
     if actual is None:
-        warnings.append("  테스트 건수를 세지 못했습니다. pytest 를 확인하세요.")
+        warnings.append(
+            "  테스트 건수를 세지 못했습니다. 수집이 깨졌을 수 있습니다.\n"
+            "      `pytest tests/ --collect-only -q` 를 직접 돌려 보세요.\n"
+            "      import 오류가 나면 환경 문제입니다. 문서의 숫자를 고치지 마세요."
+        )
         return
 
     # "20건"이 시나리오 개수인지 테스트 개수인지는 문맥으로만 갈린다.
