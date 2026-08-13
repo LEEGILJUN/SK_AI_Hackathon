@@ -56,34 +56,933 @@ intake_verdicts:
 #   유형별 3건 이상 × 6원인 + 중복 케이스 = 20건 이상
 #   id 규칙: SC-<원인 약어>-<일련번호>
 # ═══════════════════════════════════════════════════════════════════════
+
 scenarios:
-  - id: SC-EQ-001
-    title: 렌즈 이물로 인한 블러 저하, 과검 클레임 후 미검출 발견
-    cause_group: equipment_optics
+ 
+  # ===================== THRESHOLD (재구성 불필요) =====================
+ 
+  - id: SC-TH-001
+    title: PCB 엣지 크랙 미검 - threshold 과보수 설정
+    cause_group: threshold
     priority: mvp
-
+ 
     target:
-      line: line_04
-      object: pcb2                # VisA 객체명
-      bank_version: v3
-      lot_ids: [LOT-20260610-021]
-      date_range: [2026-06-08, 2026-06-10]
-
+      line: line_01
+      object: pcb1
+      bank_version: v2
+      lot_ids: [LOT-20260610-003]
+      date_range: [2026-06-09, 2026-06-11]
+ 
     input:
-      issue_text: "카메라 렌즈에 먼지가 낀 것 같습니다. 최근 line_04 pcb2에서 과검이 계속 늘어나고 있다는 클레임이 있어서 확인 요청드립니다. 첨부 이미지는 실제로는 결함인데 검사기가 놓친 케이스로 보입니다."
+      issue_text: "line_01에서 PCB 엣지 크랙으로 보이는 미검 건 발생. 확인 요망."
       attachments:
-        - pcb2/Data/Images/Anomaly/001.JPG
-      reporter_role: 설비엔지니어
-      submitted_at: 2026-06-10T14:05:00
-
+        - line_01/2026-06-10/LOT-20260610-003/img_0087.png
+      reporter_role: 공정엔지니어
+      submitted_at: 2026-06-11T14:20:00
+ 
     injection:
-      method: image_degrade
+      method: threshold_shift
       seed: 20260610
       params:
+        original_threshold: 0.42
+        evaluation_threshold: 0.50
+        note: "초기 캘리브레이션 시 정상 스코어 상위 극단값 기준으로 과도하게 보수적으로(높게) 설정"
+ 
+    ground_truth:
+      intake_verdict: proceed
+      cause: threshold
+      requires_bank_rebuild: false
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: true
+        score_vs_threshold: below
+        score_ratio: 0.89
+        nearest_patch_ref:
+          source_image: pcb1/Data/Images/Normal/0231.JPG
+          patch_index: null
+        nearest_patch_is_defect: false
+        coverage_present: true
+        criteria_verdict: defect
+      expected_actions: [threshold_recalibration, roc_pr_reanalysis, shadow_compare]
+      forbidden_actions: [rebuild_bank]
+ 
+    scoring:
+      weight: 1.0
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [score_vs_threshold, score_ratio]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        score_ratio 0.89로 threshold 바로 아래. 최근접 패치는 진짜 정상품이고(nearest_patch_is_defect:false)
+        커버리지도 존재(coverage_present:true) — 재구성 사유가 전혀 없다. threshold 재산출만이 정답.
+ 
+  - id: SC-TH-002
+    title: line_02 야간 접수 - 원인 불명 상태의 미검 의심
+    cause_group: threshold
+    priority: mvp
+ 
+    target:
+      line: line_02
+      object: pcb2
+      bank_version: v3
+      lot_ids: [LOT-20260622-011]
+      date_range: [2026-06-20, 2026-06-22]
+ 
+    input:
+      issue_text: "line_02 요즘 자꾸 놓치는거 같은데 확인좀요 ㅠㅠ"
+      attachments:
+        - line_02/2026-06-21/LOT-20260622-011/img_0203.png
+      reporter_role: 라인관리자
+      submitted_at: 2026-06-22T23:47:00
+ 
+    injection:
+      method: threshold_shift
+      seed: 20260622
+      params:
+        original_threshold: 0.55
+        evaluation_threshold: 0.60
+ 
+    ground_truth:
+      intake_verdict: proceed
+      cause: threshold
+      requires_bank_rebuild: false
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: true
+        score_vs_threshold: near
+        score_ratio: 0.94
+        nearest_patch_ref:
+          source_image: pcb2/Data/Images/Normal/0088.JPG
+          patch_index: null
+        nearest_patch_is_defect: false
+        coverage_present: true
+        criteria_verdict: defect
+      expected_actions: [threshold_recalibration, roc_pr_reanalysis, shadow_compare]
+      forbidden_actions: [rebuild_bank]
+ 
+    scoring:
+      weight: 1.0
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [score_vs_threshold, score_ratio]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        접수 문장에 결함 유형·건수·라인 외 정보가 전혀 없음(현장에서 실제로 자주 오는 형태).
+        라인만으로 진단 진행 가능해야 하며, score_ratio 0.94(near)로 threshold 재산출이 정답.
+ 
+  - id: SC-TH-003
+    title: macaroni1 표면 결함 미검 재현
+    cause_group: threshold
+    priority: mvp
+ 
+    target:
+      line: line_03
+      object: macaroni1
+      bank_version: v2
+      lot_ids: [LOT-20260701-005]
+      date_range: [2026-06-30, 2026-07-02]
+ 
+    input:
+      issue_text: "line_03 표면 결함 미검출 건 재현됨. 이전에도 유사 사례 있었던 것으로 기억."
+      attachments:
+        - line_03/2026-07-01/LOT-20260701-005/img_0119.png
+      reporter_role: 품질검사원
+      submitted_at: 2026-07-02T10:05:00
+ 
+    injection:
+      method: threshold_shift
+      seed: 20260701
+      params:
+        original_threshold: 0.38
+        evaluation_threshold: 0.45
+ 
+    ground_truth:
+      intake_verdict: proceed
+      cause: threshold
+      requires_bank_rebuild: false
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: true
+        score_vs_threshold: below
+        score_ratio: 0.91
+        nearest_patch_ref:
+          source_image: macaroni1/Data/Images/Normal/0150.JPG
+          patch_index: null
+        nearest_patch_is_defect: false
+        coverage_present: true
+        criteria_verdict: defect
+      expected_actions: [threshold_recalibration, roc_pr_reanalysis, shadow_compare]
+      forbidden_actions: [rebuild_bank]
+ 
+    scoring:
+      weight: 1.0
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [score_vs_threshold, score_ratio]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        "이전에도 유사 사례"라는 표현이 뱅크 문제를 암시하는 것처럼 보일 수 있으나,
+        nearest_patch_is_defect:false + coverage_present:true로 뱅크는 정상임을 확인해야 함.
+ 
+  - id: SC-TH-004
+    title: capsules 미검 1건 - threshold 경계 근접
+    cause_group: threshold
+    priority: extended
+ 
+    target:
+      line: line_04
+      object: capsules
+      bank_version: v4
+      lot_ids: [LOT-20260715-002]
+      date_range: [2026-07-14, 2026-07-16]
+ 
+    input:
+      issue_text: "line_04 캡슐 표면 미검 1건, threshold 관련 의심됨"
+      attachments:
+        - line_04/2026-07-15/LOT-20260715-002/img_0044.png
+      reporter_role: 공정엔지니어
+      submitted_at: 2026-07-16T09:30:00
+ 
+    injection:
+      method: threshold_shift
+      seed: 20260715
+      params:
+        original_threshold: 0.60
+        evaluation_threshold: 0.66
+ 
+    ground_truth:
+      intake_verdict: proceed
+      cause: threshold
+      requires_bank_rebuild: false
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: true
+        score_vs_threshold: near
+        score_ratio: 0.97
+        nearest_patch_ref:
+          source_image: capsules/Data/Images/Normal/0304.JPG
+          patch_index: null
+        nearest_patch_is_defect: false
+        coverage_present: true
+        criteria_verdict: defect
+      expected_actions: [threshold_recalibration, roc_pr_reanalysis, shadow_compare]
+      forbidden_actions: [rebuild_bank]
+ 
+    scoring:
+      weight: 1.2
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [score_vs_threshold, score_ratio]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        score_ratio 0.97로 threshold 바로 아래 — "근소한 차이니 뱅크도 재확인해야"라는
+        오판을 유도하기 쉬운 경계 케이스. 뱅크는 정상이므로 threshold 조정만이 정답.
+ 
+  # ===================== BANK CONTAMINATION (재구성 필요) =====================
+ 
+  - id: SC-BC-001
+    title: PCB 이물 미검 - v3 뱅크 업데이트 이후 스코어 이상
+    cause_group: bank_contamination
+    priority: mvp
+ 
+    target:
+      line: line_01
+      object: pcb3
+      bank_version: v3
+      lot_ids: [LOT-20260605-014]
+      date_range: [2026-06-05, 2026-06-07]
+ 
+    input:
+      issue_text: "line_01 PCB 표면 이물 미검 건, 최근 뱅크 업데이트(v3) 이후부터 스코어가 이상하게 낮게 나오는 것 같음"
+      attachments:
+        - line_01/2026-06-05/LOT-20260605-014/img_0142.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-06-07T22:10:00
+ 
+    injection:
+      method: bank_contamination
+      seed: 20260605
+      params:
+        contaminated_images: [pcb3/Data/Images/Anomaly/004.JPG]
+        contaminated_count: 3
+        note: "v3 뱅크 구성 시 결함 이미지 일부가 정상 세트로 오분류되어 유입"
+ 
+    ground_truth:
+      intake_verdict: proceed
+      cause: bank_contamination
+      requires_bank_rebuild: true
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: true
+        score_vs_threshold: below
+        score_ratio: 0.86
+        nearest_patch_ref:
+          source_image: pcb3/Data/Images/Anomaly/004.JPG
+          patch_index: null
+        nearest_patch_is_defect: true
+        coverage_present: true
+        criteria_verdict: defect
+      expected_actions: [remove_contaminated_samples, rebuild_bank, shadow_compare]
+      forbidden_actions: [lower_threshold]
+ 
+    scoring:
+      weight: 1.0
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [nearest_patch_is_defect, defect_visible]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        제보자가 "뱅크 업데이트(v3) 이후부터"라는 시점 단서를 제공 — 스코어 이상 패턴을
+        뱅크 버전과 대조해 역추적하는 것이 실제 발견 경로. 최근접 패치가 실제로는
+        결함 이미지임(nearest_patch_is_defect:true)을 확인해야 정답.
+ 
+  - id: SC-BC-002
+    title: PCB 크랙 동일 위치 반복 미검 - 뱅크 오염 의심
+    cause_group: bank_contamination
+    priority: mvp
+ 
+    target:
+      line: line_02
+      object: pcb1
+      bank_version: v2
+      lot_ids: [LOT-20260618-007]
+      date_range: [2026-06-17, 2026-06-19]
+ 
+    input:
+      issue_text: "line_02 크랙 미검 2건, 같은 위치에서 계속 발생. 뱅크 확인 필요해 보임"
+      attachments:
+        - line_02/2026-06-18/LOT-20260618-007/img_0055.png
+        - line_02/2026-06-18/LOT-20260618-007/img_0056.png
+      reporter_role: 공정엔지니어
+      submitted_at: 2026-06-19T16:40:00
+ 
+    injection:
+      method: bank_contamination
+      seed: 20260618
+      params:
+        contaminated_images: [pcb1/Data/Images/Anomaly/011.JPG, pcb1/Data/Images/Anomaly/012.JPG]
+        contaminated_count: 5
+ 
+    ground_truth:
+      intake_verdict: proceed
+      cause: bank_contamination
+      requires_bank_rebuild: true
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: true
+        score_vs_threshold: below
+        score_ratio: 0.80
+        nearest_patch_ref:
+          source_image: pcb1/Data/Images/Anomaly/011.JPG
+          patch_index: null
+        nearest_patch_is_defect: true
+        coverage_present: true
+        criteria_verdict: defect
+      expected_actions: [remove_contaminated_samples, rebuild_bank, shadow_compare]
+      forbidden_actions: [lower_threshold]
+ 
+    scoring:
+      weight: 1.0
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [nearest_patch_is_defect, defect_visible]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        동일 위치에서의 반복 미검은 뱅크 오염의 전형적 신호. score_ratio 0.80으로
+        threshold와 거리가 있어 threshold 문제로 오인하기 쉬우나 원인은 뱅크 오염.
+ 
+  - id: SC-BC-003
+    title: cashew 표면 결함 통과 반복 - 현장 은어 표현
+    cause_group: bank_contamination
+    priority: mvp
+ 
+    target:
+      line: line_03
+      object: cashew
+      bank_version: v3
+      lot_ids: [LOT-20260625-009]
+      date_range: [2026-06-24, 2026-06-26]
+ 
+    input:
+      issue_text: "line_03 먹통(불량인데 그냥 통과) 계속 나옴. 뭐가 문제인지 봐주세요"
+      attachments:
+        - line_03/2026-06-25/LOT-20260625-009/img_0071.png
+      reporter_role: 라인관리자
+      submitted_at: 2026-06-26T20:15:00
+ 
+    injection:
+      method: bank_contamination
+      seed: 20260625
+      params:
+        contaminated_images: [cashew/Data/Images/Anomaly/007.JPG]
+        contaminated_count: 2
+ 
+    ground_truth:
+      intake_verdict: proceed
+      cause: bank_contamination
+      requires_bank_rebuild: true
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: true
+        score_vs_threshold: below
+        score_ratio: 0.83
+        nearest_patch_ref:
+          source_image: cashew/Data/Images/Anomaly/007.JPG
+          patch_index: null
+        nearest_patch_is_defect: true
+        coverage_present: true
+        criteria_verdict: defect
+      expected_actions: [remove_contaminated_samples, rebuild_bank, shadow_compare]
+      forbidden_actions: [lower_threshold]
+ 
+    scoring:
+      weight: 1.0
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [nearest_patch_is_defect, defect_visible]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        "먹통"은 미검을 뜻하는 현장 비표준 표현 — 인테이크 단계에서 용어를 정규화해야
+        진단으로 넘어갈 수 있는 케이스. 원인은 뱅크 오염.
+ 
+  - id: SC-BC-004
+    title: PCB 배선 결함 미검 - 스코어 전반적 하락
+    cause_group: bank_contamination
+    priority: extended
+ 
+    target:
+      line: line_04
+      object: pcb4
+      bank_version: v3
+      lot_ids: [LOT-20260703-018]
+      date_range: [2026-07-02, 2026-07-04]
+ 
+    input:
+      issue_text: "line_04 PCB 배선 결함 미검 건, 스코어 로그 보니 특정 시점부터 이상 점수 자체가 전반적으로 낮아짐"
+      attachments:
+        - line_04/2026-07-03/LOT-20260703-018/img_0098.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-07-04T11:00:00
+ 
+    injection:
+      method: bank_contamination
+      seed: 20260703
+      params:
+        contaminated_images: [pcb4/Data/Images/Anomaly/002.JPG, pcb4/Data/Images/Anomaly/015.JPG]
+        contaminated_count: 4
+ 
+    ground_truth:
+      intake_verdict: proceed
+      cause: bank_contamination
+      requires_bank_rebuild: true
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: true
+        score_vs_threshold: below
+        score_ratio: 0.88
+        nearest_patch_ref:
+          source_image: pcb4/Data/Images/Anomaly/002.JPG
+          patch_index: null
+        nearest_patch_is_defect: true
+        coverage_present: true
+        criteria_verdict: defect
+      expected_actions: [remove_contaminated_samples, rebuild_bank, shadow_compare]
+      forbidden_actions: [lower_threshold]
+ 
+    scoring:
+      weight: 1.2
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [nearest_patch_is_defect, defect_visible]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        "전반적으로 낮아짐"이라는 표현이 threshold 문제와 뱅크 오염을 헷갈리게 만드는
+        함정 문구. nearest_patch_is_defect:true로 명확히 구분해야 함.
+ 
+  # ===================== COVERAGE GAP (재구성 필요) =====================
+ 
+  - id: SC-CV-001
+    title: 신규 방향 스크래치 미검 - 커버리지 부족
+    cause_group: coverage_gap
+    priority: mvp
+ 
+    target:
+      line: line_01
+      object: pcb2
+      bank_version: v2
+      lot_ids: [LOT-20260608-004]
+      date_range: [2026-06-07, 2026-06-09]
+ 
+    input:
+      issue_text: "line_01 처음 보는 형태의 스크래치 결함 미검. 기존에 없던 방향임"
+      attachments:
+        - line_01/2026-06-08/LOT-20260608-004/img_0063.png
+      reporter_role: 품질검사원
+      submitted_at: 2026-06-09T13:25:00
+ 
+    injection:
+      method: coverage_exclude
+      seed: 20260608
+      params:
+        excluded_condition: "신규 방향의 스크래치와 유사한 정상 변형(배선 패턴 편차)이 뱅크에 촘촘히 샘플링되지 않음"
+        excluded_image_count: 0
+ 
+    ground_truth:
+      intake_verdict: proceed
+      cause: coverage_gap
+      requires_bank_rebuild: true
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: true
+        score_vs_threshold: below
+        score_ratio: 0.90
+        nearest_patch_ref:
+          source_image: pcb2/Data/Images/Normal/0198.JPG
+          patch_index: null
+        nearest_patch_is_defect: false
+        coverage_present: false
+        criteria_verdict: defect
+      expected_actions: [rebuild_bank, coreset_expansion, shadow_compare]
+      forbidden_actions: [lower_threshold]
+ 
+    scoring:
+      weight: 1.0
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [coverage_present, nearest_patch_is_defect]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        최근접 패치는 진짜 정상품(nearest_patch_is_defect:false)이라 normal_overlap과
+        헷갈릴 수 있으나, 핵심 구분값은 coverage_present:false — 현재 조건의 정상
+        변형 자체가 뱅크에 없다는 점. 커버리지 부족이 정답.
+ 
+  - id: SC-CV-002
+    title: 특정 결함 클래스(이물)만 반복 미검
+    cause_group: coverage_gap
+    priority: mvp
+ 
+    target:
+      line: line_02
+      object: chewinggum
+      bank_version: v3
+      lot_ids: [LOT-20260619-006]
+      date_range: [2026-06-18, 2026-06-20]
+ 
+    input:
+      issue_text: "line_02 이물 오염 결함만 계속 미검됨. 스크래치는 잘 잡히는데 이물만 반복"
+      attachments:
+        - line_02/2026-06-19/LOT-20260619-006/img_0037.png
+      reporter_role: 공정엔지니어
+      submitted_at: 2026-06-20T15:50:00
+ 
+    injection:
+      method: coverage_exclude
+      seed: 20260619
+      params:
+        excluded_condition: "이물 결함 발생 위치의 정상 변동성 샘플이 부족(coreset selection 편중)"
+        excluded_image_count: 0
+ 
+    ground_truth:
+      intake_verdict: proceed
+      cause: coverage_gap
+      requires_bank_rebuild: true
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: true
+        score_vs_threshold: below
+        score_ratio: 0.87
+        nearest_patch_ref:
+          source_image: chewinggum/Data/Images/Normal/0120.JPG
+          patch_index: null
+        nearest_patch_is_defect: false
+        coverage_present: false
+        criteria_verdict: defect
+      expected_actions: [rebuild_bank, coreset_expansion, shadow_compare]
+      forbidden_actions: [lower_threshold]
+ 
+    scoring:
+      weight: 1.0
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [coverage_present, nearest_patch_is_defect]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        "특정 결함 유형만 반복 미검"은 coreset 편중형 커버리지 부족의 전형적 신호.
+ 
+  - id: SC-CV-003
+    title: 뱅크 경량화(v4) 이후 미검·과검 동시 증가
+    cause_group: coverage_gap
+    priority: mvp
+ 
+    target:
+      line: line_03
+      object: pcb1
+      bank_version: v4
+      lot_ids: [LOT-20260628-010]
+      date_range: [2026-06-27, 2026-06-29]
+ 
+    input:
+      issue_text: "line_03 최근 뱅크 경량화(v4) 이후로 미검·과검 둘다 늘어난 느낌"
+      attachments:
+        - line_03/2026-06-28/LOT-20260628-010/img_0154.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-06-29T18:00:00
+ 
+    injection:
+      method: coverage_exclude
+      seed: 20260628
+      params:
+        excluded_condition: "subsampling ratio 과도 축소로 memory bank의 정상 표현력 자체가 손실"
+        excluded_image_count: 0
+ 
+    ground_truth:
+      intake_verdict: proceed
+      cause: coverage_gap
+      requires_bank_rebuild: true
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: true
+        score_vs_threshold: below
+        score_ratio: 0.84
+        nearest_patch_ref:
+          source_image: pcb1/Data/Images/Normal/0055.JPG
+          patch_index: null
+        nearest_patch_is_defect: false
+        coverage_present: false
+        criteria_verdict: defect
+      expected_actions: [rebuild_bank, coreset_expansion, shadow_compare]
+      forbidden_actions: [lower_threshold]
+ 
+    scoring:
+      weight: 1.0
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [coverage_present, nearest_patch_is_defect]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        "미검·과검 둘다 늘었다"는 subsampling ratio 축소로 인한 커버리지 부족의
+        전형적 신호. 본 시나리오는 미검 방향만 스코어링 대상.
+ 
+  - id: SC-CV-004
+    title: 시점 불명 커버리지 저하 - 코어셋 노후화
+    cause_group: coverage_gap
+    priority: extended
+ 
+    target:
+      line: line_04
+      object: macaroni2
+      bank_version: v2
+      lot_ids: [LOT-20260710-013]
+      date_range: [2026-07-08, 2026-07-11]
+ 
+    input:
+      issue_text: "line_04 결함 좀 이상하게 넘어가는거 많아진듯. 언제부턴지는 모르겠음"
+      attachments:
+        - line_04/2026-07-10/LOT-20260710-013/img_0201.png
+      reporter_role: 라인관리자
+      submitted_at: 2026-07-11T22:30:00
+ 
+    injection:
+      method: coverage_exclude
+      seed: 20260710
+      params:
+        excluded_condition: "뱅크 구성 시점 이후 누적된 정상 변동(data drift)이 뱅크에 미반영"
+        excluded_image_count: 0
+ 
+    ground_truth:
+      intake_verdict: proceed
+      cause: coverage_gap
+      requires_bank_rebuild: true
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: true
+        score_vs_threshold: below
+        score_ratio: 0.92
+        nearest_patch_ref:
+          source_image: macaroni2/Data/Images/Normal/0077.JPG
+          patch_index: null
+        nearest_patch_is_defect: false
+        coverage_present: false
+        criteria_verdict: defect
+      expected_actions: [rebuild_bank, coreset_expansion, shadow_compare]
+      forbidden_actions: [lower_threshold]
+ 
+    scoring:
+      weight: 1.2
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [coverage_present, nearest_patch_is_defect]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        시점 정보 없이 "언제부턴지 모르겠음"으로 접수 — data drift형 커버리지 부족은
+        원래도 발생 시점 특정이 어려운 것이 특징이므로 현실적인 접수 문장.
+ 
+  # ===================== NORMAL OVERLAP (재구성 불필요) =====================
+ 
+  - id: SC-NO-001
+    title: PCB 미세 결함 - 정상 배선 굴곡과 형상 유사
+    cause_group: normal_overlap
+    priority: mvp
+ 
+    target:
+      line: line_01
+      object: pcb4
+      bank_version: v3
+      lot_ids: [LOT-20260612-002]
+      date_range: [2026-06-11, 2026-06-13]
+ 
+    input:
+      issue_text: "line_01 미세 결함 미검 1건, 육안으로도 애매한 수준"
+      attachments:
+        - line_01/2026-06-12/LOT-20260612-002/img_0019.png
+      reporter_role: 품질검사원
+      submitted_at: 2026-06-13T09:15:00
+ 
+    injection:
+      method: overlap_select
+      seed: 20260612
+      params:
+        selected_defect_image: pcb4/Data/Images/Anomaly/019.JPG
+        similarity_note: "결함부 형상이 정상 배선 패턴의 자연스러운 굴곡과 유사"
+ 
+    ground_truth:
+      intake_verdict: proceed
+      cause: normal_overlap
+      requires_bank_rebuild: false
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: true
+        score_vs_threshold: below
+        score_ratio: 0.93
+        nearest_patch_ref:
+          source_image: pcb4/Data/Images/Normal/0301.JPG
+          patch_index: null
+        nearest_patch_is_defect: false
+        coverage_present: true
+        criteria_verdict: review
+      expected_actions: [criteria_review, algorithm_level_review]
+      forbidden_actions: [rebuild_bank, lower_threshold]
+ 
+    scoring:
+      weight: 1.0
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [nearest_patch_is_defect, defect_visible]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        결함은 실재하나(defect_visible:true) 최근접 패치는 진짜 정상품 — 정상 분포와
+        형상이 겹치는 근본적 난이도. 뱅크 문제도 threshold 문제도 아님.
+ 
+  - id: SC-NO-002
+    title: 현장 오판정 의심 - 실제 결함 없음
+    cause_group: normal_overlap
+    priority: mvp
+ 
+    target:
+      line: line_02
+      object: fryum
+      bank_version: v2
+      lot_ids: [LOT-20260624-005]
+      date_range: [2026-06-23, 2026-06-25]
+ 
+    input:
+      issue_text: "line_02 미검같은데 확인점요"
+      attachments:
+        - line_02/2026-06-24/LOT-20260624-005/img_0028.png
+      reporter_role: 라인관리자
+      submitted_at: 2026-06-25T21:05:00
+ 
+    injection:
+      method: overlap_select
+      seed: 20260624
+      params:
+        selected_defect_image: null
+        similarity_note: "정밀 재검 결과 실제 결함 없음, 경계선 형상을 현장에서 결함으로 오판"
+ 
+    ground_truth:
+      intake_verdict: proceed
+      cause: normal_overlap
+      requires_bank_rebuild: false
+      duplicate_of: null
+      evidence:
+        defect_visible: false
+        quality_within_baseline: true
+        score_vs_threshold: below
+        score_ratio: 0.95
+        nearest_patch_ref:
+          source_image: fryum/Data/Images/Normal/0044.JPG
+          patch_index: null
+        nearest_patch_is_defect: false
+        coverage_present: true
+        criteria_verdict: pass
+      expected_actions: [visual_reverification, close_as_no_defect]
+      forbidden_actions: [rebuild_bank, lower_threshold]
+ 
+    scoring:
+      weight: 1.0
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [nearest_patch_is_defect, defect_visible]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        접수 문장만으로는 진짜 미검인지 알 수 없음 — 정밀 재검 결과 defect_visible:false로
+        확인되는 케이스. "미검 신고 = 실제 미검"이라 단정하면 오답.
+ 
+  - id: SC-NO-003
+    title: 신규 디자인 변경으로 인한 실크스크린 오판정
+    cause_group: normal_overlap
+    priority: mvp
+ 
+    target:
+      line: line_03
+      object: pcb2
+      bank_version: v3
+      lot_ids: [LOT-20260702-008]
+      date_range: [2026-07-01, 2026-07-03]
+ 
+    input:
+      issue_text: "line_03 실크스크린 각인 근처 미검 신고 들어옴, 신규 디자인 변경 있었다고 들음"
+      attachments:
+        - line_03/2026-07-02/LOT-20260702-008/img_0410.png
+      reporter_role: 공정엔지니어
+      submitted_at: 2026-07-03T14:00:00
+ 
+    injection:
+      method: overlap_select
+      seed: 20260702
+      params:
+        selected_defect_image: null
+        similarity_note: "신규 PCB 디자인의 정상 각인 변동을 결함으로 오인, 실제로는 정상 스펙 변경"
+ 
+    ground_truth:
+      intake_verdict: proceed
+      cause: normal_overlap
+      requires_bank_rebuild: false
+      duplicate_of: null
+      evidence:
+        defect_visible: false
+        quality_within_baseline: true
+        score_vs_threshold: below
+        score_ratio: 0.96
+        nearest_patch_ref:
+          source_image: pcb2/Data/Images/Normal/0410.JPG
+          patch_index: null
+        nearest_patch_is_defect: false
+        coverage_present: true
+        criteria_verdict: pass
+      expected_actions: [visual_reverification, spec_change_confirmation, close_as_no_defect]
+      forbidden_actions: [rebuild_bank, lower_threshold]
+ 
+    scoring:
+      weight: 1.0
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [nearest_patch_is_defect, defect_visible]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        공정기술의 스펙 변경 공지 여부 확인이 우선 — AI 조정 사안이 아니라 커뮤니케이션
+        프로세스 문제임을 진단이 잡아내야 함.
+ 
+  - id: SC-NO-004
+    title: 반복적 경계선 형상 - threshold 근접으로 오인되기 쉬운 케이스
+    cause_group: normal_overlap
+    priority: extended
+ 
+    target:
+      line: line_04
+      object: pipe_fryum
+      bank_version: v4
+      lot_ids: [LOT-20260718-011]
+      date_range: [2026-07-17, 2026-07-19]
+ 
+    input:
+      issue_text: "line_04 미세 형상 결함 미검 의심, 이전에도 비슷한 경계선 케이스 있었음"
+      attachments:
+        - line_04/2026-07-18/LOT-20260718-011/img_0089.png
+      reporter_role: 양산품질
+      submitted_at: 2026-07-19T10:40:00
+ 
+    injection:
+      method: overlap_select
+      seed: 20260718
+      params:
+        selected_defect_image: pipe_fryum/Data/Images/Anomaly/006.JPG
+        similarity_note: "결함 형상이 정상품의 자연 변형 범위 경계에 위치"
+ 
+    ground_truth:
+      intake_verdict: proceed
+      cause: normal_overlap
+      requires_bank_rebuild: false
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: true
+        score_vs_threshold: near
+        score_ratio: 0.98
+        nearest_patch_ref:
+          source_image: pipe_fryum/Data/Images/Normal/0089.JPG
+          patch_index: null
+        nearest_patch_is_defect: false
+        coverage_present: true
+        criteria_verdict: review
+      expected_actions: [criteria_review, algorithm_level_review]
+      forbidden_actions: [rebuild_bank, lower_threshold]
+ 
+    scoring:
+      weight: 1.2
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [nearest_patch_is_defect, defect_visible]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        score_ratio 0.98로 threshold에 매우 근접해 TH 원인으로 오인하기 쉬우나,
+        nearest_patch_is_defect:false와 반복적 경계선 특성이 normal_overlap의 근거.
+ 
+  # ===================== EQUIPMENT/OPTICS (재구성 불필요) =====================
+  # NOTE: 사용자 확인 실경험은 "과검" 방향뿐. 아래 4건은 미검 방향으로 구성된
+  # 기술적 가정 시나리오이며 전건 TODO 주석 포함 (사용자 승인 하에 작성).
+ 
+  - id: SC-EQ-001
+    title: PCB 크랙 미검 - 이미지 흐림 의심
+    cause_group: equipment_optics
+    priority: mvp
+ 
+    target:
+      line: line_01
+      object: pcb1
+      bank_version: v3
+      lot_ids: [LOT-20260614-006]
+      date_range: [2026-06-13, 2026-06-15]
+ 
+    input:
+      issue_text: "line_01 크랙 미검 건, 최근 이미지가 좀 흐릿해 보인다는 얘기도 있었음"
+      attachments:
+        - line_01/2026-06-14/LOT-20260614-006/img_0140.png
+      reporter_role: 공정엔지니어
+      submitted_at: 2026-06-15T17:20:00
+ 
+    injection:
+      method: image_degrade
+      seed: 20260614
+      params:
         degrade_type: blur
-        blur_kernel: 5
-        affected_images: [pcb2/Data/Images/Anomaly/001.JPG]
-
+        degrade_level: 0.35
+        # TODO(장영진): 현장 확인 필요 - 실제 경험은 과검 방향만 확인됨,
+        # 미검 방향 광학 열화 시나리오는 기술적 가정으로 구성
+ 
     ground_truth:
       intake_verdict: proceed
       cause: equipment_optics
@@ -95,110 +994,52 @@ scenarios:
         score_vs_threshold: below
         score_ratio: 0.88
         nearest_patch_ref:
-          source_image: pcb2/Data/Images/Normal/014.JPG
+          source_image: pcb1/Data/Images/Normal/0140.JPG
           patch_index: null
         nearest_patch_is_defect: false
         coverage_present: true
         criteria_verdict: defect
-      expected_actions: [equipment_inspection, lens_cleaning, quality_baseline_recheck]
+      expected_actions: [optics_inspection_request, image_quality_trend_check, reshoot_verification]
       forbidden_actions: [rebuild_bank, lower_threshold]
-
+ 
     scoring:
       weight: 1.0
       cause_match: exact
       grade_evidence: true
-      evidence_required: [quality_within_baseline, nearest_patch_is_defect]
+      evidence_required: [quality_within_baseline]
       tolerance: {score_ratio: 0.10}
       notes: >
-        접수 자체가 설비 의심으로 명시된 케이스. 정상 패치가 최근접이었다는 점(뱅크 오염 아님)과
-        화질 지표 이탈(quality_within_baseline: false)을 함께 잡아야 정답. rebuild_bank를
-        제안하면 오답 처리.
-
+        # TODO(장영진): 현장 확인 필요
+        quality_within_baseline:false가 결정적 증거. 뱅크·threshold 조정이 아니라
+        설비 점검 요청이 정답.
+ 
   - id: SC-EQ-002
-    title: 렌즈 오염 의심, 라인 미기재 야간 메모성 접수
+    title: PCB 결함 미검 재현 - 카메라 점검 이력 확인 요청
     cause_group: equipment_optics
     priority: mvp
-
+ 
     target:
-      line: line_04
-      object: pcb2
-      bank_version: v3
-      lot_ids: [LOT-20260611-009]
-      date_range: [2026-06-11, 2026-06-11]
-
-    input:
-      issue_text: "요즘 pcb 쪽에서 자꾸 놓치는 거 같은데 확인좀. 사진 밝기가 좀 이상해 보임."
-      attachments:
-        - pcb2/Data/Images/Anomaly/003.JPG
-      reporter_role: 공정엔지니어
-      submitted_at: 2026-06-11T23:47:00
-
-    injection:
-      method: image_degrade
-      seed: 20260611
-      params:
-        degrade_type: brightness_contrast
-        brightness_shift: -18
-        contrast_scale: 0.82
-        affected_images: [pcb2/Data/Images/Anomaly/003.JPG]
-
-    ground_truth:
-      intake_verdict: proceed
-      cause: equipment_optics
-      requires_bank_rebuild: false
-      duplicate_of: null
-      evidence:
-        defect_visible: true
-        quality_within_baseline: false
-        score_vs_threshold: near
-        score_ratio: 0.93
-        nearest_patch_ref:
-          source_image: pcb2/Data/Images/Normal/027.JPG
-          patch_index: null
-        nearest_patch_is_defect: false
-        coverage_present: true
-        criteria_verdict: defect
-      expected_actions: [equipment_inspection, lens_cleaning, quality_baseline_recheck]
-      forbidden_actions: [rebuild_bank, lower_threshold]
-
-    scoring:
-      weight: 1.0
-      cause_match: exact
-      grade_evidence: true
-      evidence_required: [quality_within_baseline, nearest_patch_is_defect]
-      tolerance: {score_ratio: 0.10}
-      notes: >
-        라인 정보 누락 + 결함명 대신 "밝기가 이상하다"는 표현만 있는 불완전 입력. 인테이크가
-        line_04로 정확히 되묻거나 매핑해야 하고, 진단은 밝기/대비 이탈을 근거로 설비·광학을
-        잡아야 함. 뱅크 재구성이나 임계값 조정 제안 시 오답.
-
-  - id: SC-EQ-003
-    title: 노이즈 증가, 과검 클레임 급증 후 특정 로트 미검출 확인
-    cause_group: equipment_optics
-    priority: mvp
-
-    target:
-      line: line_07
-      object: macaroni2
+      line: line_02
+      object: pcb3
       bank_version: v2
-      lot_ids: [LOT-20260612-033]
-      date_range: [2026-06-11, 2026-06-12]
-
+      lot_ids: [LOT-20260626-012]
+      date_range: [2026-06-25, 2026-06-27]
+ 
     input:
-      issue_text: "최근 2주간 line_07 macaroni2에서 과검 클레임이 급증했다는 보고를 받았습니다. 확인해보니 이 로트 이미지 노이즈가 유독 심한 것 같습니다. 실제 불량인데 검사기가 놓친 게 아닌가 싶어 첨부합니다."
+      issue_text: "line_02 결함 미검 재현, 카메라 쪽 점검 이력 있는지 확인 부탁"
       attachments:
-        - macaroni2/Data/Images/Anomaly/005.JPG
-      reporter_role: 품질엔지니어
-      submitted_at: 2026-06-12T10:20:00
-
+        - line_02/2026-06-26/LOT-20260626-012/img_0203.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-06-27T12:10:00
+ 
     injection:
       method: image_degrade
-      seed: 20260612
+      seed: 20260626
       params:
-        degrade_type: noise
-        noise_sigma: 12
-        affected_images: [macaroni2/Data/Images/Anomaly/005.JPG]
-
+        degrade_type: contrast_drop
+        degrade_level: 0.28
+        # TODO(장영진): 현장 확인 필요
+ 
     ground_truth:
       intake_verdict: proceed
       cause: equipment_optics
@@ -208,26 +1049,365 @@ scenarios:
         defect_visible: true
         quality_within_baseline: false
         score_vs_threshold: below
-        score_ratio: 0.90
+        score_ratio: 0.91
         nearest_patch_ref:
-          source_image: macaroni2/Data/Images/Normal/041.JPG
+          source_image: pcb3/Data/Images/Normal/0203.JPG
           patch_index: null
         nearest_patch_is_defect: false
         coverage_present: true
         criteria_verdict: defect
-      expected_actions: [equipment_inspection, quality_baseline_recheck, monitor_after_fix]
+      expected_actions: [optics_inspection_request, image_quality_trend_check, reshoot_verification]
       forbidden_actions: [rebuild_bank, lower_threshold]
-
+ 
     scoring:
       weight: 1.0
       cause_match: exact
       grade_evidence: true
-      evidence_required: [quality_within_baseline, nearest_patch_is_defect]
+      evidence_required: [quality_within_baseline]
       tolerance: {score_ratio: 0.10}
       notes: >
-        "과검이 늘었다"는 클레임(전반적 화질 저하의 간접 신호)과 "미검출 1건"이 동시에 보고된
-        케이스. 노이즈로 인한 quality_within_baseline: false를 근거로 설비·광학을 잡아야 하며,
-        커버리지나 뱅크 오염으로 오판하면 오답.
+        # TODO(장영진): 현장 확인 필요
+        대비 저하로 결함 경계가 흐려져 이상 스코어가 억제된 것으로 가정한 시나리오.
+ 
+  - id: SC-EQ-003
+    title: 이미지 화질 저하 의심 - 현장 구어체 보고
+    cause_group: equipment_optics
+    priority: mvp
+ 
+    target:
+      line: line_03
+      object: candle
+      bank_version: v3
+      lot_ids: [LOT-20260704-004]
+      date_range: [2026-07-03, 2026-07-05]
+ 
+    input:
+      issue_text: "line_03 요새 사진들이 뭔가 뿌옇던데 그것 때문인가 미검이 있음"
+      attachments:
+        - line_03/2026-07-04/LOT-20260704-004/img_0066.png
+      reporter_role: 라인관리자
+      submitted_at: 2026-07-05T23:00:00
+ 
+    injection:
+      method: image_degrade
+      seed: 20260704
+      params:
+        degrade_type: blur
+        degrade_level: 0.40
+        # TODO(장영진): 현장 확인 필요
+ 
+    ground_truth:
+      intake_verdict: proceed
+      cause: equipment_optics
+      requires_bank_rebuild: false
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: false
+        score_vs_threshold: near
+        score_ratio: 0.95
+        nearest_patch_ref:
+          source_image: candle/Data/Images/Normal/0066.JPG
+          patch_index: null
+        nearest_patch_is_defect: false
+        coverage_present: true
+        criteria_verdict: defect
+      expected_actions: [optics_inspection_request, image_quality_trend_check, reshoot_verification]
+      forbidden_actions: [rebuild_bank, lower_threshold]
+ 
+    scoring:
+      weight: 1.0
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [quality_within_baseline]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        # TODO(장영진): 현장 확인 필요
+        "뿌옇다"는 현장 표현이 광학 열화의 직접적 단서. 다만 미검 방향 실경험은
+        미확인이라 TODO 유지.
+ 
+  - id: SC-EQ-004
+    title: 조명 밝기 이슈 관련 미검 발생
+    cause_group: equipment_optics
+    priority: extended
+ 
+    target:
+      line: line_04
+      object: pcb2
+      bank_version: v4
+      lot_ids: [LOT-20260722-009]
+      date_range: [2026-07-21, 2026-07-23]
+ 
+    input:
+      issue_text: "line_04 결함 미검 발생, 최근 조명 밝기 이슈 있었다고 들음"
+      attachments:
+        - line_04/2026-07-22/LOT-20260722-009/img_0512.png
+      reporter_role: 공정엔지니어
+      submitted_at: 2026-07-23T15:45:00
+ 
+    injection:
+      method: image_degrade
+      seed: 20260722
+      params:
+        degrade_type: brightness_shift
+        degrade_level: 0.30
+        # TODO(장영진): 현장 확인 필요
+ 
+    ground_truth:
+      intake_verdict: proceed
+      cause: equipment_optics
+      requires_bank_rebuild: false
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: false
+        score_vs_threshold: below
+        score_ratio: 0.86
+        nearest_patch_ref:
+          source_image: pcb2/Data/Images/Normal/0512.JPG
+          patch_index: null
+        nearest_patch_is_defect: false
+        coverage_present: true
+        criteria_verdict: defect
+      expected_actions: [optics_inspection_request, image_quality_trend_check, reshoot_verification]
+      forbidden_actions: [rebuild_bank, lower_threshold]
+ 
+    scoring:
+      weight: 1.2
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [quality_within_baseline]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        # TODO(장영진): 현장 확인 필요
+        quality_within_baseline:false만으로 즉시 설비 원인으로 판단하고 뱅크/threshold를
+        건드리지 않는지가 채점 포인트.
+ 
+  # ===================== CRITERIA (재구성 불필요) =====================
+ 
+  - id: SC-CR-001
+    title: 휨(warp) 형상 - 검출됐으나 기준상 출하
+    cause_group: criteria
+    priority: mvp
+ 
+    target:
+      line: line_01
+      object: pcb3
+      bank_version: v3
+      lot_ids: [LOT-20260616-003]
+      date_range: [2026-06-15, 2026-06-17]
+ 
+    input:
+      issue_text: "line_01 휨(warp) 형상 건, 검사기는 잡았는데 검사원이 출하시킨 이력 확인됨"
+      attachments:
+        - line_01/2026-06-16/LOT-20260616-003/img_0031.png
+      reporter_role: 양산품질
+      submitted_at: 2026-06-17T19:30:00
+ 
+    injection:
+      method: criteria_change
+      seed: 20260616
+      params:
+        spec_field: warp_tolerance
+        spec_note: "휨 정도가 검출 스코어상 이상으로 판단되었으나, 출하 스펙 기준에서는 허용 범위로 분류되어 있었음"
+ 
+    ground_truth:
+      intake_verdict: proceed
+      cause: criteria
+      requires_bank_rebuild: false
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: true
+        score_vs_threshold: above
+        score_ratio: 1.22
+        nearest_patch_ref:
+          source_image: pcb3/Data/Images/Anomaly/031.JPG
+          patch_index: null
+        nearest_patch_is_defect: true
+        coverage_present: true
+        criteria_verdict: pass
+      expected_actions: [criteria_spec_review, quality_standard_alignment, shipment_hold_reverify]
+      forbidden_actions: [rebuild_bank, lower_threshold, raise_threshold]
+ 
+    scoring:
+      weight: 1.0
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [score_vs_threshold, criteria_verdict]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        실경험 기반 사례. 검출은 above threshold로 정확했으나(score_ratio 1.22),
+        판정 기준(criteria_verdict:pass)이 출하를 허용했다. 뱅크·threshold와 무관,
+        기준 재검토가 유일한 정답.
+ 
+  - id: SC-CR-002
+    title: 휨 재발 - 동일 스펙 경계값
+    cause_group: criteria
+    priority: mvp
+ 
+    target:
+      line: line_02
+      object: pcb1
+      bank_version: v2
+      lot_ids: [LOT-20260630-014]
+      date_range: [2026-06-29, 2026-07-01]
+ 
+    input:
+      issue_text: "line_02 휨 관련 재발, 지난번과 유사한 케이스로 보임"
+      attachments:
+        - line_02/2026-06-30/LOT-20260630-014/img_0027.png
+      reporter_role: 공정엔지니어
+      submitted_at: 2026-07-01T08:50:00
+ 
+    injection:
+      method: criteria_change
+      seed: 20260630
+      params:
+        spec_field: warp_tolerance
+        spec_note: "동일 휨 스펙 경계값 적용, 반복 재발 확인"
+ 
+    ground_truth:
+      intake_verdict: proceed
+      cause: criteria
+      requires_bank_rebuild: false
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: true
+        score_vs_threshold: above
+        score_ratio: 1.18
+        nearest_patch_ref:
+          source_image: pcb1/Data/Images/Anomaly/027.JPG
+          patch_index: null
+        nearest_patch_is_defect: true
+        coverage_present: true
+        criteria_verdict: pass
+      expected_actions: [criteria_spec_review, quality_standard_alignment, shipment_hold_reverify]
+      forbidden_actions: [rebuild_bank, lower_threshold, raise_threshold]
+ 
+    scoring:
+      weight: 1.0
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [score_vs_threshold, criteria_verdict]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        "지난번과 유사"라는 표현으로 반복성을 암시 - 스펙 경계값이 근본 원인임을
+        지속적으로 확인해야 하는 케이스.
+ 
+  - id: SC-CR-003
+    title: 미검 접수됐으나 실제로는 기준 문제로 재확인된 건
+    cause_group: criteria
+    priority: mvp
+ 
+    target:
+      line: line_03
+      object: pcb4
+      bank_version: v3
+      lot_ids: [LOT-20260709-006]
+      date_range: [2026-07-08, 2026-07-10]
+ 
+    input:
+      issue_text: "line_03 미검 건으로 접수됐는데 확인해보니 검사기는 잡았던 것 같음. 기준 문제인듯"
+      attachments:
+        - line_03/2026-07-09/LOT-20260709-006/img_0009.png
+      reporter_role: 법인MI담당자
+      submitted_at: 2026-07-10T13:15:00
+ 
+    injection:
+      method: criteria_change
+      seed: 20260709
+      params:
+        spec_field: warp_tolerance
+        spec_note: "제보자가 이미 기준 문제를 의심한 상태로 접수"
+ 
+    ground_truth:
+      intake_verdict: proceed
+      cause: criteria
+      requires_bank_rebuild: false
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: true
+        score_vs_threshold: above
+        score_ratio: 1.30
+        nearest_patch_ref:
+          source_image: pcb4/Data/Images/Anomaly/009.JPG
+          patch_index: null
+        nearest_patch_is_defect: true
+        coverage_present: true
+        criteria_verdict: pass
+      expected_actions: [criteria_spec_review, quality_standard_alignment, shipment_hold_reverify]
+      forbidden_actions: [rebuild_bank, lower_threshold, raise_threshold]
+ 
+    scoring:
+      weight: 1.0
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [score_vs_threshold, criteria_verdict]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        제보자가 이미 원인을 추측(기준 문제)해 접수한 케이스 — 에이전트가 이 추측에
+        편향되지 않고 evidence 7종을 직접 검증해 동일 결론에 도달하는지가 포인트.
+ 
+  - id: SC-CR-004
+    title: 스크래치 길이 기준 - 다른 결함유형에서의 기준 경계 사례
+    cause_group: criteria
+    priority: extended
+ 
+    target:
+      line: line_04
+      object: pcb2
+      bank_version: v4
+      lot_ids: [LOT-20260725-010]
+      date_range: [2026-07-24, 2026-07-26]
+ 
+    input:
+      issue_text: "line_04 미세 스크래치 미검 신고, 검출 자체는 됐던 것 같다는 의견 있음"
+      attachments:
+        - line_04/2026-07-25/LOT-20260725-010/img_0018.png
+      reporter_role: 양산품질
+      submitted_at: 2026-07-26T09:55:00
+ 
+    injection:
+      method: criteria_change
+      seed: 20260725
+      params:
+        spec_field: scratch_length_tolerance
+        spec_note: "검출 스코어는 above지만 길이 기준 스펙상 허용 범위"
+        # TODO(장영진): 현장 확인 필요 - 휨 외 결함유형에서의 기준 문제 사례는 미확인,
+        # 구조 다양성 확보를 위해 구성됨
+ 
+    ground_truth:
+      intake_verdict: proceed
+      cause: criteria
+      requires_bank_rebuild: false
+      duplicate_of: null
+      evidence:
+        defect_visible: true
+        quality_within_baseline: true
+        score_vs_threshold: above
+        score_ratio: 1.12
+        nearest_patch_ref:
+          source_image: pcb2/Data/Images/Anomaly/018.JPG
+          patch_index: null
+        nearest_patch_is_defect: true
+        coverage_present: true
+        criteria_verdict: pass
+      expected_actions: [criteria_spec_review, quality_standard_alignment, shipment_hold_reverify]
+      forbidden_actions: [rebuild_bank, lower_threshold, raise_threshold]
+ 
+    scoring:
+      weight: 1.2
+      cause_match: exact
+      grade_evidence: true
+      evidence_required: [score_vs_threshold, criteria_verdict]
+      tolerance: {score_ratio: 0.10}
+      notes: >
+        # TODO(장영진): 현장 확인 필요
+        휨 외 다른 결함유형에서도 동일 패턴(검출은 정확, 기준상 통과)이 발생하는지는
+        미확인. score_ratio 1.12로 above 경계에 가까워 near로 오분류하지 않는지 확인.
   # ───────────────────────────────────────────────────────────────────
   # 예시 1건 — 뱅크 오염 (MVP 필수 시나리오)
   # 아래 형식을 그대로 복제해 나머지를 채웁니다.
