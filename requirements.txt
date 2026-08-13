@@ -1,11 +1,38 @@
 # 검사 AI 자율 운영 에이전트 — Python 의존성 (초안)
 #
-# 대상 환경: Python 3.11 / RTX 4090 노트북 (CUDA 12.x)
+# 대상 환경: Python 3.11 / RTX 4090 노트북
 # 지금은 하한(>=)만 지정한 초안입니다. 3인 환경이 동일하게 굳는 시점에
 # `pip freeze` 결과로 ==  고정하고, 각 항목의 라이선스를 THIRD_PARTY.md에 옮겨 적습니다.
 #
-# torch 기본 PyPI 휠에는 CUDA 런타임이 포함됩니다. CUDA 버전을 맞춰야 하면:
-#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+# ═══════════════════════════════════════════════════════════════════════
+# 설치 순서 — 두 단계입니다. 1단계만 하면 GPU 를 못 씁니다.
+# ═══════════════════════════════════════════════════════════════════════
+#
+#   1) pip install -r requirements.txt
+#
+#   2) torch 를 GPU 판으로 교체 (아래 "함정" 참조)
+#      pip uninstall -y torch torchvision
+#      pip install --index-url https://download.pytorch.org/whl/cu126 \
+#          torch==2.13.0 torchvision==0.28.0
+#
+#   3) 확인 — 아래가 "2.13.0+cu126 True" 를 찍어야 합니다
+#      python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+#
+# ── 함정 셋 (실제로 여기서 시간을 버렸습니다) ──────────────────────────
+#
+#   1. Windows 에서 기본 PyPI 휠은 CPU 전용입니다. 그냥 설치하면 `2.13.0+cpu`
+#      가 깔리고 `torch.cuda.is_available()` 이 False 입니다. 버전 뒤에
+#      `+cu126` 이 붙었는지로 확인하세요.
+#
+#   2. cu124 를 쓰지 마세요. 그 인덱스는 torch 2.6.0 에서 멈춰 있어 버전이
+#      되감깁니다. 2.13.0 과 짝이 되는 것은 cu126 과 cu130 둘뿐입니다
+#      (2026-08-13 확인). torchvision 0.28.0 도 같은 인덱스에서 받습니다.
+#
+#   3. 휠이 2.6GB 라 사내망에서 자주 끊깁니다. 끊기면 같은 명령을 다시
+#      치세요 — 받은 데까지 캐시에 남습니다. 계속 끊기면 이어받기를 켭니다.
+#      pip install --index-url ... --resume-retries 20 torch==2.13.0 ...
+#
+# 환경별 파이썬 경로는 docs/이어서작업.md 1장 표에 있습니다.
 
 # ── PatchCore 추론 · 최근접 패치 역추적 ────────────────────────────────
 torch>=2.3
