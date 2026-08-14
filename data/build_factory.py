@@ -72,12 +72,14 @@ LOT_CODE_BY_START_DATE = {
     date(2026, 7, 25): "ACC",
 }
 
+# 이길준 수정 (2026-08-14): "dirt" 를 뺐다. VisA pcb1~4 결함 어휘 어디에도
+# 없는 이름이라 ESA3 은 한 번도 붙은 적이 없다. 코드는 이어 붙이지 않고
+# 비워 둔다 — 뒤를 당기면 이미 나간 값의 뜻이 바뀐다.
 ERROR_CODE_BY_DEFECT_NAME = {
     "normal": "0000",
     "bent": "ESA0",
     "burnt": "ESA1",
     "damage": "ESA2",
-    "dirt": "ESA3",
     "extra": "ESA4",
     "melt": "ESA5",
     "missing": "ESA6",
@@ -85,11 +87,13 @@ ERROR_CODE_BY_DEFECT_NAME = {
     "wrong place": "ESA8",
 }
 
+# 이길준 수정 (2026-08-14): 이물·표면을 없는 결함(dirt)에 물려 두어 두 낱말이
+# 조용히 무시되고 있었다. pcb 어휘 안으로 옮긴다. "오염"은 대응할 결함이
+# 정말 없어서 뺐다 — 억지로 물리면 엉뚱한 이미지가 붙는다.
 ISSUE_KEYWORD_TO_DEFECT = {
     "크랙": "damage",
     "파손": "damage",
-    "이물": "dirt",
-    "오염": "dirt",
+    "이물": "extra",
     "휘": "bent",
     "굽": "bent",
     "소손": "burnt",
@@ -105,7 +109,7 @@ ISSUE_KEYWORD_TO_DEFECT = {
     "잉여물": "extra",
     "돌기": "extra",
     "배선": "scratch",
-    "표면": "dirt",
+    "표면": "scratch",
 }
 
 
@@ -130,6 +134,11 @@ class ScenarioInfo:
     date_end: date
     issue_text: str
     attachments: List[str]
+    #: 이길준 추가 (2026-08-14): injection 절. 장영진이 뱅크에 넣을 오염
+    #: 이미지를 여기에 정확히 지정해 뒀는데 읽지 않고 있었다.
+    injection_method: str = ""
+    contaminated_count: int = 0
+    contaminated_images: List[str] = None
 
 
 @dataclass
@@ -186,7 +195,15 @@ def load_scenarios(path: Path) -> Tuple[List[ScenarioInfo], date, date, Dict[str
             continue
         if len(date_range_value) != 2:
             continue
+        injection = item.get("injection", {}) or {}
+        injection_params = injection.get("params", {}) or {}
         scenario = ScenarioInfo(
+            injection_method=str(injection.get("method", "")),
+            contaminated_count=int(injection_params.get("contaminated_count", 0) or 0),
+            contaminated_images=[
+                str(value).replace("\\", "/")
+                for value in (injection_params.get("contaminated_images") or [])
+            ],
             scenario_id=str(item.get("id", "")),
             title=str(item.get("title", "")),
             cause_group=str(item.get("cause_group", "")),
@@ -241,13 +258,54 @@ def determine_lot_code(target_date: date) -> str:
     return LOT_CODE_BY_START_DATE[matched_start]
 
 
-def pick_split(target_date: date, line: str, index_within_day: int) -> str:
+def pick_split(target_date: date, line: str, index_within_day: int, label: str) -> str:
+    """이 이미지가 뱅크용인가 운영용인가 홀드아웃인가.
+
+    **이길준 수정 (2026-08-14): label 을 보고 정하게 바꿨다.**
+
+    전에는 split 해시와 label 해시가 서로 독립이라 결함 이미지가 뱅크로 그냥
+    들어갔다. 로트 하나를 재현해 세어 보니 `split="bank"` 안에 결함이 9.1%
+    (633 정상 / 63 결함) 였고, **모든 라인 · 모든 로트에서 그렇게 된다.**
+
+    두 가지가 깨진다.
+
+    1. 우리 설계는 한 품목만 오염시킨다. 넷이 동시에 오염되면 "이 라인만
+       문제다"를 보여줄 수 없고, 진단 원인 여섯 중 뱅크 오염이 언제나 참이
+       되어 나머지 다섯을 가를 수가 없다.
+    2. 오염률을 해시가 정한다. 통제가 안 되니 "이 뱅크는 오염 3.2%" 라고 쓸
+       수 없다. 실측값은 조건을 맞춰 잰 것인데 여기엔 조건 자체가 없다.
+
+    그래서 **뱅크에는 정상만 담는다.** 오염은 우연이 아니라 시나리오가
+    `injection.params.contaminated_*` 로 지정한 것만 들어간다
+    (`apply_bank_contamination`). 결함은 운영·홀드아웃으로만 가며, 둘 사이
+    비율(20:10)은 정상 쪽과 같게 유지한다.
+    """
     selector = make_seed(target_date.isoformat(), line, str(index_within_day), "split") % 100
+    if label == "defect":
+        return "operation" if selector < 67 else "holdout"
     if selector < 70:
         return "bank"
     if selector < 90:
         return "operation"
     return "holdout"
+
+
+def error_code_for(defect_name: str) -> str:
+    """결함 이름 → 설비 오류 코드.
+
+    **이길준 추가 (2026-08-14): 모르는 결함에 "0000"(정상)을 주지 않는다.**
+
+    전에는 `ERROR_CODE_BY_DEFECT_NAME.get(name, "0000")` 이었다. 손으로 적은
+    표라서 카테고리를 늘리면 표에 없는 이름이 반드시 나오는데, 그때 정상
+    코드가 붙어 **MES 집계에서 불량이 통째로 사라진다.** 표에 없으면 이름에서
+    결정론적으로 만든다 — ESA 는 손으로 정한 것, ESB 는 파생된 것이다.
+    """
+    if defect_name == "normal":
+        return "0000"
+    known = ERROR_CODE_BY_DEFECT_NAME.get(defect_name)
+    if known:
+        return known
+    return f"ESB{make_seed(defect_name, 'ercd') % 100:02d}"
 
 
 def build_equipment_id(line: str, lot_id: str) -> str:
@@ -399,12 +457,12 @@ def build_base_factory(normal_pool: Dict[str, List[SourceSample]], anomaly_pool:
                     date_str=date_str,
                     lot_id=lot_id,
                     equipment_id=build_equipment_id(line, lot_id),
-                    split=pick_split(date.fromisoformat(date_str), line, image_index),
+                    split=pick_split(date.fromisoformat(date_str), line, image_index, label),
                     label=label,
                     mask_path=mask_path,
                     visa_source=sample.image_rel,
                     defect_name=defect_name,
-                    ercd=ERROR_CODE_BY_DEFECT_NAME.get(defect_name, "0000"),
+                    ercd=error_code_for(defect_name),
                 )
             )
     execute_copy_tasks(copy_tasks)
@@ -430,17 +488,162 @@ def apply_scenarios_to_factory(manifest_rows: List[ManifestRow], anomaly_pool: D
                 date_str=date_str,
                 lot_id=lot_id,
                 equipment_id=build_equipment_id(line, lot_id),
-                split=pick_split(date.fromisoformat(date_str), line, image_index),
+                split=pick_split(date.fromisoformat(date_str), line, image_index, "defect"),
                 label="defect",
                 mask_path=sample.mask_rel if sample.mask_rel else "",
                 visa_source=sample.image_rel,
                 defect_name=sample.primary_defect,
-                ercd=ERROR_CODE_BY_DEFECT_NAME.get(sample.primary_defect, "0000"),
+                ercd=error_code_for(sample.primary_defect),
             )
             manifest_by_path[attachment_path] = replacement_row
             copy_tasks.append(build_copy_task(sample.image_rel, FACTORY_ROOT / attachment))
     execute_copy_tasks(copy_tasks)
     return [manifest_by_path[path] for path in sorted(manifest_by_path)]
+
+
+#: 오염 이미지가 쓰는 인덱스 대역. 기본 로트는 1~9999 를 쓴다.
+#: 대역을 갈라 두면 manifest 만 보고도 "이건 일부러 넣은 오염"임이 드러난다.
+CONTAMINANT_INDEX_BASE = 10000
+
+#: 이 아래 오염률이면 경고를 남긴다. VisA 실측에서 오염 이미지가 3.2% 일 때
+#: 결함 **위** 패치는 뱅크의 0.1%(6/4,861)뿐이었다. coreset 이 끌어올리는 것은
+#: "결함이 있는 이미지"이지 "결함 그 자체"가 아니라서, 오염률이 낮으면 결함
+#: 패치가 한 장도 안 남는다. 그러면 역추적이 짚을 것이 없다.
+MIN_DETECTABLE_CONTAMINATION_PCT = 1.0
+
+
+def apply_bank_contamination(
+    manifest_rows: List[ManifestRow],
+    anomaly_pool: Dict[str, List[SourceSample]],
+    selected_scenarios: List[ScenarioInfo],
+) -> Tuple[List[ManifestRow], List[str]]:
+    """뱅크 오염을 시나리오가 지정한 만큼만 넣는다.
+
+    **이길준 추가 (2026-08-14).**
+
+    `pick_split` 이 결함을 뱅크에서 막게 되면서 오염이 들어올 길이 없어졌다.
+    그런데 없어도 되는 게 아니다 — 시나리오 다섯 건이 뱅크 오염을 정답으로
+    걸고 있다. 우연히 섞이던 것을 **의도한 것만 들어오게** 바꾼 것이지
+    없앤 것이 아니다.
+
+    장영진이 `injection.params` 에 이미 지정해 뒀다.
+
+        method: bank_contamination
+        params:
+          contaminated_count: 3
+          contaminated_images: [pcb1/Data/Images/Anomaly/004.JPG]
+
+    `contaminated_images` 는 이름을 밝힌 것이고 `contaminated_count` 가
+    전체 장수다. 밝힌 것을 먼저 넣고 모자라면 같은 품목 결함에서 결정론적으로
+    채운다. **정답 파일은 읽기만 한다** — 이 값이 채점 기준이므로 여기서
+    바꾸면 측정이 무의미해진다.
+    """
+    notes = ["[뱅크 오염 주입]"]
+    contaminated = [s for s in selected_scenarios if s.injection_method == "bank_contamination"]
+    if not contaminated:
+        notes.append("- 이번 실행 시나리오에 bank_contamination 이 없습니다.")
+        return manifest_rows, notes
+
+    added: List[ManifestRow] = []
+    copy_tasks: List[CopyTask] = []
+    for scenario in contaminated:
+        pool = sorted(anomaly_pool.get(scenario.object_name, []), key=lambda s: s.image_rel)
+        if not pool:
+            raise ValueError(f"오염에 쓸 결함 샘플이 없습니다: {scenario.object_name}")
+        by_rel = {s.image_rel: s for s in pool}
+
+        chosen: List[SourceSample] = []
+        for named in scenario.contaminated_images:
+            sample = by_rel.get(named)
+            if sample is None:
+                raise ValueError(
+                    f"{scenario.scenario_id}: contaminated_images 가 가리키는 원본이 "
+                    f"VisA 에 없습니다: {named}"
+                )
+            chosen.append(sample)
+
+        # 밝히지 않은 나머지는 결정론적으로 채운다. 같은 시나리오면 같은 것이 나온다.
+        rng = random.Random(make_seed(scenario.scenario_id, "bank-contamination"))
+        remaining = [s for s in pool if s.image_rel not in {c.image_rel for c in chosen}]
+        rng.shuffle(remaining)
+        while len(chosen) < scenario.contaminated_count and remaining:
+            chosen.append(remaining.pop())
+
+        if len(chosen) < scenario.contaminated_count:
+            raise ValueError(
+                f"{scenario.scenario_id}: 오염 {scenario.contaminated_count}장을 채우지 "
+                f"못했습니다 ({scenario.object_name} 결함 {len(pool)}장)"
+            )
+
+        # 시나리오가 가리키는 첫 로트에 얹는다. 뱅크는 라인 단위라 어느 로트에
+        # 넣든 같은 뱅크로 들어가지만, 자리를 정해 두어야 재현된다.
+        target_lots = collect_target_lots([scenario])
+        if not target_lots:
+            raise ValueError(f"{scenario.scenario_id}: 오염을 넣을 로트를 찾지 못했습니다.")
+        line, date_str, lot_id = target_lots[0]
+
+        for offset, sample in enumerate(chosen):
+            image_index = CONTAMINANT_INDEX_BASE + offset
+            relative_image_path = Path(line) / date_str / lot_id / f"img_{image_index:05d}.png"
+            added.append(
+                ManifestRow(
+                    image_path=relative_image_path.as_posix(),
+                    line=line,
+                    object_name=scenario.object_name,
+                    date_str=date_str,
+                    lot_id=lot_id,
+                    equipment_id=build_equipment_id(line, lot_id),
+                    # **여기가 핵심이다.** 결함인데 split 이 bank 다. 우연이
+                    # 아니라 시나리오가 그렇게 지정했기 때문에 들어간다.
+                    split="bank",
+                    label="defect",
+                    mask_path=sample.mask_rel if sample.mask_rel else "",
+                    visa_source=sample.image_rel,
+                    defect_name=sample.primary_defect,
+                    ercd=error_code_for(sample.primary_defect),
+                )
+            )
+            copy_tasks.append(build_copy_task(sample.image_rel, FACTORY_ROOT / relative_image_path))
+
+        notes.append(
+            f"- {scenario.scenario_id} | {line}/{scenario.object_name} | "
+            f"오염 {len(chosen)}장 (지정 {len(scenario.contaminated_images)} + "
+            f"채움 {len(chosen) - len(scenario.contaminated_images)}) → {lot_id}"
+        )
+
+    execute_copy_tasks(copy_tasks)
+    merged = {row.image_path: row for row in manifest_rows}
+    for row in added:
+        merged[row.image_path] = row
+
+    # 라인별로 뱅크 오염률을 적어 둔다. 실측과 나란히 놓을 수 있어야 한다.
+    bank_stats: Dict[str, Dict[str, int]] = defaultdict(lambda: {"normal": 0, "defect": 0})
+    for row in merged.values():
+        if row.split == "bank":
+            bank_stats[row.line][row.label] += 1
+    notes.append("- 라인별 뱅크 구성:")
+    for line in sorted(bank_stats):
+        stat = bank_stats[line]
+        total = stat["normal"] + stat["defect"]
+        share = stat["defect"] / total * 100 if total else 0.0
+        flag = "  ← 검출 한계 아래일 수 있음" if 0 < share < MIN_DETECTABLE_CONTAMINATION_PCT else ""
+        notes.append(
+            f"  - {line}: 정상 {stat['normal']:,} / 오염 {stat['defect']} "
+            f"= 오염률 {share:.2f}%{flag}"
+        )
+    if any(0 < (s["defect"] / (s["normal"] + s["defect"]) * 100) < MIN_DETECTABLE_CONTAMINATION_PCT
+           for s in bank_stats.values() if s["normal"] + s["defect"]):
+        notes.append(
+            "- 주의: VisA 실측에서 오염 3.2% 일 때 결함 위 패치는 뱅크의 0.1% 였다"
+            f"(6/4,861). 오염률이 {MIN_DETECTABLE_CONTAMINATION_PCT}% 아래면 coreset 을"
+            " 거친 뒤 결함 패치가 한 장도 안 남을 수 있고, 그러면 역추적이 오염원을"
+            " 짚지 못해 bank_contamination 시나리오가 재현되지 않는다."
+        )
+        notes.append(
+            "  contaminated_count 는 채점 기준이라 여기서 고치지 않는다."
+            " 장영진 확인이 필요하다."
+        )
+    return [merged[path] for path in sorted(merged)], notes
 
 
 def verify_scenario_integration(selected_scenarios: List[ScenarioInfo], manifest_rows: List[ManifestRow], mes_rows: List[Dict[str, str]]) -> List[str]:
@@ -473,17 +676,42 @@ def verify_scenario_integration(selected_scenarios: List[ScenarioInfo], manifest
 
 
 def compute_shift(started_at_value: datetime) -> str:
+    """교대 이름.
+
+    **이길준 수정 (2026-08-14): 이름이 한 칸씩 밀려 있었다.** 자정~08시가
+    "day", 08~16시가 "swing" 이었다. 통상 주간이 08–16, 스윙이 16–24,
+    야간이 00–08 이다. 기능에는 영향이 없지만 심사에서 눈에 띌 자리다.
+    """
     current_time = started_at_value.time()
     if time(0, 0, 0) <= current_time < time(8, 0, 0):
-        return "day"
+        return "night"
     if time(8, 0, 0) <= current_time < time(16, 0, 0):
-        return "swing"
-    return "night"
+        return "day"
+    return "swing"
 
 
 def build_mes_rows(manifest_rows: List[ManifestRow]) -> List[Dict[str, str]]:
+    """이미지마다 MES 한 행.
+
+    **이길준 수정 (2026-08-14): inspected_count · defect_count 가 개수가
+    아니라 일련번호였다.**
+
+    전에는 결함 행마다 1, 2, 3… 이 들어가고 정상 행은 0 이었다. 열 이름이
+    count 인데 뜻은 "이 로트의 n번째 결함" 이라, 합계를 내면 개수가 아니라
+    삼각수(1+2+3+…)가 나온다. 승인 문서에 "이 로트 불량 N건"을 적는 자리에서
+    그대로 틀린다.
+
+    이제 **로트 총량**을 넣는다. 같은 로트의 모든 행이 같은 값을 갖는다 —
+    이미지 단위 표에서 로트 집계를 얻으려고 max 나 last 를 취해야 하는 것보다,
+    조인해서 바로 읽히는 편이 조회 계층(`lookup.defect_distribution`)에 맞다.
+    """
     sorted_rows = sorted(manifest_rows, key=lambda row: (row.line, row.date_str, row.lot_id, row.image_path))
-    daily_counters = defaultdict(lambda: {"inspected": 1, "defect": 1})
+    lot_totals: Dict[Tuple[str, str, str], Dict[str, int]] = defaultdict(lambda: {"inspected": 0, "defect": 0})
+    for row in sorted_rows:
+        totals = lot_totals[(row.line, row.date_str, row.lot_id)]
+        totals["inspected"] += 1
+        if row.label == "defect":
+            totals["defect"] += 1
     previous_end_by_line = {}
     mes_rows = []
     for row in sorted_rows:
@@ -499,14 +727,9 @@ def build_mes_rows(manifest_rows: List[ManifestRow]) -> List[Dict[str, str]]:
         duration_seconds = 60 + random.Random(make_seed(row.line, row.date_str, row.lot_id, row.image_path, "duration")).randint(-10, 10)
         end_at_value = started_at_value + timedelta(seconds=duration_seconds)
         previous_end_by_line[row.line] = end_at_value
-        counters = daily_counters[(row.line, row.date_str)]
-        inspected_count_value = counters["inspected"]
-        if row.label == "defect":
-            defect_count_value = counters["defect"]
-            counters["defect"] += 1
-        else:
-            defect_count_value = 0
-        counters["inspected"] += 1
+        totals = lot_totals[(row.line, row.date_str, row.lot_id)]
+        inspected_count_value = totals["inspected"]
+        defect_count_value = totals["defect"]
         image_filename = Path(row.image_path).name
         cell_id_value = f"{row.lot_id}_{row.line}_{row.date_str}_{image_filename}"
         mes_rows.append(
@@ -589,8 +812,13 @@ def main() -> None:
     normal_pool, anomaly_pool = load_source_samples()
     manifest_rows = build_base_factory(normal_pool, anomaly_pool, selected_scenarios)
     manifest_rows = apply_scenarios_to_factory(manifest_rows, anomaly_pool, selected_scenarios)
+    manifest_rows, contamination_lines = apply_bank_contamination(
+        manifest_rows, anomaly_pool, selected_scenarios
+    )
     mes_rows = build_mes_rows(manifest_rows)
-    verification_lines = verify_scenario_integration(selected_scenarios, manifest_rows, mes_rows)
+    verification_lines = contamination_lines + verify_scenario_integration(
+        selected_scenarios, manifest_rows, mes_rows
+    )
     write_manifest_csv(manifest_rows)
     write_mes_csv(mes_rows)
     write_summary(mode, free_space_gb, scenarios, selected_scenarios, min_date_value, max_date_value, cause_counts, manifest_rows, mes_rows, verification_lines)
