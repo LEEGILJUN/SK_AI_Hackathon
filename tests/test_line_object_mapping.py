@@ -192,3 +192,52 @@ def test_the_issue_history_uses_real_lines(factory_lines):
         assert node["object_name"] in set(factory_lines.values()), (
             f"{node['issue_id']}: 공장에 없는 품목 {node['object_name']}"
         )
+
+
+def test_no_stale_item_name_survives_in_code(factory_lines):
+    """공장에 없는 품목 이름이 코드의 문자열에 남아 있지 않다.
+
+    **이 시험이 있는 이유가 있다.** `DEMO_ITEMS` 를 pcb 로 옮겼을 때 매핑은
+    맞췄는데 그것을 **가리키는 문자열들이 안 따라왔다** — 이슈 원문이
+    "2라인 캡슐"인 채로 제품은 `PCB1-01-...` 이 나갔고, 이슈 이력 그래프도
+    화면 양식 예시도 도구 설명도 전부 옛 품목이었다. 매핑 시험은 초록이었다.
+    **바꾼 값을 검사하는 것과 그 값을 부르는 곳을 검사하는 것은 다르다.**
+
+    주석과 독스트링은 보지 않는다. 왜 바뀌었는지를 적어 두는 자리이고,
+    거기까지 막으면 이력을 못 남긴다. **동작에 쓰이는 문자열만** 본다.
+    """
+    import ast
+
+    live = set(factory_lines.values())
+    # VisA 12 카테고리 중 공장 구성에 없는 것들
+    stale = {
+        "candle", "capsules", "cashew", "chewinggum", "fryum",
+        "macaroni1", "macaroni2", "pipe_fryum",
+    } - live
+
+    found: list[str] = []
+    for folder in ("app", "agents", "lookup"):
+        for path in sorted((REPO_ROOT / folder).rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            docstrings = {
+                id(node.body[0].value)
+                for node in ast.walk(tree)
+                if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.body
+                and isinstance(node.body[0], ast.Expr)
+                and isinstance(node.body[0].value, ast.Constant)
+                and isinstance(node.body[0].value.value, str)
+            }
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+                    continue
+                if id(node) in docstrings:
+                    continue
+                for name in stale:
+                    if name in node.value:
+                        rel = path.relative_to(REPO_ROOT)
+                        found.append(f"{rel}:{node.lineno} — {name!r} in {node.value[:60]!r}")
+
+    assert not found, (
+        "공장에 없는 품목 이름이 코드 문자열에 남아 있다:\n  " + "\n  ".join(found)
+    )
