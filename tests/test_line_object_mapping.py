@@ -250,3 +250,57 @@ def test_no_stale_item_name_survives_in_code(factory_lines):
     assert not found, (
         "공장에 없는 품목 이름이 코드 문자열에 남아 있다:\n  " + "\n  ".join(found)
     )
+
+
+def test_the_bank_name_rule_is_not_two_different_rules():
+    """뱅크를 만드는 쪽과 조회하는 쪽이 같은 이름을 쓴다.
+
+    **두 벌이었다.** 데모는 `pcb1-v3`, 조회 계층은 `pcb1-01-v1` 을 썼다.
+    그러면 `get_bank_profile(version)` 이 조용히 `None` 을 돌려주고
+    **판별 6번 커버리지가 통째로 비게 된다** — 화면에는 그냥 값이 없는
+    것처럼 보이고 왜 없는지는 안 나온다.
+
+    규칙은 `lookup.base.bank_version_for` 하나뿐이다.
+    """
+    from app.pipeline import DEMO_ITEMS, DemoFactory
+    from lookup.base import bank_version_for
+
+    try:
+        factory = DemoFactory(visa_root=Path(__file__).parent / "_no_visa_here")
+    except RuntimeError as exc:
+        pytest.skip(str(exc))
+
+    for line, object_name, _category in DEMO_ITEMS:
+        made = factory.items[(line, object_name)].bank.version
+        assert made == bank_version_for(line, object_name), (
+            f"{line}/{object_name}: 데모가 만든 뱅크 이름이 규칙과 다르다"
+        )
+
+
+def test_the_lookup_answers_with_the_same_bank_name():
+    """조회 계층이 데모가 만든 뱅크와 같은 이름을 답한다.
+
+    실구현을 끼웠을 때 이름이 갈리면 임계값도 커버리지도 못 찾는다.
+    공장 데이터가 없으면 건너뛴다.
+    """
+    from app.pipeline import DEMO_ITEMS, DemoFactory
+
+    if not (REPO_ROOT / "data" / "manifest.csv").exists():
+        pytest.skip("공장 데이터가 아직 없다")
+
+    from lookup.factory import FactoryLookup
+
+    try:
+        factory = DemoFactory(visa_root=Path(__file__).parent / "_no_visa_here")
+    except RuntimeError as exc:
+        pytest.skip(str(exc))
+
+    lookup = FactoryLookup()
+    for line, object_name, _category in DEMO_ITEMS:
+        made = factory.items[(line, object_name)].bank.version
+        profile = lookup.resolve_bank(line, object_name)
+        assert profile is not None, f"{line}/{object_name}: 조회가 뱅크를 못 찾는다"
+        assert profile.bank_version == made
+        assert lookup.get_bank_profile(made) is not None, (
+            "만든 이름으로 되물었는데 프로파일이 없다"
+        )

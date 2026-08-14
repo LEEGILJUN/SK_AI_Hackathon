@@ -54,6 +54,7 @@ from lookup.base import (
     PastIssue,
     QualityBaselineRecord,
     ThresholdRecord,
+    bank_version_for,
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -139,13 +140,8 @@ class FactoryLookup:
     # ── 뱅크 ────────────────────────────────────────────────────────────
 
     def _bank_version(self, line: str, object_name: str) -> str:
-        """이 품목을 판정하는 뱅크 이름.
-
-        manifest 에 뱅크 버전 열이 없다. 뱅크는 라인·품목마다 하나이고
-        초기 구성 구간에서 만들어지므로 그 둘로 이름을 짓는다. 규칙이
-        결정론적이어야 같은 데이터에서 같은 이름이 나온다.
-        """
-        return f"{object_name}-{line.split('_')[-1]}-v1"
+        """이 품목을 판정하는 뱅크 이름. 규칙은 `lookup.base` 에 하나뿐이다."""
+        return bank_version_for(line, object_name)
 
     def _bank_rows(self, line: str, object_name: str) -> pd.DataFrame:
         m = self.manifest

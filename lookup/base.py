@@ -55,6 +55,22 @@ from typing import Any, Protocol, runtime_checkable
 #: 하나뿐이며, 그 하나의 역할도 진단 근거가 아니라 중복 차단이다.
 #:
 #: 새 조회 함수를 추가하면 여기에도 등록한다. 빠지면 화면이 "미분류"로 뜬다.
+def bank_version_for(line: str, object_name: str) -> str:
+    """이 라인·품목을 판정하는 뱅크의 이름.
+
+    **이름 규칙이 두 벌이면 안 된다.** 뱅크를 만드는 쪽(`app/pipeline.py` 의
+    `DemoFactory`)과 조회하는 쪽(`lookup/factory.py`)이 다른 이름을 쓰면
+    `get_bank_profile(version)` 이 조용히 `None` 을 돌려주고, 판별 6번
+    커버리지가 통째로 비게 된다. 실제로 `pcb1-v3` 대 `pcb1-01-v1` 로
+    갈려 있었다.
+
+    라인을 이름에 넣는 이유는 **뱅크가 라인마다 따로**이기 때문이다. 지금은
+    라인↔품목이 1:1 이라 품목만으로도 유일하지만, 같은 품목이 두 라인에서
+    돌면 이름이 겹쳐 서로의 뱅크를 물게 된다.
+    """
+    return f"{object_name}-{line.split('_')[-1]}-v1"
+
+
 RETRIEVAL_KIND: dict[str, str] = {
     "get_threshold": "join",
     "get_quality_baseline": "join",

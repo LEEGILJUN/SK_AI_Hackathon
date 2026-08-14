@@ -89,7 +89,12 @@ from inspection.crop import crop_patch, crop_with_context
 from inspection.quality import assess_quality, compute_baseline
 from inspection.shadow import ShadowReport
 from lookup import MockLookup
-from lookup.base import RETRIEVAL_KIND, DefectDistribution, ImageRecord
+from lookup.base import (
+    RETRIEVAL_KIND,
+    DefectDistribution,
+    ImageRecord,
+    bank_version_for,
+)
 
 def _evidence_value(value: Any) -> str:
     """판별 항목 값을 사람이 읽는 한 줄로 만든다.
@@ -380,7 +385,9 @@ class DemoFactory:
                 self.embedder,
                 coreset_ratio=0.25,
                 seed=42,
-                bank_version=f"{object_name}-v3",
+                # 이름 규칙은 `lookup.base.bank_version_for` 하나뿐이다.
+                # 조회 계층과 갈리면 get_bank_profile 이 None 을 돌려준다.
+                bank_version=bank_version_for(line, object_name),
                 root=self.root,
             )
             self.items[(line, object_name)] = ItemLine(
