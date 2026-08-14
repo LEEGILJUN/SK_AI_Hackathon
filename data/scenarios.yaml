@@ -70,13 +70,13 @@ scenarios:
       line: line_01
       object: pcb1
       bank_version: v2
-      lot_ids: [LOT-20260610-003]
+      lot_ids: [AAJ]
       date_range: [2026-06-09, 2026-06-11]
  
     input:
       issue_text: "line_01에서 PCB 엣지 크랙으로 보이는 미검 건 발생. 확인 요망."
       attachments:
-        - line_01/2026-06-10/LOT-20260610-003/img_0087.png
+        - line_01/2026-06-10/LOT-AAJ/img_0087.png
       reporter_role: 공정엔지니어
       submitted_at: 2026-06-11T14:20:00
  
@@ -126,13 +126,13 @@ scenarios:
       line: line_02
       object: pcb2
       bank_version: v3
-      lot_ids: [LOT-20260622-011]
+      lot_ids: [AAV]
       date_range: [2026-06-20, 2026-06-22]
  
     input:
       issue_text: "line_02 요즘 자꾸 놓치는거 같은데 확인좀요 ㅠㅠ"
       attachments:
-        - line_02/2026-06-21/LOT-20260622-011/img_0203.png
+        - line_02/2026-06-21/LOT-AAV/img_0203.png
       reporter_role: 라인관리자
       submitted_at: 2026-06-22T23:47:00
  
@@ -181,13 +181,13 @@ scenarios:
       line: line_03
       object: pcb3
       bank_version: v2
-      lot_ids: [LOT-20260701-005]
+      lot_ids: [ABE]
       date_range: [2026-06-30, 2026-07-02]
  
     input:
       issue_text: "line_03 표면 결함 미검출 건 재현됨. 이전에도 유사 사례 있었던 것으로 기억."
       attachments:
-        - line_03/2026-07-01/LOT-20260701-005/img_0119.png
+        - line_03/2026-07-01/LOT-ABE/img_0119.png
       reporter_role: 품질검사원
       submitted_at: 2026-07-02T10:05:00
  
@@ -236,13 +236,13 @@ scenarios:
       line: line_04
       object: pcb4
       bank_version: v4
-      lot_ids: [LOT-20260715-002]
+      lot_ids: [ABS]
       date_range: [2026-07-14, 2026-07-16]
  
     input:
       issue_text: "line_04 PCB 표면 미검 1건, threshold 관련 의심됨"
       attachments:
-        - line_04/2026-07-15/LOT-20260715-002/img_0044.png
+        - line_04/2026-07-15/LOT-ABS/img_0044.png
       reporter_role: 공정엔지니어
       submitted_at: 2026-07-16T09:30:00
  
@@ -293,13 +293,13 @@ scenarios:
       line: line_01
       object: pcb1
       bank_version: v3
-      lot_ids: [LOT-20260605-014]
+      lot_ids: [AAE]
       date_range: [2026-06-05, 2026-06-07]
  
     input:
       issue_text: "line_01 PCB 표면 이물 미검 건, 최근 뱅크 업데이트(v3) 이후부터 스코어가 이상하게 낮게 나오는 것 같음"
       attachments:
-        - line_01/2026-06-05/LOT-20260605-014/img_0142.png
+        - line_01/2026-06-05/LOT-AAE/img_0142.png
       reporter_role: 법인MI담당자
       submitted_at: 2026-06-07T22:10:00
  
@@ -350,14 +350,14 @@ scenarios:
       line: line_02
       object: pcb2
       bank_version: v2
-      lot_ids: [LOT-20260618-007]
+      lot_ids: [AAR]
       date_range: [2026-06-17, 2026-06-19]
  
     input:
       issue_text: "line_02 크랙 미검 2건, 같은 위치에서 계속 발생. 뱅크 확인 필요해 보임"
       attachments:
-        - line_02/2026-06-18/LOT-20260618-007/img_0055.png
-        - line_02/2026-06-18/LOT-20260618-007/img_0056.png
+        - line_02/2026-06-18/LOT-AAR/img_0055.png
+        - line_02/2026-06-18/LOT-AAR/img_0056.png
       reporter_role: 공정엔지니어
       submitted_at: 2026-06-19T16:40:00
  
@@ -406,13 +406,13 @@ scenarios:
       line: line_03
       object: pcb3
       bank_version: v3
-      lot_ids: [LOT-20260625-009]
+      lot_ids: [AAY]
       date_range: [2026-06-24, 2026-06-26]
  
     input:
       issue_text: "line_03 먹통(불량인데 그냥 통과) 계속 나옴. 뭐가 문제인지 봐주세요"
       attachments:
-        - line_03/2026-06-25/LOT-20260625-009/img_0071.png
+        - line_03/2026-06-25/LOT-AAY/img_0071.png
       reporter_role: 라인관리자
       submitted_at: 2026-06-26T20:15:00
  
@@ -461,13 +461,13 @@ scenarios:
       line: line_04
       object: pcb4
       bank_version: v3
-      lot_ids: [LOT-20260703-018]
+      lot_ids: [ABG]
       date_range: [2026-07-02, 2026-07-04]
  
     input:
       issue_text: "line_04 PCB 배선 결함 미검 건, 스코어 로그 보니 특정 시점부터 이상 점수 자체가 전반적으로 낮아짐"
       attachments:
-        - line_04/2026-07-03/LOT-20260703-018/img_0098.png
+        - line_04/2026-07-03/LOT-ABG/img_0098.png
       reporter_role: 법인MI담당자
       submitted_at: 2026-07-04T11:00:00
  
@@ -518,13 +518,13 @@ scenarios:
       line: line_01
       object: pcb1
       bank_version: v2
-      lot_ids: [LOT-20260608-004]
+      lot_ids: [AAH]
       date_range: [2026-06-07, 2026-06-09]
  
     input:
       issue_text: "line_01 처음 보는 형태의 스크래치 결함 미검. 기존에 없던 방향임"
       attachments:
-        - line_01/2026-06-08/LOT-20260608-004/img_0063.png
+        - line_01/2026-06-08/LOT-AAH/img_0063.png
       reporter_role: 품질검사원
       submitted_at: 2026-06-09T13:25:00
  
@@ -574,13 +574,13 @@ scenarios:
       line: line_02
       object: pcb2
       bank_version: v3
-      lot_ids: [LOT-20260619-006]
+      lot_ids: [AAS]
       date_range: [2026-06-18, 2026-06-20]
  
     input:
       issue_text: "line_02 이물 오염 결함만 계속 미검됨. 스크래치는 잘 잡히는데 이물만 반복"
       attachments:
-        - line_02/2026-06-19/LOT-20260619-006/img_0037.png
+        - line_02/2026-06-19/LOT-AAS/img_0037.png
       reporter_role: 공정엔지니어
       submitted_at: 2026-06-20T15:50:00
  
@@ -628,13 +628,13 @@ scenarios:
       line: line_03
       object: pcb3
       bank_version: v4
-      lot_ids: [LOT-20260628-010]
+      lot_ids: [ABB]
       date_range: [2026-06-27, 2026-06-29]
  
     input:
       issue_text: "line_03 최근 뱅크 경량화(v4) 이후로 미검·과검 둘다 늘어난 느낌"
       attachments:
-        - line_03/2026-06-28/LOT-20260628-010/img_0154.png
+        - line_03/2026-06-28/LOT-ABB/img_0154.png
       reporter_role: 법인MI담당자
       submitted_at: 2026-06-29T18:00:00
  
@@ -683,13 +683,13 @@ scenarios:
       line: line_04
       object: pcb4
       bank_version: v2
-      lot_ids: [LOT-20260710-013]
+      lot_ids: [ABN]
       date_range: [2026-07-08, 2026-07-11]
  
     input:
       issue_text: "line_04 결함 좀 이상하게 넘어가는거 많아진듯. 언제부턴지는 모르겠음"
       attachments:
-        - line_04/2026-07-10/LOT-20260710-013/img_0201.png
+        - line_04/2026-07-10/LOT-ABN/img_0201.png
       reporter_role: 라인관리자
       submitted_at: 2026-07-11T22:30:00
  
@@ -740,13 +740,13 @@ scenarios:
       line: line_01
       object: pcb1
       bank_version: v3
-      lot_ids: [LOT-20260612-002]
+      lot_ids: [AAL]
       date_range: [2026-06-11, 2026-06-13]
  
     input:
       issue_text: "line_01 미세 결함 미검 1건, 육안으로도 애매한 수준"
       attachments:
-        - line_01/2026-06-12/LOT-20260612-002/img_0019.png
+        - line_01/2026-06-12/LOT-AAL/img_0019.png
       reporter_role: 품질검사원
       submitted_at: 2026-06-13T09:15:00
  
@@ -795,13 +795,13 @@ scenarios:
       line: line_02
       object: pcb2
       bank_version: v2
-      lot_ids: [LOT-20260624-005]
+      lot_ids: [AAX]
       date_range: [2026-06-23, 2026-06-25]
  
     input:
       issue_text: "line_02 미검같은데 확인점요"
       attachments:
-        - line_02/2026-06-24/LOT-20260624-005/img_0028.png
+        - line_02/2026-06-24/LOT-AAX/img_0028.png
       reporter_role: 라인관리자
       submitted_at: 2026-06-25T21:05:00
  
@@ -850,13 +850,13 @@ scenarios:
       line: line_03
       object: pcb3
       bank_version: v3
-      lot_ids: [LOT-20260702-008]
+      lot_ids: [ABF]
       date_range: [2026-07-01, 2026-07-03]
  
     input:
       issue_text: "line_03 실크스크린 각인 근처 미검 신고 들어옴, 신규 디자인 변경 있었다고 들음"
       attachments:
-        - line_03/2026-07-02/LOT-20260702-008/img_0410.png
+        - line_03/2026-07-02/LOT-ABF/img_0410.png
       reporter_role: 공정엔지니어
       submitted_at: 2026-07-03T14:00:00
  
@@ -905,13 +905,13 @@ scenarios:
       line: line_04
       object: pcb4
       bank_version: v4
-      lot_ids: [LOT-20260718-011]
+      lot_ids: [ABV]
       date_range: [2026-07-17, 2026-07-19]
  
     input:
       issue_text: "line_04 미세 형상 결함 미검 의심, 이전에도 비슷한 경계선 케이스 있었음"
       attachments:
-        - line_04/2026-07-18/LOT-20260718-011/img_0089.png
+        - line_04/2026-07-18/LOT-ABV/img_0089.png
       reporter_role: 양산품질
       submitted_at: 2026-07-19T10:40:00
  
@@ -964,13 +964,13 @@ scenarios:
       line: line_01
       object: pcb1
       bank_version: v3
-      lot_ids: [LOT-20260614-006]
+      lot_ids: [AAN]
       date_range: [2026-06-13, 2026-06-15]
  
     input:
       issue_text: "line_01 크랙 미검 건, 최근 이미지가 좀 흐릿해 보인다는 얘기도 있었음"
       attachments:
-        - line_01/2026-06-14/LOT-20260614-006/img_0140.png
+        - line_01/2026-06-14/LOT-AAN/img_0140.png
       reporter_role: 공정엔지니어
       submitted_at: 2026-06-15T17:20:00
  
@@ -1022,13 +1022,13 @@ scenarios:
       line: line_02
       object: pcb2
       bank_version: v2
-      lot_ids: [LOT-20260626-012]
+      lot_ids: [AAZ]
       date_range: [2026-06-25, 2026-06-27]
  
     input:
       issue_text: "line_02 결함 미검 재현, 카메라 쪽 점검 이력 있는지 확인 부탁"
       attachments:
-        - line_02/2026-06-26/LOT-20260626-012/img_0203.png
+        - line_02/2026-06-26/LOT-AAZ/img_0203.png
       reporter_role: 법인MI담당자
       submitted_at: 2026-06-27T12:10:00
  
@@ -1078,13 +1078,13 @@ scenarios:
       line: line_03
       object: pcb3
       bank_version: v3
-      lot_ids: [LOT-20260704-004]
+      lot_ids: [ABH]
       date_range: [2026-07-03, 2026-07-05]
  
     input:
       issue_text: "line_03 요새 사진들이 뭔가 뿌옇던데 그것 때문인가 미검이 있음"
       attachments:
-        - line_03/2026-07-04/LOT-20260704-004/img_0066.png
+        - line_03/2026-07-04/LOT-ABH/img_0066.png
       reporter_role: 라인관리자
       submitted_at: 2026-07-05T23:00:00
  
@@ -1135,13 +1135,13 @@ scenarios:
       line: line_04
       object: pcb4
       bank_version: v4
-      lot_ids: [LOT-20260722-009]
+      lot_ids: [ABZ]
       date_range: [2026-07-21, 2026-07-23]
  
     input:
       issue_text: "line_04 결함 미검 발생, 최근 조명 밝기 이슈 있었다고 들음"
       attachments:
-        - line_04/2026-07-22/LOT-20260722-009/img_0512.png
+        - line_04/2026-07-22/LOT-ABZ/img_0512.png
       reporter_role: 공정엔지니어
       submitted_at: 2026-07-23T15:45:00
  
@@ -1194,13 +1194,13 @@ scenarios:
       line: line_01
       object: pcb1
       bank_version: v3
-      lot_ids: [LOT-20260616-003]
+      lot_ids: [AAP]
       date_range: [2026-06-15, 2026-06-17]
  
     input:
       issue_text: "line_01 휨(warp) 형상 건, 검사기는 잡았는데 검사원이 출하시킨 이력 확인됨"
       attachments:
-        - line_01/2026-06-16/LOT-20260616-003/img_0031.png
+        - line_01/2026-06-16/LOT-AAP/img_0031.png
       reporter_role: 양산품질
       submitted_at: 2026-06-17T19:30:00
  
@@ -1250,13 +1250,13 @@ scenarios:
       line: line_02
       object: pcb2
       bank_version: v2
-      lot_ids: [LOT-20260630-014]
+      lot_ids: [ABD]
       date_range: [2026-06-29, 2026-07-01]
  
     input:
       issue_text: "line_02 휨 관련 재발, 지난번과 유사한 케이스로 보임"
       attachments:
-        - line_02/2026-06-30/LOT-20260630-014/img_0027.png
+        - line_02/2026-06-30/LOT-ABD/img_0027.png
       reporter_role: 공정엔지니어
       submitted_at: 2026-07-01T08:50:00
  
@@ -1305,13 +1305,13 @@ scenarios:
       line: line_03
       object: pcb3
       bank_version: v3
-      lot_ids: [LOT-20260709-006]
+      lot_ids: [ABM]
       date_range: [2026-07-08, 2026-07-10]
  
     input:
       issue_text: "line_03 미검 건으로 접수됐는데 확인해보니 검사기는 잡았던 것 같음. 기준 문제인듯"
       attachments:
-        - line_03/2026-07-09/LOT-20260709-006/img_0009.png
+        - line_03/2026-07-09/LOT-ABM/img_0009.png
       reporter_role: 법인MI담당자
       submitted_at: 2026-07-10T13:15:00
  
@@ -1360,13 +1360,13 @@ scenarios:
       line: line_04
       object: pcb4
       bank_version: v4
-      lot_ids: [LOT-20260725-010]
+      lot_ids: [ACC]
       date_range: [2026-07-24, 2026-07-26]
  
     input:
       issue_text: "line_04 미세 스크래치 미검 신고, 검출 자체는 됐던 것 같다는 의견 있음"
       attachments:
-        - line_04/2026-07-25/LOT-20260725-010/img_0018.png
+        - line_04/2026-07-25/LOT-ACC/img_0018.png
       reporter_role: 양산품질
       submitted_at: 2026-07-26T09:55:00
  
