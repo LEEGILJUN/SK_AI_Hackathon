@@ -1,8 +1,9 @@
 """`data/build_factory.py` 의 불변식.
 
-이동현이 만든 공장 데이터 생성기를 이길준이 고쳤다(2026-08-14). 고친 것이
+이동현이 만든 공장 데이터 생성기를 이길준이 고쳤다(2026-08-14~15). 고친 것이
 되돌아가지 않게 못 박는다. **이미지를 복사하지 않는다** — 순수 함수만 부른다.
-전체 실행은 26,000장 5.2GB 라 테스트에서 돌릴 것이 아니다.
+전체 실행은 로트 36개 × 1,000장이라 테스트에서 돌릴 것이 아니다
+(`--no-images` 로 CSV 만 만들면 1.6초다).
 
 `data/` 는 패키지가 아니라 importlib 으로 읽는다.
 """
@@ -10,8 +11,7 @@
 from __future__ import annotations
 
 import importlib.util
-import random
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -28,48 +28,85 @@ def bf():
     return module
 
 
-def _one_lot(bf, line="line_01", date_str="2026-06-10", lot_id="AAJ-01"):
-    """로트 하나를 규칙 그대로 만든다. 이미지는 만들지 않고 (인덱스, 라벨)만."""
-    rng = random.Random(bf.make_seed(line, date_str, lot_id, "base-lot-population"))
-    indexes = set()
-    while len(indexes) < bf.NORMAL_IMAGES_PER_LOT + bf.ANOMALY_IMAGES_PER_LOT:
-        indexes.add(rng.randint(1, 9999))
-    ordered = sorted(indexes)
-    anomalies = bf.choose_background_anomaly_indexes(ordered, line, date_str, lot_id)
-    return [(i, "defect" if i in anomalies else "normal") for i in ordered]
+@pytest.fixture(scope="module")
+def calendar(bf):
+    """(라인, 일자) → 구간. 시나리오에서 실제로 만들어지는 것과 같다."""
+    scenarios, _, _, _ = bf.load_scenarios(REPO_ROOT / "data" / "scenarios.yaml")
+    return bf.build_split_calendar(
+        bf.bank_window_lots(scenarios), bf.collect_target_lots(scenarios)
+    )
 
 
-def test_the_bank_never_takes_a_defect_by_chance(bf):
-    """뱅크에 결함이 우연히 섞이지 않는다.
+def test_the_bank_window_is_separate_from_the_operation_window(bf, calendar):
+    """라인마다 뱅크 구간과 운영 구간이 날짜로 갈린다.
 
-    고치기 전에는 split 해시와 label 해시가 독립이라 `split="bank"` 안에
-    결함이 9.1% 들어갔고, **모든 라인이 동시에 오염됐다.** 그러면 "이 라인만
-    문제다"를 보여줄 수 없고 원인 여섯 중 뱅크 오염이 언제나 참이 된다.
+    고치기 전에는 `pick_split` 이 이미지마다 해시로 갈라서 **같은 날짜에
+    뱅크·운영·홀드아웃이 전부 섞였다.** 그러면 화질 기준 분포를 뱅크
+    구간에서만 뽑을 수가 없고, 열화가 주입된 운영 데이터가 기준에 섞여
+    **설비·광학 원인을 영영 못 잡는다.**
+
+    라인별로 본다 — 기준 분포가 라인·품목마다 따로이므로 2라인의 초기
+    수집일이 1라인의 운영일과 같은 날인 것은 아무 문제가 아니다.
     """
-    day = date(2026, 6, 10)
-    into_bank = [
-        (index, label)
-        for index, label in _one_lot(bf)
-        if bf.pick_split(day, "line_01", index, label) == "bank"
-    ]
-    assert into_bank, "뱅크로 가는 이미지가 하나도 없다"
-    assert all(label == "normal" for _, label in into_bank)
+    from collections import defaultdict
+
+    windows = defaultdict(lambda: defaultdict(set))
+    for (line, date_str), window in calendar.items():
+        windows[line][window].add(date_str)
+
+    assert windows, "구간 달력이 비었다"
+    for line, by_window in sorted(windows.items()):
+        assert by_window["bank"], f"{line}: 뱅크 구간이 없다"
+        assert by_window["operation"], f"{line}: 운영 구간이 없다"
+        overlap = by_window["bank"] & by_window["operation"]
+        assert not overlap, f"{line}: 뱅크와 운영 일자가 겹친다 — {sorted(overlap)}"
 
 
-def test_defects_still_reach_operation_and_holdout(bf):
+def test_the_bank_window_comes_before_the_scenarios(bf, calendar):
+    """초기 뱅크 구성 구간이 시나리오 발생보다 앞선다.
+
+    현장 순서 그대로다 — 설비를 들이고 정상만 모아 초기 뱅크를 만든 뒤
+    운영이 시작되고, 그러다 미검이 난다. 순서가 뒤집히면 "미검이 난 뒤에
+    모은 데이터로 그 미검을 놓친 뱅크를 만들었다"가 된다.
+    """
+    from collections import defaultdict
+
+    latest_bank, earliest_other = defaultdict(list), defaultdict(list)
+    for (line, date_str), window in calendar.items():
+        (latest_bank if window == "bank" else earliest_other)[line].append(date_str)
+
+    for line in sorted(latest_bank):
+        assert max(latest_bank[line]) < min(earliest_other[line]), (
+            f"{line}: 뱅크 구간이 운영보다 뒤에 있다"
+        )
+
+
+def test_a_defect_in_the_bank_window_is_an_error_not_a_silent_move(bf, calendar):
+    """뱅크 구성 구간에 결함이 생기면 조용히 넘기지 않고 멈춘다.
+
+    다른 구간으로 슬쩍 옮기면 그 날짜가 두 구간에 걸쳐 일자 분리가
+    무의미해진다. 생성 단계에서 안 만드는 것이 맞고, 그래도 오면 고장이다.
+    """
+    line, date_str = next((k for k, v in calendar.items() if v == "bank"))
+    assert bf.pick_split(calendar, line, date_str, "normal") == "bank"
+    with pytest.raises(ValueError):
+        bf.pick_split(calendar, line, date_str, "defect")
+
+
+def test_defects_still_reach_operation_and_holdout(bf, calendar):
     """결함을 뱅크에서 막았다고 아예 사라지면 안 된다.
 
     운영 데이터에는 불량이 있어야 미검·과검을 가릴 수 있고, 홀드아웃에도
     있어야 게이트가 성능을 잰다.
     """
-    day = date(2026, 6, 10)
-    landed = {"bank": 0, "operation": 0, "holdout": 0}
-    for index, label in _one_lot(bf):
-        if label == "defect":
-            landed[bf.pick_split(day, "line_01", index, label)] += 1
-    assert landed["bank"] == 0
-    assert landed["operation"] > 0
-    assert landed["holdout"] > 0
+    landed = {
+        bf.pick_split(calendar, line, date_str, "defect")
+        for (line, date_str), window in calendar.items()
+        if window != "bank"
+    }
+    assert "operation" in landed
+    assert "holdout" in landed
+    assert "bank" not in landed
 
 
 def test_an_unknown_defect_never_gets_the_normal_code(bf):
