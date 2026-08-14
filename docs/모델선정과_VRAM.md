@@ -220,6 +220,22 @@ ollama create gemma4-12b-vision -f Modelfile
 ollama list
 ```
 
+### 4090 노트북은 이미 등록돼 있습니다 — 이름이 둘입니다
+
+4090 에는 `gemma4-12b` 로 먼저 등록해 두었고, 이 문서가 쓰는
+`gemma4-12b-vision` 은 `ollama cp` 로 만든 별칭입니다.
+
+```bash
+ollama cp gemma4-12b gemma4-12b-vision
+```
+
+같은 이미지 ID(`7d1643d291b1`)를 가리키므로 **디스크를 더 쓰지 않습니다.**
+두 이름 모두 `ollama list` 에 뜨지만 실체는 하나입니다.
+
+**이름을 둘로 둔 이유가 있습니다.** `-vision` 이 "mmproj 를 물린 구성"이라는
+뜻을 담습니다. 본체만 물린 텍스트 전용을 나중에 같은 이름으로 덮으면
+알아채지 못합니다 — 그때도 `check_models.py` 의 다른 항목은 전부 통과합니다.
+
 그다음 우리 설정에 물립니다.
 
 ```bash
