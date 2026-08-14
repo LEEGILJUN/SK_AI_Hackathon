@@ -838,8 +838,8 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
                  placeholder="{escape(hint)}">
         </div>"""
         for key, label, hint in (
-            ("line", "라인", "예: line_02"),
-            ("object_name", "품목", "예: capsules"),
+            ("line", "라인", "예: line_01"),
+            ("object_name", "품목", "예: pcb1"),
             ("defect_type", "결함 유형", "예: dent"),
             ("product_id", "제품명", "예: CAPSULES-02-defect_002"),
         )

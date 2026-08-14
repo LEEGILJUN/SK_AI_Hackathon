@@ -96,7 +96,7 @@ def run(factory, **kwargs):
     line, object_name = CONTAMINATED_ITEM
     kwargs.setdefault("context", {
         "line": line, "object_name": object_name,
-        "defect_type": "dent", "product_id": factory.reported_product,
+        "defect_type": "scratch", "product_id": factory.reported_product,
     })
     return run_pipeline(factory, **kwargs)
 
@@ -400,7 +400,7 @@ def test_issue_graph_returns_the_path_not_just_a_score(factory):
     """
     from lookup import MockLookup
 
-    found = MockLookup().find_similar_issues("line_02", "capsules", "dent")
+    found = MockLookup().find_similar_issues("line_02", "pcb1", "scratch")
     assert found, "이슈 이력 그래프가 비어 있다"
 
     top = found[0]

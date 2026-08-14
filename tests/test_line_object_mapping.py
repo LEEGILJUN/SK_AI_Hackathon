@@ -151,3 +151,44 @@ def test_the_contaminated_item_is_a_real_item(factory_lines):
         f"오염 품목 {CONTAMINATED_ITEM} 을 정답으로 거는 시나리오가 없다. "
         f"있는 것: {sorted(contaminated)}"
     )
+
+
+def test_the_issue_text_names_the_item_it_is_actually_about(factory_lines):
+    """시연 이슈 원문의 라인·품목이 실제 대상과 같다.
+
+    **한 번 어긋나 있었다.** 매핑을 pcb 로 옮긴 뒤에도 `DEFAULT_ISSUE` 가
+    "2라인 캡슐"로 남아 있어서, 화면 첫 줄이 `제품 PCB1-01-...` 과 나란히
+    떴다. **심사에서 제일 먼저 읽는 자리가 자기모순**이었다.
+
+    문자열이라 다른 시험에 안 걸린다. 여기서 본다.
+    """
+    from app.pipeline import CONTAMINATED_ITEM, DEFAULT_ISSUE
+
+    line, object_name = CONTAMINATED_ITEM
+    number = line.split("_")[-1].lstrip("0") or "0"
+
+    assert f"{number}라인" in DEFAULT_ISSUE, (
+        f"이슈 원문이 {number}라인({line}) 건이 아니다: {DEFAULT_ISSUE!r}"
+    )
+    family = "".join(ch for ch in object_name if not ch.isdigit()).upper()  # pcb1 → PCB
+    assert family in DEFAULT_ISSUE.upper(), (
+        f"이슈 원문이 {object_name} 을 가리키지 않는다: {DEFAULT_ISSUE!r}"
+    )
+
+
+def test_the_issue_history_uses_real_lines(factory_lines):
+    """이슈 이력 그래프가 실제 라인을 쓴다.
+
+    없는 라인의 과거 이슈는 유사 사례로 떠도 확인할 수가 없다. 품목까지
+    맞을 필요는 없다 — **라인 재배치 이력**이 있어야 중복 차단이 왜 라인을
+    봐야 하는지 보일 수 있다(`ISS-0042`).
+    """
+    from lookup.mock import ISSUE_GRAPH
+
+    for node in ISSUE_GRAPH:
+        assert node["line"] in factory_lines, (
+            f"{node['issue_id']}: 공장에 없는 라인 {node['line']}"
+        )
+        assert node["object_name"] in set(factory_lines.values()), (
+            f"{node['issue_id']}: 공장에 없는 품목 {node['object_name']}"
+        )

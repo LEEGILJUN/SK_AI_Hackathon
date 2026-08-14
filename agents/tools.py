@@ -203,8 +203,8 @@ DIAGNOSE_SPEC = ToolSpec(
     parameters={
         "type": "object",
         "properties": {
-            "line": {"type": "string", "description": "라인 ID (예: line_02)"},
-            "object_name": {"type": "string", "description": "대상 품목 (예: capsules)"},
+            "line": {"type": "string", "description": "라인 ID (예: line_01)"},
+            "object_name": {"type": "string", "description": "대상 품목 (예: pcb1)"},
         },
         "required": ["line", "object_name"],
     },

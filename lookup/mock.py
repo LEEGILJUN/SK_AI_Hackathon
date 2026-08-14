@@ -39,33 +39,40 @@ IS_MOCK = True
 #:
 #: 이동현의 실제 그래프가 오면 이 상수가 빠진다. 스키마는 같다.
 ISSUE_GRAPH: list[dict] = [
+    # 라인↔품목은 `data/build_factory.py` 의 VALID_LINES 를 따른다
+    # (line_01=pcb1 · line_02=pcb2 · line_03=pcb3 · line_04=pcb4).
+    #
+    # **ISS-0042 만 예외다.** pcb1 이 예전에 line_02 에서도 검사되던 때의
+    # 이력이다. 라인 재배치는 현장에서 흔하고, **바로 이것 때문에 중복 차단이
+    # 라인을 봐야 한다** — "line_02 pcb1 오염 이력이 있으니 이번 것도 중복"은
+    # 틀린 추론이다. 라인마다 뱅크가 따로이기 때문이다.
     {
-        "issue_id": "ISS-0042", "line": "line_01", "object_name": "capsules",
-        "defect_type": "dent", "cause": "bank_contamination",
+        "issue_id": "ISS-0042", "line": "line_02", "object_name": "pcb1",
+        "defect_type": "scratch", "cause": "bank_contamination",
         "action": "오염 샘플 2장 제거 후 뱅크 재구성", "resolved": True,
         "summary": "정상 학습셋에 불량이 섞여 같은 유형을 정상으로 끌어당기고 있었다.",
     },
     {
-        "issue_id": "ISS-0031", "line": "line_02", "object_name": "capsules",
+        "issue_id": "ISS-0031", "line": "line_03", "object_name": "pcb3",
         "defect_type": "scratch", "cause": "threshold",
         "action": "임계값 2.35 → 2.10 재조정", "resolved": True,
         "summary": "이상 점수는 충분히 높았으나 임계값 바로 아래에 몰려 있었다.",
     },
     {
-        "issue_id": "ISS-0055", "line": "line_03", "object_name": "macaroni1",
-        "defect_type": "dent", "cause": "normal_overlap",
+        "issue_id": "ISS-0055", "line": "line_04", "object_name": "pcb4",
+        "defect_type": "missing", "cause": "normal_overlap",
         "action": "촬영 각도 변경 · 전용 판별 로직 추가", "resolved": True,
         "summary": "최근접 패치가 진짜 정상품이었다. 재구성으로는 해결되지 않는 유형.",
     },
     {
-        "issue_id": "ISS-0067", "line": "line_02", "object_name": "pcb1",
-        "defect_type": "dent", "cause": "coverage_gap",
+        "issue_id": "ISS-0067", "line": "line_02", "object_name": "pcb2",
+        "defect_type": "bent", "cause": "coverage_gap",
         "action": "야간 로트 정상 이미지 40장 보충", "resolved": True,
         "summary": "야간 조명 조건의 정상 패치가 뱅크 구성에 없었다.",
     },
     {
-        "issue_id": "ISS-0071", "line": "line_01", "object_name": "capsules",
-        "defect_type": "dent", "cause": "equipment_optics",
+        "issue_id": "ISS-0071", "line": "line_01", "object_name": "pcb1",
+        "defect_type": "melt", "cause": "equipment_optics",
         "action": "설비 점검 요청 — 조명 열화 확인", "resolved": False,
         "summary": "화질 지표가 기준 분포를 벗어났다. 모델 문제가 아니다.",
     },
@@ -95,8 +102,8 @@ class MockLookup:
         bank_conditions: dict[str, list[str]] | None = None,
         similar_issues: list[PastIssue] | None = None,
         bank_version: str = "v3",
-        line: str = "line_02",
-        object_name: str = "capsules",
+        line: str = "line_01",
+        object_name: str = "pcb1",
         catalog: list[ImageRecord] | None = None,
         banks: dict[tuple[str, str], str] | None = None,
     ):
@@ -357,7 +364,7 @@ def resolved_duplicate(
     return PastIssue(
         issue_id="MOCK-ISS-0042",
         line=line,
-        object_name="capsules",
+        object_name="pcb1",
         cause=cause,
         action="오염 샘플 제거 후 뱅크 재구성",
         resolved=True,
