@@ -10,8 +10,21 @@ VisA_*/
 *.zip
 data/visa_raw/
 data/factory/
+# data/build_factory.py 의 산출물. 전부 재현되므로 커밋하지 않는다.
+data/manifest.csv
+data/mes.csv
+data/factory_summary.txt
 *.png.orig
 !docs/*.png
+
+# ===== 팀원이 통으로 넘긴 원본 (반영 후 남는 사본) =====
+# 내용은 저장소 안 제자리로 옮겨 커밋한다. 폴더째 두면 두 벌이 되고
+# 한쪽만 고쳐진다.
+이동현_작업/
+장영진_작업/
+
+# ===== 기계마다 다른 로컬 설정 =====
+.claude/settings.local.json
 
 # ===== 메모리 뱅크 · 모델 산출물 =====
 *.pt
