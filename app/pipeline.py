@@ -492,6 +492,29 @@ class DemoFactory:
                 for item in self.items.values() for p in item.contaminants}
 
 
+def _intake_halt(output: Any) -> str:
+    """인테이크 결과를 보고 루프를 끊을지 정한다.
+
+    **실패가 아니다.** 정보가 부족하면 추측하지 않고 되묻는 것이 인테이크의
+    설계이고, 이미 해결된 건이면 중복으로 끊는 것도 정상 동작이다. 둘 다
+    **사람이 답해야 다음이 있다.**
+
+    이것을 성공으로만 보면 모델이 같은 도구를 같은 인자로 계속 부른다.
+    """
+    if not isinstance(output, dict):
+        return ""
+    verdict = output.get("verdict")
+    if verdict == "need_more_info":
+        question = output.get("question") or "라인·품목·제품명 중 빠진 것이 있습니다."
+        return f"정보가 부족해 진단으로 넘기지 않았습니다. {question}"
+    if verdict == "duplicate":
+        return (
+            f"이미 규명·조치된 사례입니다({output.get('duplicate_of')}). "
+            "중복 작업을 막기 위해 진단하지 않습니다."
+        )
+    return ""
+
+
 class _DemoSession:
     """도구들이 함께 쓰는 상태.
 
@@ -602,6 +625,11 @@ class _DemoSession:
             "lot": intake.report.lot,
             "extracted_from_text": [k for k, v in extracted.items() if v],
             "missing": intake.missing,
+            # 되물을 문구를 결과에 담는다. 루프를 끊을 때 사람에게 그대로
+            # 보여줄 말이고, 이게 없으면 "정보 부족"만 남아 무엇을 답해야
+            # 하는지 알 수 없다.
+            "question": intake.question,
+            "duplicate_of": intake.duplicate_of,
             "next": "lookup_mes" if intake.verdict == "proceed" else "중단. 사람에게 되물어야 한다.",
         }
 
@@ -1103,7 +1131,10 @@ class _DemoSession:
 
     def registry(self) -> ToolRegistry:
         return ToolRegistry([
-            Tool(INTAKE_SPEC, self.intake_issue),
+            # 인테이크가 되묻거나 중복으로 끊으면 **사람이 답해야 진행된다.**
+            # 도구는 성공으로 돌아가므로 루프가 그것을 모르고, 모델이 같은
+            # 도구를 반복해서 부른다(4090 실측 12번 · 14분 52초).
+            Tool(INTAKE_SPEC, self.intake_issue, halts_on=_intake_halt),
             Tool(MES_SPEC, self.lookup_mes),
             Tool(INSPECT_SPEC, self.run_inspection),
             Tool(CHECKS_SPEC, self.run_checks),

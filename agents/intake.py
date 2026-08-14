@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field, asdict
 from datetime import date
 from typing import Any
@@ -122,6 +123,10 @@ def extract(text: str, adapter: ModelAdapter) -> IssueReport:
     report.object_name = data.get("object_name") or None
     report.defect_type = data.get("defect_type") or None
     report.lot = data.get("lot") or None
+    # **읽는 것을 빠뜨리고 있었다.** 모델이 뽑아 줘도 버려졌고, 4090 실측에서
+    # "제품명을 못 뽑는다"로 보고됐다. `product_id` 는 MES 조회의 열쇠라
+    # 이게 비면 접수가 되묻고 거기서 멈춘다.
+    report.product_id = data.get("product_id") or None
     report.extracted_by = response.model or adapter.describe()
 
     raw_date = data.get("observed_from")
@@ -131,7 +136,59 @@ def extract(text: str, adapter: ModelAdapter) -> IssueReport:
         except ValueError:
             pass
 
+    # 모델이 놓쳤으면 원문에서 직접 줍는다. **지어내지 않는다** — 아래
+    # 정규식은 제품 코드 모양(영문 대문자 + 숫자 + 하이픈)에만 맞고, 없으면
+    # 그대로 비워 둔다.
+    if not report.product_id:
+        report.product_id = find_product_id(text)
+
     return report
+
+
+#: 제품 코드 모양. `PCB1-LOT-AAJ-img_0087` · `CAP-2026-0714-0031` 같은 것.
+#:
+#: 대문자로 시작해 하이픈으로 이어지고 숫자를 포함한다. 한국어 문장 안에
+#: 섞여 있어도 잡힌다. **모델이 놓칠 때의 보조일 뿐 주 경로가 아니다** —
+#: 자연어 추출이 주 입력이라는 설계를 정규식으로 대체하지 않는다.
+_PRODUCT_ID = re.compile(r"\b([A-Z][A-Za-z0-9]*(?:-[A-Za-z0-9_]+){1,4})\b")
+
+#: 이 낱말 뒤에 오는 것을 제품명으로 본다. 없으면 아무거나 줍지 않는다.
+_PRODUCT_CUE = re.compile(r"(?:제품|품번|제품명|product)\s*[:：]?\s*$", re.IGNORECASE)
+
+#: 이 낱말이 뒤따르면 제품이 아니라 로트다. `A-217 로트가 …` 같은 문장.
+#:
+#: `\b` 를 쓰지 않는다 — 한글은 조사가 붙어("로트**가**") 낱말 경계가
+#: 성립하지 않고, 그래서 한 번 이 규칙이 통째로 안 먹었다.
+_LOT_CUE = re.compile(r"^\s*(?:로트|랏|lot)", re.IGNORECASE)
+
+
+def find_product_id(text: str) -> str | None:
+    """원문에서 제품 코드처럼 생긴 것을 줍는다. 없으면 None.
+
+    **모델이 뽑은 값이 있으면 부르지 않는다.** 자연어 추출이 주 경로이고
+    이것은 그물이다.
+
+    문맥을 본다. "제품 X" 처럼 앞에 단서가 있는 것을 먼저 고르고, 뒤에
+    "로트"가 붙은 것은 제외한다 — `A-217 로트가 계속 빠집니다` 의 A-217 을
+    제품명으로 넣으면 **MES 조회가 조용히 빈손이 된다.** 로트는 로트 칸에
+    들어가야 조인이 맞는다.
+
+    숫자가 하나도 없는 것도 제품 코드로 보지 않는다("PCB-기판" 같은 말).
+    """
+    if not text:
+        return None
+
+    cued: list[str] = []
+    plain: list[str] = []
+    for match in _PRODUCT_ID.finditer(text):
+        candidate = match.group(1)
+        if not any(ch.isdigit() for ch in candidate):
+            continue
+        if _LOT_CUE.match(text[match.end():]):
+            continue
+        (cued if _PRODUCT_CUE.search(text[:match.start()]) else plain).append(candidate)
+
+    return (cued or plain or [None])[0]
 
 
 def receive(

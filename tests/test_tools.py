@@ -248,18 +248,77 @@ def test_agent_stops_when_model_is_stub():
     assert "연결되지 않아" in run.stopped_reason
 
 
-def test_agent_stops_at_max_steps():
-    """같은 도구를 반복해 부르며 끝내지 못하는 경우를 막는다."""
+def test_agent_stops_when_the_same_call_repeats():
+    """같은 도구를 같은 인자로 또 부르면 끊는다.
+
+    **4090 실측에서 `intake_issue` 가 12번 불려 14분 52초를 태웠다.**
+    인테이크가 "정보가 부족하다"고 되물었는데 도구는 성공으로 돌아가고,
+    루프는 그것을 실패로 안 보고, 모델은 같은 인자로 계속 불렀다.
+    아무것도 안 바뀌는 호출을 반복하는 것은 진행이 아니다.
+
+    `max_steps` 보다 **먼저** 걸려야 한다. 상한은 마지막 그물이지 정상적인
+    정지 지점이 아니다.
+    """
     registry = make_registry({"cause": "bank_contamination", "rebuild": True})
     adapter = ScriptedAdapter(
         scripted=[""] * 20,
-        tool_calls=[[ToolCall(str(i), "diagnose_issue", {"line": "l", "object_name": "o"})] for i in range(20)],
+        tool_calls=[[ToolCall(str(i), "diagnose_issue", {"line": "l", "object_name": "o"})]
+                    for i in range(20)],
+    )
+
+    run = run_agent("돌려줘", adapter, registry, max_steps=8)
+
+    assert run.steps == 2, "두 번째 같은 호출에서 끊어야 한다"
+    assert "바뀌지 않았다" in run.stopped_reason
+    assert len(run.tool_results) == 2
+
+
+def test_max_steps_is_still_the_last_net():
+    """인자를 바꿔 가며 부르면 반복 감지에 안 걸린다. 그때는 상한이 잡는다."""
+    registry = make_registry({"cause": "bank_contamination", "rebuild": True})
+    adapter = ScriptedAdapter(
+        scripted=[""] * 20,
+        tool_calls=[[ToolCall(str(i), "diagnose_issue", {"line": f"l{i}", "object_name": "o"})]
+                    for i in range(20)],
     )
 
     run = run_agent("돌려줘", adapter, registry, max_steps=3)
 
     assert run.steps == 3
     assert "넘겨 중단" in run.stopped_reason
+
+
+def test_a_tool_can_hand_back_to_a_human():
+    """도구가 "사람이 답해야 한다"고 하면 거기서 끝난다.
+
+    실패가 아니다. 인테이크가 정보 부족으로 되묻는 것은 설계된 정상
+    경로이고, 도구는 성공으로 돌아간다. 그것을 성공으로만 보면 루프가
+    안 끊긴다.
+    """
+    from agents.tools import Tool, ToolRegistry
+
+    asked = {"count": 0}
+
+    def ask_back(**_kwargs):
+        asked["count"] += 1
+        return {"verdict": "need_more_info", "question": "라인을 알려 주세요."}
+
+    registry = ToolRegistry([
+        Tool(DIAGNOSE_SPEC, ask_back,
+             halts_on=lambda out: out.get("question", "")
+             if out.get("verdict") == "need_more_info" else ""),
+    ])
+    adapter = ScriptedAdapter(
+        scripted=[""] * 10,
+        tool_calls=[[ToolCall(str(i), "diagnose_issue", {"line": f"l{i}"})] for i in range(10)],
+    )
+
+    run = run_agent("돌려줘", adapter, registry, max_steps=8)
+
+    assert asked["count"] == 1, "되물은 뒤에도 계속 불렀다"
+    assert run.tool_results[-1].halt
+    assert "라인을 알려 주세요" in run.stopped_reason
+    assert run.final_text == "라인을 알려 주세요."
 
 
 def test_agent_survives_model_failure():

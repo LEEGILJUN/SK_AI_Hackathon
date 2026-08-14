@@ -33,6 +33,16 @@ class ToolResult:
     output: Any
     ok: bool = True
     error: str = ""
+    #: 이 결과를 받으면 **루프를 끊고 사람에게 돌려준다.**
+    #:
+    #: 실패가 아니다. 인테이크가 "정보가 부족하다"고 되묻는 것은 설계된
+    #: 정상 경로이고, 도구는 성공으로 돌아간다. 그런데 그것을 성공으로만
+    #: 보면 **모델이 같은 도구를 같은 인자로 계속 부른다** — 4090 실측에서
+    #: `intake_issue` 가 12번 불려 14분 52초를 태웠다. 아무것도 안 바뀐다.
+    #:
+    #: 사람이 답해야 진행되는 상태라면 여기에 이유를 담아 멈춘다.
+    halt: bool = False
+    halt_reason: str = ""
 
     def to_message(self, call_id: str) -> ChatMessage:
         payload = {"ok": self.ok, "result": self.output} if self.ok else {"ok": False, "error": self.error}
@@ -51,6 +61,9 @@ class Tool:
     run: Callable[..., Any]
     #: 뱅크를 바꾸는 도구인가. 기록과 승인 경계를 가르는 표시다.
     mutates_bank: bool = False
+    #: 출력을 보고 "사람에게 넘겨야 하는가"를 판정한다. (출력) → 이유 또는 "".
+    #: 도구가 성공했는데도 더 진행할 수 없는 상태를 잡는 자리다.
+    halts_on: Callable[[Any], str] | None = None
 
 
 class ToolRegistry:
@@ -83,7 +96,11 @@ class ToolRegistry:
 
         try:
             output = tool.run(**call.arguments)
-            result = ToolResult(name=call.name, arguments=call.arguments, output=output)
+            reason = tool.halts_on(output) if tool.halts_on else ""
+            result = ToolResult(
+                name=call.name, arguments=call.arguments, output=output,
+                halt=bool(reason), halt_reason=reason,
+            )
         except TypeError as exc:
             # 인자가 안 맞는 경우. 모델이 고쳐 부를 수 있게 원문을 돌려준다.
             result = ToolResult(
@@ -358,6 +375,32 @@ def run_agent(
             result = registry.execute(call)
             run.tool_results.append(result)
             messages.append(result.to_message(call.id))
+
+            # ── 도구가 "사람이 답해야 한다"고 말하면 거기서 끝낸다 ──────
+            #
+            # 실패가 아니다. 인테이크가 정보 부족으로 되묻는 것은 설계된
+            # 정상 경로다. 그런데 성공으로만 보면 **모델이 같은 도구를 같은
+            # 인자로 계속 부른다** — 4090 실측에서 12번 불려 14분 52초를
+            # 태웠고 아무것도 안 바뀌었다.
+            if result.halt:
+                run.final_text = result.halt_reason
+                run.stopped_reason = result.halt_reason
+                return run
+
+            # ── 같은 도구를 같은 인자로 또 불렀는데 결과도 같으면 끊는다 ─
+            #
+            # 위의 halt 로 잡히지 않는 경우까지 막는 그물이다. 아무것도
+            # 바뀌지 않는 호출을 반복하는 것은 진행이 아니다.
+            repeats = [
+                r for r in run.tool_results
+                if r.name == result.name and r.arguments == result.arguments
+            ]
+            if len(repeats) >= 2:
+                run.stopped_reason = (
+                    f"'{result.name}' 을 같은 인자로 {len(repeats)}번 불렀고 결과가 "
+                    f"바뀌지 않았다. 더 진행해도 달라질 것이 없어 멈춘다."
+                )
+                return run
 
     run.stopped_reason = f"{max_steps}단계를 넘겨 중단했다."
     return run
