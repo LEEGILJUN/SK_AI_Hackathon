@@ -152,6 +152,42 @@ def test_named_contaminants_exist_in_visa(bf):
             assert named in known, f"{scenario.scenario_id}: VisA 에 없다 — {named}"
 
 
+def test_the_bank_size_rule_is_not_two_different_numbers(bf):
+    """뱅크를 몇 장으로 세우는가가 두 곳에 적혀 있고, 어긋나면 안 된다.
+
+    이 규칙이 `app/pipeline.py` 안에만 있어서 공장 생성기 쪽에서는 알 길이
+    없었다. 생성기는 이미지의 70% 를 `split="bank"` 로 찍는데(라인당 3,750장),
+    뱅크는 거기서 150장만 뽑아 세운다. 이 차이를 모르면 오염률이 40배로
+    희석돼 보인다 — 실제로 그렇게 잘못 읽었다.
+
+    두 벌이 된 이상 한쪽만 고쳐지는 것을 막아야 한다.
+    """
+    from app.pipeline import VISA_NORMAL_COUNT
+
+    assert bf.BANK_BUILD_SIZE == VISA_NORMAL_COUNT
+
+
+def test_the_scenario_contamination_lands_near_what_we_measured(bf):
+    """시나리오가 지정한 오염 장수가 실측 범위 안에 든다.
+
+    VisA 실측에서 오염 3.2% 일 때 결함 위 패치가 뱅크의 0.1% 였다. 그보다
+    훨씬 옅으면 coreset 을 거친 뒤 결함 패치가 한 장도 안 남아 역추적이
+    오염원을 짚지 못하고, 그러면 정답을 걸어 둔 시나리오가 재현되지 않는다.
+
+    **정답 파일을 고치지 않는다.** 이 시험은 어긋나면 알려 줄 뿐이다.
+    """
+    scenarios, _, _, _ = bf.load_scenarios(REPO_ROOT / "data" / "scenarios.yaml")
+    contaminated = [s for s in scenarios if s.injection_method == "bank_contamination"]
+    assert contaminated
+    for scenario in contaminated:
+        rate = scenario.contaminated_count / (bf.BANK_BUILD_SIZE + scenario.contaminated_count) * 100
+        assert rate >= bf.MIN_DETECTABLE_CONTAMINATION_PCT, (
+            f"{scenario.scenario_id}: 오염 {scenario.contaminated_count}장이면 "
+            f"뱅크 {bf.BANK_BUILD_SIZE}장 기준 {rate:.2f}% 다. 검출 한계 아래라 "
+            f"역추적이 못 짚을 수 있다 — 장영진 확인 필요"
+        )
+
+
 def test_the_lot_counts_are_totals_not_running_numbers(bf):
     """`inspected_count` · `defect_count` 가 로트 총량이다.
 

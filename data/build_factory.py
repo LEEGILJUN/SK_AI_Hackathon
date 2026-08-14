@@ -505,6 +505,19 @@ def apply_scenarios_to_factory(manifest_rows: List[ManifestRow], anomaly_pool: D
 #: 대역을 갈라 두면 manifest 만 보고도 "이건 일부러 넣은 오염"임이 드러난다.
 CONTAMINANT_INDEX_BASE = 10000
 
+#: **뱅크는 `split="bank"` 전부로 세우지 않는다. 여기서 이만큼만 뽑아 쓴다.**
+#:
+#: 이 규칙이 `app/pipeline.py` 의 `VISA_NORMAL_COUNT` 안에만 있어서 생성기
+#: 쪽에서는 알 길이 없었다. 그래서 여기 함께 적는다 — 조회 계층 실구현이
+#: 붙을 때도 같은 값을 써야 한다.
+#:
+#: 두 가지 이유로 전부를 쓸 수 없다.
+#:   1. greedy coreset 이 O(k·N) 이라 수천 장이면 끝나지 않는다.
+#:      `DEFAULT_MAX_BANK_SIZE = 20,000` 상한에도 걸린다
+#:   2. 실측 AUROC 0.998 이 정상 150장에서 나온 값이다. 뱅크 크기를 바꾸면
+#:      그 수치를 더 이상 근거로 쓸 수 없다
+BANK_BUILD_SIZE = 150
+
 #: 이 아래 오염률이면 경고를 남긴다. VisA 실측에서 오염 이미지가 3.2% 일 때
 #: 결함 **위** 패치는 뱅크의 0.1%(6/4,861)뿐이었다. coreset 이 끌어올리는 것은
 #: "결함이 있는 이미지"이지 "결함 그 자체"가 아니라서, 오염률이 낮으면 결함
@@ -621,18 +634,28 @@ def apply_bank_contamination(
     for row in merged.values():
         if row.split == "bank":
             bank_stats[row.line][row.label] += 1
-    notes.append("- 라인별 뱅크 구성:")
+    # 오염률은 **뱅크를 몇 장으로 세우느냐**로 갈린다. split="bank" 후보
+    # 전부(라인당 수천 장)를 분모로 잡으면 안 된다 — 뱅크는 거기서
+    # BANK_BUILD_SIZE 장만 뽑아 세운다.
+    notes.append(f"- 라인별 뱅크 구성 (뱅크 구성 시 정상 {BANK_BUILD_SIZE}장 사용):")
+    warned = False
     for line in sorted(bank_stats):
         stat = bank_stats[line]
-        total = stat["normal"] + stat["defect"]
-        share = stat["defect"] / total * 100 if total else 0.0
-        flag = "  ← 검출 한계 아래일 수 있음" if 0 < share < MIN_DETECTABLE_CONTAMINATION_PCT else ""
+        candidates = stat["normal"] + stat["defect"]
+        effective = stat["defect"] / (BANK_BUILD_SIZE + stat["defect"]) * 100
+        flag = ""
+        if 0 < effective < MIN_DETECTABLE_CONTAMINATION_PCT:
+            flag = "  ← 검출 한계 아래"
+            warned = True
         notes.append(
-            f"  - {line}: 정상 {stat['normal']:,} / 오염 {stat['defect']} "
-            f"= 오염률 {share:.2f}%{flag}"
+            f"  - {line}: 후보 {candidates:,}장 중 정상 {BANK_BUILD_SIZE} + "
+            f"오염 {stat['defect']} → 오염률 {effective:.2f}%{flag}"
         )
-    if any(0 < (s["defect"] / (s["normal"] + s["defect"]) * 100) < MIN_DETECTABLE_CONTAMINATION_PCT
-           for s in bank_stats.values() if s["normal"] + s["defect"]):
+    notes.append(
+        "  (후보 전부를 뱅크로 세우지 않는다. greedy coreset 이 O(k·N) 이고, "
+        "실측 AUROC 0.998 이 정상 150장에서 나온 값이다)"
+    )
+    if warned:
         notes.append(
             "- 주의: VisA 실측에서 오염 3.2% 일 때 결함 위 패치는 뱅크의 0.1% 였다"
             f"(6/4,861). 오염률이 {MIN_DETECTABLE_CONTAMINATION_PCT}% 아래면 coreset 을"
@@ -641,7 +664,7 @@ def apply_bank_contamination(
         )
         notes.append(
             "  contaminated_count 는 채점 기준이라 여기서 고치지 않는다."
-            " 장영진 확인이 필요하다."
+            " BANK_BUILD_SIZE 와 함께 봐야 한다."
         )
     return [merged[path] for path in sorted(merged)], notes
 
