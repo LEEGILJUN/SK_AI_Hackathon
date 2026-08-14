@@ -70,6 +70,14 @@ COUNT_PATTERN = re.compile(r"(\d+)\s*건(?:\s*통과|\s*이\s*통과)?|전체\s*
 problems: list[str] = []
 warnings: list[str] = []
 
+#: `--fix` — 테스트 건수만 실제 값으로 고쳐 쓴다.
+#:
+#: 이 숫자를 손으로 맞추는 일을 하루에 여덟 번 했다. 기계가 이미 양쪽 값을
+#: 다 아는데 사람이 옮겨 적을 이유가 없다. **건수만** 고친다 — 경로도
+#: 측정값도 안 건드린다. 그쪽은 틀렸을 때 사람이 봐야 할 것들이다.
+FIX = "--fix" in sys.argv
+repaired: list[str] = []
+
 
 def documents() -> list[Path]:
     found: list[Path] = []
@@ -150,21 +158,38 @@ def check_test_counts(actual: int | None) -> None:
     # 숫자 근처에 테스트 관련 낱말이 있을 때만 본다.
     near = re.compile(r"(?:테스트|pytest|tests/)[^\n]{0,30}?(\d{2,4})\s*건"
                       r"|(\d{2,4})\s*건[^\n]{0,20}?(?:통과|테스트)")
-    # 다른 것을 세는 문장은 제외한다.
+    # 다른 것을 세는 문장은 제외한다. **다만 "테스트 NNN건" 처럼 낱말이
+    # 바로 앞에 붙은 형태는 제외하지 않는다** — 같은 줄에 "이슈"나 "작업"이
+    # 있다는 이유로 건너뛰어 `CLAUDE.md` 의 건수가 조용히 낡아 있었다.
     other = re.compile(r"시나리오|이미지|장\b|작업|케이스|커밋|이슈|로트")
 
     for doc in documents():
         text = doc.read_text(encoding="utf-8")
         for line_no, line in enumerate(text.split("\n"), 1):
-            if other.search(line):
-                continue
             for match in near.finditer(line):
                 number = match.group(1) or match.group(2)
+                # group(1) 은 "테스트/pytest/tests/" 가 앞에 붙은 형태다.
+                # 그 경우는 무엇을 세는지 의심할 여지가 없다.
+                if match.group(1) is None and other.search(line):
+                    continue
                 value = int(number)
                 if value < 20 or value > 5000:
                     continue
                 if value != actual:
                     rel = doc.relative_to(REPO_ROOT)
+                    # 측정 기록에는 그때의 건수가 적혀 있다. 자동으로
+                    # 현재 값으로 덮으면 **언제 잰 것인지가 사라진다.**
+                    if FIX and not doc.name.startswith("실험_"):
+                        # 숫자만 바꾼다. 그 줄의 다른 낱말은 건드리지 않는다.
+                        fixed = line[:match.start(0)] + match.group(0).replace(
+                            number, str(actual), 1
+                        ) + line[match.end(0):]
+                        lines = text.split("\n")
+                        lines[line_no - 1] = fixed
+                        text = "\n".join(lines)
+                        doc.write_text(text, encoding="utf-8")
+                        repaired.append(f"  {rel}:{line_no}: {value} → {actual}")
+                        continue
                     problems.append(
                         f"  {rel}:{line_no}: 테스트 {value}건이라고 적혀 있는데 실제는 {actual}건입니다.\n"
                         f"      → {line.strip()[:70]}"
@@ -210,6 +235,11 @@ def main() -> int:
     if warnings:
         print(f"확인해 보실 것 {len(warnings)}건\n")
         for line in warnings:
+            print(line)
+        print()
+    if repaired:
+        print(f"고친 것 {len(repaired)}건 (--fix)\n")
+        for line in repaired:
             print(line)
         print()
     if not problems and not warnings:

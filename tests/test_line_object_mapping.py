@@ -108,24 +108,33 @@ def test_only_the_schema_template_disagrees(factory_lines, scenario_targets):
     )
 
 
-def test_the_only_duplicate_scenario_id_is_the_template():
-    """시나리오 id 가 겹치지 않는다. 겹치는 것은 템플릿 하나뿐이다.
+def test_scenario_ids_do_not_collide():
+    """시나리오 id 가 겹치지 않는다.
 
-    **`SC-BC-001` 이 두 번 쓰이고 있다** — 실제 시나리오(line_01/pcb1)와 맨
-    끝의 스키마 예시(line_02/capsules)가 같은 id 다. 지금은 채점이 전건을
-    훑어서 안 터지지만, **id 로 찾는 코드가 하나라도 생기면 둘 중 하나가
-    조용히 이긴다.** 장영진 확인이 필요하다.
-
-    새로 겹치는 것이 생기면 여기서 잡힌다.
+    **한 번 겹쳐 있었다.** 파일 끝의 스키마 예시가 실제 시나리오와 같은
+    `SC-BC-001` 을 썼다. 지금은 채점이 전건을 훑어서 안 터지지만, **id 로
+    찾는 코드가 하나라도 생기면 둘 중 하나가 조용히 이긴다.**
+    예시를 `SC-TEMPLATE-000` 으로 떼어 냈다 — 정답값은 건드리지 않았다.
     """
     from collections import Counter
 
     payload = yaml.safe_load((REPO_ROOT / "data" / "scenarios.yaml").read_text(encoding="utf-8"))
     counts = Counter(s.get("id") for s in payload.get("scenarios", []))
     duplicated = {key: n for key, n in counts.items() if n > 1}
-    assert duplicated == {"SC-BC-001": 2}, (
-        f"겹치는 시나리오 id: {duplicated}. 알려진 것은 SC-BC-001 (템플릿) 하나뿐이다"
-    )
+    assert not duplicated, f"겹치는 시나리오 id: {duplicated}"
+
+
+def test_the_scenario_count_is_what_scoring_sees():
+    """채점에 들어가는 시나리오가 24건이다.
+
+    파일 항목은 25개인데 하나는 스키마 예시다. 이 둘을 헷갈려 문서에
+    20 · 24 · 25 세 숫자가 동시에 적혀 있던 적이 있다.
+    """
+    payload = yaml.safe_load((REPO_ROOT / "data" / "scenarios.yaml").read_text(encoding="utf-8"))
+    items = payload.get("scenarios", [])
+    real = [s for s in items if not str(s.get("id", "")).startswith("SC-TEMPLATE")]
+    assert len(real) == 24, f"채점 대상이 {len(real)}건이다"
+    assert len(items) - len(real) == 1, "스키마 예시는 하나여야 한다"
 
 
 def test_the_contaminated_item_is_a_real_item(factory_lines):
