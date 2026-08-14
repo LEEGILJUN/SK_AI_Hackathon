@@ -87,6 +87,10 @@ pre{background:var(--panel2);border:1px solid var(--rule2);border-radius:6px;
   line-height:1.55;margin:0;max-height:460px}
 .banner{background:var(--panel2);border:1px solid var(--rule);border-left:3px solid var(--accent);
   border-radius:6px;padding:12px 15px;font-size:13.5px;color:var(--ink2)}
+/* 그대로 실측으로 읽으면 안 되는 상태 — 고정 순서 재생, 합성 데이터. */
+.banner.warn{border-left-color:var(--skip)}
+.banner code{font-family:var(--mono);font-size:12.5px;background:var(--panel);
+  border:1px solid var(--rule2);border-radius:3px;padding:1px 5px}
 input{width:100%;font:inherit;color:var(--ink);background:var(--panel2);
   border:1px solid var(--rule);border-radius:5px;padding:9px 10px}
 .supplement{border-top:1px dashed var(--rule2);padding-top:12px;margin-top:2px}
@@ -144,10 +148,11 @@ a{color:var(--accent)}
 .ev-grid>div{flex:1;min-width:250px;display:flex;flex-direction:column;gap:8px}
 .ev-label{font-family:var(--mono);font-size:11px;letter-spacing:.1em;
   text-transform:uppercase;color:var(--ink3)}
-.heat{display:grid;gap:2px;background:var(--panel2);padding:6px;border-radius:6px;
-  border:1px solid var(--rule2);aspect-ratio:1;max-width:260px}
-.heat i{background:var(--stop);border-radius:2px;min-height:8px;display:block}
-.heat i.hot{outline:2px solid var(--accent);outline-offset:1px}
+.heat{display:grid;gap:3px;background:var(--panel2);padding:8px;border-radius:6px;
+  border:1px solid var(--rule2);aspect-ratio:1;max-width:340px}
+.heat i{background:var(--stop);border-radius:2px;min-height:12px;display:block}
+/* 역추적이 지목한 칸. 이 한 칸이 진단의 출발점이라 눈에 먼저 들어와야 한다. */
+.heat i.hot{outline:3px solid var(--accent);outline-offset:2px;position:relative;z-index:1}
 .score{height:12px;background:var(--panel2);border:1px solid var(--rule2);
   border-radius:6px;overflow:hidden}
 .score>span{display:block;height:100%;background:linear-gradient(90deg,var(--ok),var(--stop))}
@@ -218,25 +223,110 @@ table.tax tr.here td:first-child{color:var(--accent)}
 .chain .res{font-family:var(--mono);font-size:10.5px;padding:1px 7px;border-radius:3px}
 .chain .res.ok{color:var(--ok);background:var(--ok-bg)}
 .chain .res.no{color:var(--skip);background:var(--skip-bg)}
+
+/* ── 단계 이동 바 ──────────────────────────────────────────────────── */
+.nav{position:sticky;top:0;z-index:20;margin:0 -22px;padding:9px 22px;
+  background:var(--bg);border-bottom:1px solid var(--rule);
+  display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.nav-label{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink3);margin-right:4px}
+.nav a{font-family:var(--mono);font-size:11.5px;line-height:1.35;
+  text-decoration:none;color:var(--ink2);background:var(--panel);
+  border:1px solid var(--rule2);border-left-width:3px;border-radius:4px;
+  padding:4px 9px;white-space:nowrap}
+.nav a:hover{border-color:var(--accent);color:var(--accent)}
+.nav a.done{border-left-color:var(--ok)}
+.nav a.blocked{border-left-color:var(--stop)}
+.nav a.skipped{border-left-color:var(--skip)}
+.nav a.pending{border-left-color:var(--rule)}
+.nav a.key{border-left-color:var(--accent);color:var(--accent);font-weight:650}
+
+/* 앵커로 뛰었을 때 이동 바에 제목이 가리지 않게 */
+.stage,.evidence,.sim,.doc{scroll-margin-top:70px}
+
+/* ── 논거 블록은 일반 단계와 격을 나눈다 ───────────────────────────── */
+/* 진단 근거·조회 방식·이력 그래프가 이 과제의 논거가 실린 자리다. 8번 게이트와
+   같은 무게로 놓이면 화면이 그것을 말해 주지 못한다. */
+.evidence{border-left:3px solid var(--accent)}
+.evidence .ev-head .stage-title{color:var(--accent);font-size:16.5px}
+
+/* ── 부차 단계는 표를 접는다 ───────────────────────────────────────── */
+/* 절 자체를 숨기지 않는다. 숨기면 앵커로 이동해도 내용이 안 열려 이동이
+   무의미해지고, "무엇이 어디까지 돌았는가"도 접힌 채로 안 읽힌다. */
+.stage>details>summary{font-family:var(--mono);font-size:11.5px;
+  letter-spacing:.06em;color:var(--ink3);cursor:pointer;padding:2px 0;
+  list-style:none}
+.stage>details>summary::-webkit-details-marker{display:none}
+.stage>details>summary::before{content:"▸ "}
+.stage>details[open]>summary::before{content:"▾ "}
+.stage>details>summary:hover{color:var(--accent)}
+
+/* 확인 표시 — 못 채운 항목이 눈에 띄어야 한다 */
+td .mark{font-family:var(--mono);font-weight:700;margin-right:7px}
+td .mark.yes{color:var(--ok)}
+td .mark.no{color:var(--stop)}
 """
+
+
+#: 표를 접지 않는 단계. 판별 항목과 진단은 근거 자체라 접으면 볼 것이 없다.
+OPEN_STAGES = {"evidence", "diagnose"}
+
+
+def _mark(value: str) -> str:
+    """앞머리의 확인 표시에만 색을 준다. 나머지 본문은 그대로 escape 한다.
+
+    판별 7항목에서 **확인하지 못한 항목이 눈에 띄어야** 한다. ○ 와 × 가 같은
+    먹색이면 6/7 이라는 숫자를 읽기 전까지 어느 항목이 빈 자리인지 모른다.
+    """
+    text = str(value)
+    for sign, kind in (("○", "yes"), ("×", "no")):
+        if text.startswith(sign):
+            return f'<span class="mark {kind}">{sign}</span>{escape(text[1:])}'
+    return escape(text)
 
 
 def _stage_html(stage: Stage) -> str:
     rows = "".join(
-        f"<tr><td>{escape(str(k))}</td><td>{escape(str(v))}</td></tr>" for k, v in stage.rows
+        f"<tr><td>{escape(str(k))}</td><td>{_mark(v)}</td></tr>" for k, v in stage.rows
     )
+    body = (f"<table>{rows}</table>" if rows else "") + (
+        f'<p class="note">{escape(stage.note)}</p>' if stage.note else ""
+    )
+
+    # 부차 단계는 표만 접는다. 제목·판정·한 줄 요약은 남으므로 접힌 상태에서도
+    # "무엇이 어디까지 돌았는가"가 읽히고, 앵커로 뛰어도 빈 자리에 떨어지지 않는다.
+    if body and stage.key not in OPEN_STAGES:
+        body = f"<details><summary>자세히</summary>{body}</details>"
+
     return f"""
-    <section class="stage {stage.status}">
+    <section class="stage {stage.status}" id="stage-{escape(stage.key)}">
       <div class="stage-head">
         <span class="stage-title">{escape(stage.title)}</span>
         <span class="chip {stage.status}">{STATUS_LABEL.get(stage.status, stage.status)}</span>
       </div>
       {f'<div class="headline">{escape(stage.headline)}</div>' if stage.headline else ''}
       {f'<p class="detail">{escape(stage.detail)}</p>' if stage.detail else ''}
-      {f'<table>{rows}</table>' if rows else ''}
-      {f'<p class="note">{escape(stage.note)}</p>' if stage.note else ''}
+      {body}
     </section>
     """
+
+
+def _nav_html(marks: list[tuple[str, str, str]]) -> str:
+    """단계 이동 바.
+
+    전 구간 화면은 세로로 매우 길다(실측 7,466px). 시연 중에 보고 싶은 자리로
+    못 가면 스크롤이 발표를 잡아먹는다. **자바스크립트를 붙이지 않는다** —
+    앵커와 position:sticky 로 되는 일이고, 화면 하나짜리 시연에 스크립트를
+    더하면 시연 중에 깨질 자리만 늘어난다.
+
+    칩의 왼쪽 색이 단계 상태다. 어디서 멈췄는지가 스크롤하지 않고 보인다.
+    """
+    if not marks:
+        return ""
+    items = "".join(
+        f'<a class="{kind}" href="#{anchor}">{escape(label)}</a>' for anchor, label, kind in marks
+    )
+    return f'<nav class="nav"><span class="nav-label">단계</span>{items}</nav>'
 
 
 CAUSE_KO = {
@@ -289,7 +379,7 @@ def _taxonomy_html(outcome: RunOutcome) -> str:
     rebuild_causes = [CAUSES[c].label for c in cause_names()
                       if CAUSES[c].to_dict()["requires_bank_rebuild"]]
     return f"""
-    <div class="evidence">
+    <div class="evidence" id="block-taxonomy">
       <div class="ev-head">
         <span class="stage-title">진단 지식 체계 — 무엇으로 갈리는가</span>
         <span class="kind schema">스키마 조회</span>
@@ -370,7 +460,7 @@ def _ontology_html(outcome: RunOutcome) -> str:
         "오염됐다고 2라인도 그렇다는 뜻이 아닙니다. 관련 사례로만 넘깁니다."
     )
     return f"""
-    <div class="evidence">
+    <div class="evidence" id="block-ontology">
       <div class="ev-head">
         <span class="stage-title">이슈 이력 그래프 — 이미 답이 나온 일인가</span>
         <span class="kind graph">그래프 검색</span>
@@ -413,9 +503,13 @@ def _evidence_visual_html(outcome: RunOutcome) -> str:
     lo, hi = min(flat), max(flat)
     span = (hi - lo) or 1.0
 
+    # 역추적이 지목한 칸에만 붙는 표시. f-string 식 안에 역슬래시를 두면
+    # Python 3.11 에서 SyntaxError 다(3.12 의 PEP 701 부터 허용). 대상 환경이
+    # 3.11 이므로 따옴표를 밖으로 뺀다.
+    hot_attr = " class='hot'"
     cells = "".join(
         f'<i style="opacity:{(v - lo) / span:.3f}"'
-        f'{" class=\'hot\'" if top and r == top.query.row and c == top.query.col else ""}'
+        f'{hot_attr if top and r == top.query.row and c == top.query.col else ""}'
         f' title="({r},{c}) {v:.4f}"></i>'
         for r, row in enumerate(result.patch_distances)
         for c, v in enumerate(row)
@@ -450,7 +544,7 @@ def _evidence_visual_html(outcome: RunOutcome) -> str:
         </div>
         """
     return f"""
-    <div class="evidence">
+    <div class="evidence" id="block-evidence">
       <div class="ev-head">
         <span class="stage-title">진단 근거 — 모델이 어디를 보고 통과시켰나</span>
         <span class="sim-state">{escape(outcome.bank_version)}</span>
@@ -519,7 +613,7 @@ def _retrieval_html(outcome: RunOutcome) -> str:
         if kind in counts
     )
     return f"""
-    <div class="evidence">
+    <div class="evidence" id="block-retrieval">
       <div class="ev-head">
         <span class="stage-title">무엇을 어떻게 찾았나</span>
         <span class="sim-state">{escape(str(len(outcome.retrievals)))}회 조회</span>
@@ -569,7 +663,7 @@ def _simulator_html(outcome: RunOutcome) -> str:
         ensure_ascii=False,
     )
     return f"""
-    <div class="sim">
+    <div class="sim" id="block-simulator">
       <div class="sim-head">
         <span class="sim-title">코어셋 검증 — 가상 라인</span>
         <span class="sim-state" id="sim-state">대기</span>
@@ -688,8 +782,29 @@ def _driver_html(outcome: RunOutcome) -> str:
     """
 
 
+def _source_banner(on_visa: bool) -> str:
+    """어떤 데이터로 섰는지 화면이 스스로 말하게 한다.
+
+    **합성으로 떨어진 것을 모르고 보면 수치를 실측으로 오해한다.** 반대로 VisA
+    로 섰는데 "합성입니다"가 계속 떠 있으면 실측 결과를 스스로 깎는다. 둘 다
+    시연에서 손해라 표시를 데이터에 묶는다.
+    """
+    if on_visa:
+        return """
+  <div class="banner">
+    <strong>VisA 실데이터로 돌고 있습니다.</strong> 이미지와 뱅크는 실제이고,
+    조회 계층(MES·이슈 이력)만 목입니다.
+  </div>"""
+    return """
+  <div class="banner warn">
+    <strong>합성 이미지로 돌고 있습니다.</strong> 조회 계층도 목입니다.
+    성능 수치가 아니라 <strong>경로가 이어지는지</strong>를 보는 화면입니다.
+    VisA 원본을 저장소 아래 <code>VisA_20220922/</code> 에 두면 실데이터로 섭니다.
+  </div>"""
+
+
 def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str = "defect",
-                context: dict[str, str] | None = None) -> str:
+                context: dict[str, str] | None = None, on_visa: bool = False) -> str:
     options = [
         ("defect", "결함이다 → 뱅크 오염"),
         ("normal", "진짜 정상품이다 → 정상 분포 중첩"),
@@ -746,34 +861,62 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
 
     body = ""
     if outcome:
-        body += _driver_html(outcome)
-        # 시뮬레이터는 섀도 단계 바로 앞에 끼운다. 숫자만 적힌 표보다
-        # 무엇이 어떻게 갈렸는지가 먼저 보여야 한다.
-        stages_html = []
+        stages_html: list[str] = []
+        #: 이동 바에 실을 자리들. (앵커, 이름, 칩 종류)
+        marks: list[tuple[str, str, str]] = []
+
+        def add_block(html: str, anchor: str, label: str) -> None:
+            """논거 블록을 끼우고 이동 바에도 올린다.
+
+            블록은 조건이 안 맞으면 빈 문자열을 돌려준다. 그때 이동 바에만
+            남으면 눌러도 아무 데도 안 간다.
+            """
+            if not html.strip():
+                return
+            stages_html.append(html)
+            marks.append((anchor, label, "key"))
+
         for stage in outcome.stages:
+            # 시뮬레이터는 섀도 단계 바로 앞에 끼운다. 숫자만 적힌 표보다
+            # 무엇이 어떻게 갈렸는지가 먼저 보여야 한다.
             if stage.key == "shadow":
-                stages_html.append(_simulator_html(outcome))
+                add_block(_simulator_html(outcome), "block-simulator", "코어셋 검증")
             stages_html.append(_stage_html(stage))
+            marks.append((f"stage-{stage.key}", stage.title, stage.status))
             # 진단 바로 뒤에 근거를 그린다. 문장으로만 적으면 확인할 방법이 없다.
             if stage.key == "diagnose":
-                stages_html.append(_evidence_visual_html(outcome))
+                add_block(_evidence_visual_html(outcome), "block-evidence", "진단 근거")
                 # 근거 다음에 체계를 놓는다. "이 근거가 왜 이 원인이 되는가"는
                 # 표를 봐야 답이 되고, 표가 앞에 오면 결론부터 읽게 된다.
-                stages_html.append(_taxonomy_html(outcome))
+                add_block(_taxonomy_html(outcome), "block-taxonomy", "원인 체계")
             if stage.key == "evidence":
-                stages_html.append(_retrieval_html(outcome))
+                add_block(_retrieval_html(outcome), "block-retrieval", "조회 방식")
             # 그래프는 인테이크 바로 뒤. "이미 답이 나온 일인가"를 묻는 자리다.
             if stage.key == "intake":
-                stages_html.append(_ontology_html(outcome))
-        body += '<div class="flow">' + "".join(stages_html) + "</div>"
+                add_block(_ontology_html(outcome), "block-ontology", "이력 그래프")
+
+        doc = ""
         if outcome.approval_markdown:
-            body += f"""
-            <div class="doc">
+            # 10번 단계 이름이 "승인 요청"이라 문서 쪽은 다르게 적는다.
+            marks.append(("doc-approval", "승인 문서", "key"))
+            doc = f"""
+            <div class="doc" id="doc-approval">
               <h2>승인 요청 문서</h2>
               <pre>{escape(outcome.approval_markdown)}</pre>
               <p class="note">원문: <a href="/approval">/approval</a></p>
             </div>
             """
+
+        body = (
+            _nav_html(marks)
+            + _driver_html(outcome)
+            + '<div class="flow">'
+            + "".join(stages_html)
+            + "</div>"
+            + doc
+        )
+
+    source_banner = _source_banner(on_visa)
 
     return f"""<!doctype html>
 <html lang="ko"><head><meta charset="utf-8">
@@ -787,10 +930,7 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
        승인 요청 문서까지 만듭니다. <strong>배포는 실행되지 않습니다.</strong></p>
   </header>
 
-  <div class="banner">
-    조회 계층은 목이고 데이터는 합성 이미지입니다. 성능 수치가 아니라
-    <strong>경로가 이어지는지</strong>를 보는 화면입니다.
-  </div>
+  {source_banner}
 
   <form method="post" action="/run">
     <div>

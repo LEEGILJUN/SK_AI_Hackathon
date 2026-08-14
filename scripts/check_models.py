@@ -114,8 +114,15 @@ def check_vision(adapter: ModelAdapter) -> bool:
     판정 기준은 **틀린 답을 내지 않는가** 다.
 
       실패  결함에 normal 을 냈다 / 정상에 defect 를 냈다
+      실패  호출이 죽어 물어보지도 못했다 (call_failed)
       보류  unknown — 실패가 아니다
       통과  틀린 답이 하나도 없다
+
+    **두 번째 줄이 보류와 갈린다.** 시각 기능이 없는 모델(투영기 미탑재)에
+    이미지를 보내면 400 이 떨어지고, vision.py 는 그 예외를 unknown 으로
+    되돌린다. verdict 만 보면 "모를 때 지어내지 않았다"와 구분되지 않아
+    통과가 떴다. 모델이 모르겠다고 답한 것과 그 일을 아예 못 하는 것은
+    다르다. 후자는 판별 1·5번을 그 모델로 못 쓴다는 뜻이다.
 
     unknown 을 실패로 치면 안 된다. 모를 때 지어내지 않는 것은 설계 의도이고,
     그런 판정은 usable=False 로 빠져 사람에게 넘어간다. 실제로 이 검사가
@@ -139,18 +146,30 @@ def check_vision(adapter: ModelAdapter) -> bool:
     ]
 
     wrong: list[str] = []
+    unreachable: list[str] = []
     held = 0
 
     for label, image, expected, forbidden in cases:
         judgment = judge_defect_visible(adapter, image)
+        mark = "호출 실패" if judgment.call_failed else judgment.verdict
         print(
-            f"       {label} → {judgment.verdict} "
+            f"       {label} → {mark} "
             f"(확신 {judgment.confidence:.2f}) {judgment.reason[:50]}"
         )
-        if judgment.verdict == forbidden:
+        if judgment.call_failed:
+            unreachable.append(label)
+        elif judgment.verdict == forbidden:
             wrong.append(f"{label}에 {forbidden}")
         elif judgment.verdict == "unknown":
             held += 1
+
+    if unreachable:
+        print(
+            f"{FAIL} 이미지 판독 — 호출이 실패해 물어보지도 못했다 "
+            f"({', '.join(unreachable)}). 시각 기능이 없는 모델일 수 있다 "
+            f"(투영기 미탑재). 판별 1·5번을 이 모델로 쓸 수 없다."
+        )
+        return False
 
     if wrong:
         print(

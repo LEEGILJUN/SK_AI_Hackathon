@@ -22,13 +22,26 @@
 정했는가"만 달라지며, 화면에 어느 쪽이었는지 표시한다. 이것을 숨기면
 시연에서 모델이 판단한 것처럼 보인다.
 
-시연용 데이터는 합성 이미지가 기본이다. VisA 실데이터는 뱅크 구성에 수십 초가
-걸려 화면이 멈춘 것처럼 보이므로, 웹에서는 빠른 쪽을 기본으로 두고 필요하면
-바꿀 수 있게 했다.
+── 어떤 데이터로 도는가 ────────────────────────────────────────────────
+
+`VisA_20220922/` 가 저장소 아래에 있으면(또는 `SHVO_VISA_ROOT` 가 가리키면)
+**VisA 실데이터로 선다.** 없으면 합성 이미지를 만들어 돈다. 원본을 놓는 것
+말고 따로 켤 것은 없다.
+
+두 경로는 특징 추출 설정이 다르다. 합성은 128px 체커보드라 `DEMO_CONFIG`
+(resnet18 · 64/64)로 충분하고, VisA 는 `VISA_CONFIG`(기본값 · 512/448)여야
+한다. 같은 설정을 양쪽에 쓰면 한쪽이 조용히 무의미해진다.
+
+어느 쪽으로 섰는지는 `DemoFactory.on_visa` 에 남고 화면이 그대로 표시한다.
+합성으로 떨어진 것을 모르고 보면 수치를 실측으로 오해한다.
+
+VisA 쪽은 뱅크 구성에 수십 초가 걸린다. 첫 요청에서 만들므로 시연 직전에 한 번
+예열해 두는 편이 안전하다.
 """
 
 from __future__ import annotations
 
+import os
 import tempfile
 from dataclasses import dataclass, field
 from datetime import date
@@ -78,6 +91,30 @@ from inspection.shadow import ShadowReport
 from lookup import MockLookup
 from lookup.base import RETRIEVAL_KIND, DefectDistribution, ImageRecord
 
+def _evidence_value(value: Any) -> str:
+    """판별 항목 값을 사람이 읽는 한 줄로 만든다.
+
+    4번 최근접 패치는 딕셔너리라 그대로 찍으면 파이썬 repr 이 화면에 나온다.
+    **이 항목이 진단의 핵심 근거인데 화면에서 가장 안 읽히는 자리가 된다.**
+    무엇을 어디서 얼마나 가까이 찾았는지만 남긴다. 원본은 진단 계층이 그대로
+    들고 있으므로 여기서 줄여도 판정에는 영향이 없다.
+    """
+    if isinstance(value, dict) and "source_image" in value:
+        parts = [Path(str(value["source_image"])).name]
+        row, col = value.get("row"), value.get("col")
+        if row is not None and col is not None:
+            parts.append(f"격자 ({row},{col})")
+        distance = value.get("distance")
+        if isinstance(distance, (int, float)):
+            parts.append(f"거리 {distance:.4f}")
+        return " · ".join(parts)
+    if isinstance(value, float):
+        return f"{value:.4f}"
+    return str(value)
+
+
+#: 합성 이미지 전용 설정. 128px 체커보드에 맞춘 값이라 **VisA 에 쓰면 안 된다**
+#: (그쪽은 VISA_CONFIG). 합성은 결함이 뚜렷해 이 크기로도 갈린다.
 DEMO_CONFIG = FeatureConfig(backbone="resnet18", resize=64, crop=64)
 DEFAULT_ISSUE = "2라인 캡슐 표면 찍힘이 며칠째 계속 빠집니다. 육안으로는 명확한데 검사에서 양품으로 나옵니다."
 
@@ -175,7 +212,10 @@ class RunOutcome:
         ]
 
 
-#: 시연 공장의 품목 구성. (라인, 품목) → 합성 무늬 이름.
+#: 시연 공장의 품목 구성. (라인, 품목, 카테고리).
+#:
+#: 세 번째 값은 **VisA 카테고리 이름이자 합성 무늬 이름**입니다. VisA 원본이
+#: 있으면 그 카테고리를 읽고, 없으면 같은 이름의 합성 무늬를 만듭니다.
 #:
 #: **뱅크는 품목마다 따로 있습니다.** 캡슐의 정상 패치로 PCB 를 판정할 수
 #: 없습니다. 품목이 하나뿐이면 그 사실이 코드에서 드러나지 않아 뱅크가
@@ -189,6 +229,42 @@ DEMO_ITEMS: list[tuple[str, str, str]] = [
 #: 오염을 넣을 품목 하나. 나머지는 깨끗하다.
 #: 전 품목을 오염시키면 "이 품목만 문제다"를 보여줄 수 없습니다.
 CONTAMINATED_ITEM = ("line_02", "capsules")
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+#: VisA 원본이 놓이는 자리. `scripts/measure_trace_crop.py` 와 같은 규약입니다
+#: (`<루트>/<카테고리>/Data/Images/{Normal,Anomaly}`). 다른 곳에 두었으면
+#: 환경 변수 `SHVO_VISA_ROOT` 로 가리킵니다.
+VISA_ROOT = Path(os.environ.get("SHVO_VISA_ROOT") or REPO_ROOT / "VisA_20220922")
+
+#: VisA 로 돌 때의 특징 추출 설정. **기본값을 그대로 씁니다.**
+#:
+#: 합성용 `DEMO_CONFIG`(resnet18 · 64/64)를 VisA 에 그대로 쓰면 실측표의
+#: 256/224(AUROC 0.526, 무작위 수준)보다도 아래입니다. 화면은 멀쩡히 그려지고
+#: 숫자만 무의미해지므로 "돌아간다"와 "맞다"가 갈리지 않습니다.
+VISA_CONFIG = FeatureConfig()
+
+#: VisA 로 돌 때 품목당 이미지 수. 실측에서 512/448 · 정상 150장이
+#: AUROC 0.998 이었습니다(홀드아웃 정상 25 / 결함 25).
+VISA_NORMAL_COUNT = 150
+VISA_DEFECT_COUNT = 12
+
+
+def visa_category_dir(category: str, root: Path | None = None) -> Path:
+    return (root or VISA_ROOT) / category / "Data"
+
+
+def visa_available(root: Path | None = None) -> bool:
+    """VisA 원본으로 돌 수 있는가.
+
+    **품목 셋이 모두 있어야 씁니다.** 하나만 있으면 절반은 실데이터 절반은
+    합성인 화면이 되어 무엇을 보고 있는지 흐려지고, 품목마다 뱅크가 따로라는
+    것도 보여주지 못합니다. 하나라도 없으면 통째로 합성으로 떨어집니다.
+    """
+    return all(
+        (visa_category_dir(category, root) / "Images" / "Normal").is_dir()
+        for _, _, category in DEMO_ITEMS
+    )
 
 
 @dataclass
@@ -213,27 +289,49 @@ class ItemLine:
 
 
 class DemoFactory:
-    """합성 이미지로 만든 가상 공장. 한 번 만들어 두고 재사용한다.
+    """시연용 가상 공장. 한 번 만들어 두고 재사용한다.
+
+    **VisA 원본이 있으면 그것을 읽고, 없으면 합성 이미지를 만든다.** 어느
+    쪽으로 섰는지는 `on_visa` 에 남고 화면이 그대로 표시한다 — 합성으로
+    떨어진 것을 모르고 보면 수치를 실측으로 오해한다.
 
     품목이 여럿이고 **품목마다 뱅크가 따로** 있습니다. MES 가 아는 이미지
     목록(`catalog`)도 함께 만들어, 제품명·로트로 이미지를 찾는 경로가 실제로
     돌아갑니다. 이동현의 가상 공장이 오면 이 클래스가 빠집니다.
     """
 
-    def __init__(self, normal_count: int = 16, defect_count: int = 6, contaminants: int = 2):
-        from tests.synthetic import write_set
+    def __init__(self, normal_count: int | None = None, defect_count: int | None = None,
+                 contaminants: int = 2, visa_root: str | Path | None = None):
+        root = Path(visa_root) if visa_root else VISA_ROOT
+        #: VisA 원본으로 도는가. 화면이 이 값을 그대로 표시해야 합니다 —
+        #: 합성으로 떨어진 것을 모르고 보면 수치를 실측으로 오해합니다.
+        self.on_visa = visa_available(root)
 
-        self.root = Path(tempfile.mkdtemp(prefix="shvo_demo_"))
-        self.embedder = PatchEmbedder(DEMO_CONFIG)
+        if self.on_visa:
+            self.root = root
+            self.embedder = PatchEmbedder(VISA_CONFIG)
+            normal_count = normal_count or VISA_NORMAL_COUNT
+            defect_count = defect_count or VISA_DEFECT_COUNT
+        else:
+            self.root = Path(tempfile.mkdtemp(prefix="shvo_demo_"))
+            self.embedder = PatchEmbedder(DEMO_CONFIG)
+            normal_count = normal_count or 16
+            defect_count = defect_count or 6
+
         self.items: dict[tuple[str, str], ItemLine] = {}
         self.catalog: list[ImageRecord] = []
 
         for index, (line, object_name, variant) in enumerate(DEMO_ITEMS):
-            base = self.root / line / object_name
-            normal = write_set(base / "normal", normal_count, "normal",
-                               seed_offset=index * 1000, variant=variant)
-            defect = write_set(base / "defect", defect_count, "defect",
-                               seed_offset=index * 1000 + 500, variant=variant)
+            if self.on_visa:
+                normal, defect = self._visa_set(variant, normal_count, defect_count)
+            else:
+                from tests.synthetic import write_set
+
+                base = self.root / line / object_name
+                normal = write_set(base / "normal", normal_count, "normal",
+                                   seed_offset=index * 1000, variant=variant)
+                defect = write_set(base / "defect", defect_count, "defect",
+                                   seed_offset=index * 1000 + 500, variant=variant)
 
             dirty = (line, object_name) == CONTAMINATED_ITEM
             mixed_in = list(defect[:contaminants]) if dirty else []
@@ -261,6 +359,28 @@ class DemoFactory:
         self.reported_product = self._product_id(
             CONTAMINATED_ITEM[0], CONTAMINATED_ITEM[1], contaminated.holdout_defect[0]
         )
+
+    def _visa_set(self, category: str, normal_count: int,
+                  defect_count: int) -> tuple[list[Path], list[Path]]:
+        """VisA 한 카테고리에서 정상·결함 이미지를 집는다.
+
+        확장자는 `.JPG` 다. VisA 원본이 대문자이며, 소문자까지 받으면 대소문자를
+        가리지 않는 파일시스템(맥)에서 같은 파일이 두 번 잡힌다.
+
+        정렬해서 앞에서부터 자른다. 무작위로 고르면 같은 뱅크가 두 번 안 나와
+        재현성 검사가 의미를 잃는다.
+        """
+        images = visa_category_dir(category, self.root) / "Images"
+        normal = sorted(images.glob("Normal/*.JPG"))[:normal_count]
+        defect = sorted(images.glob("Anomaly/*.JPG"))[:defect_count]
+
+        if len(normal) < 8 or not defect:
+            raise RuntimeError(
+                f"VisA '{category}' 이미지가 모자란다 "
+                f"(정상 {len(normal)}장 · 결함 {len(defect)}장). "
+                f"찾은 자리: {images}"
+            )
+        return normal, defect
 
     # ── MES 가 아는 것 ──────────────────────────────────────────────────
 
@@ -622,7 +742,7 @@ class _DemoSession:
                 status="done",
                 headline=f"{sum(1 for e in self.evidence if e.usable)}/7 확인",
                 rows=[
-                    (f"{e.item_no}. {e.name}", f"{'○' if e.usable else '×'}  {e.value}")
+                    (f"{e.item_no}. {e.name}", f"{'○' if e.usable else '×'}  {_evidence_value(e.value)}")
                     for e in self.evidence
                 ],
                 note="시각 언어 모델을 쓰는 것은 1번과 5번뿐입니다. 나머지는 조회와 계산입니다.",
