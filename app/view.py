@@ -335,9 +335,13 @@ def _evidence_visual_html(outcome: RunOutcome) -> str:
     lo, hi = min(flat), max(flat)
     span = (hi - lo) or 1.0
 
+    # 역추적이 지목한 칸에만 붙는 표시. f-string 식 안에 역슬래시를 두면
+    # Python 3.11 에서 SyntaxError 다(3.12 의 PEP 701 부터 허용). 대상 환경이
+    # 3.11 이므로 따옴표를 밖으로 뺀다.
+    hot_attr = " class='hot'"
     cells = "".join(
         f'<i style="opacity:{(v - lo) / span:.3f}"'
-        f'{" class=\'hot\'" if top and r == top.query.row and c == top.query.col else ""}'
+        f'{hot_attr if top and r == top.query.row and c == top.query.col else ""}'
         f' title="({r},{c}) {v:.4f}"></i>'
         for r, row in enumerate(result.patch_distances)
         for c, v in enumerate(row)
