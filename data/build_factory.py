@@ -2,6 +2,7 @@
 import csv
 import hashlib
 import os
+import sys
 import random
 import shutil
 from collections import defaultdict
@@ -258,36 +259,62 @@ def determine_lot_code(target_date: date) -> str:
     return LOT_CODE_BY_START_DATE[matched_start]
 
 
-def pick_split(target_date: date, line: str, index_within_day: int, label: str) -> str:
+#: 시나리오 구간 중 뒤쪽 몇 할을 홀드아웃으로 둘 것인가. 앞쪽은 운영이다.
+HOLDOUT_TAIL_RATIO = 0.3
+
+
+def build_split_calendar(bank_lots, scenario_lots) -> Dict[Tuple[str, str], str]:
+    """(라인, 일자) → 어느 구간인가.
+
+    **이길준 수정 (2026-08-15): 이미지 단위 해시에서 일자 구간으로 바꿨다.**
+
+    전에는 `pick_split` 이 이미지마다 해시로 갈라서 **같은 날짜에 뱅크·운영·
+    홀드아웃이 전부 섞였다.** `scripts/check_factory.py` 4번이 그걸 잡는다 —
+    *"화질 기준 분포를 뱅크 구간에서만 뽑아야 하는데, 겹치면 열화가 주입된
+    운영 데이터가 섞여 기준이 오염된다. 그러면 설비·광학 원인을 영영 잡지
+    못한다."*
+
+    **뱅크 구간을 비율로 추정하지 않는다.** 시나리오가 가리키는 날은 전부
+    미검 이미지를 달고 있어서 뱅크 재료가 될 수 없다. 그래서 뱅크 구간은
+    `bank_window_lots` 가 만든 초기 수집 일자로 못박고, 시나리오 일자는
+    운영과 홀드아웃으로만 가른다.
+    """
+    calendar: Dict[Tuple[str, str], str] = {}
+    for line, date_str, _lot_id in bank_lots:
+        calendar[(line, date_str)] = "bank"
+
+    dates_by_line: Dict[str, Set[str]] = defaultdict(set)
+    for line, date_str, _lot_id in scenario_lots:
+        dates_by_line[line].add(date_str)
+
+    for line, dates in dates_by_line.items():
+        ordered = sorted(dates)
+        n_holdout = max(1, round(len(ordered) * HOLDOUT_TAIL_RATIO))
+        cut = max(1, len(ordered) - n_holdout)   # 운영이 하루도 없으면 안 된다
+        for index, date_str in enumerate(ordered):
+            calendar[(line, date_str)] = "operation" if index < cut else "holdout"
+    return calendar
+
+
+def pick_split(calendar: Dict[Tuple[str, str], str], line: str, date_str: str, label: str) -> str:
     """이 이미지가 뱅크용인가 운영용인가 홀드아웃인가.
 
-    **이길준 수정 (2026-08-14): label 을 보고 정하게 바꿨다.**
+    일자 구간이 먼저 정하고, **뱅크 구간이라도 결함이면 운영으로 보낸다.**
+    실제 생산된 불량이므로 manifest 에서 지우지는 않지만 뱅크 재료는 아니다.
 
-    전에는 split 해시와 label 해시가 서로 독립이라 결함 이미지가 뱅크로 그냥
-    들어갔다. 로트 하나를 재현해 세어 보니 `split="bank"` 안에 결함이 9.1%
-    (633 정상 / 63 결함) 였고, **모든 라인 · 모든 로트에서 그렇게 된다.**
-
-    두 가지가 깨진다.
-
-    1. 우리 설계는 한 품목만 오염시킨다. 넷이 동시에 오염되면 "이 라인만
-       문제다"를 보여줄 수 없고, 진단 원인 여섯 중 뱅크 오염이 언제나 참이
-       되어 나머지 다섯을 가를 수가 없다.
-    2. 오염률을 해시가 정한다. 통제가 안 되니 "이 뱅크는 오염 3.2%" 라고 쓸
-       수 없다. 실측값은 조건을 맞춰 잰 것인데 여기엔 조건 자체가 없다.
-
-    그래서 **뱅크에는 정상만 담는다.** 오염은 우연이 아니라 시나리오가
-    `injection.params.contaminated_*` 로 지정한 것만 들어간다
-    (`apply_bank_contamination`). 결함은 운영·홀드아웃으로만 가며, 둘 사이
-    비율(20:10)은 정상 쪽과 같게 유지한다.
+    뱅크에 결함이 들어가는 길은 `apply_bank_contamination` 하나뿐이고,
+    그것은 시나리오가 `injection` 으로 지정했을 때만 열린다. 우연히 섞이면
+    모든 라인이 동시에 오염되어 "이 라인만 문제다"를 보여줄 수 없다.
     """
-    selector = make_seed(target_date.isoformat(), line, str(index_within_day), "split") % 100
-    if label == "defect":
-        return "operation" if selector < 67 else "holdout"
-    if selector < 70:
-        return "bank"
-    if selector < 90:
-        return "operation"
-    return "holdout"
+    window = calendar.get((line, date_str), "operation")
+    if window == "bank" and label == "defect":
+        # 뱅크 구간은 정상만 수집하므로 여기 오면 안 된다. 조용히 다른
+        # 구간으로 넘기면 일자가 겹쳐 4번 검사가 무의미해진다.
+        raise ValueError(
+            f"뱅크 구성 구간({line}/{date_str})에 결함 이미지가 생성됐다. "
+            "build_base_factory 가 이 구간에 결함을 넣지 않아야 한다."
+        )
+    return window
 
 
 def error_code_for(defect_name: str) -> str:
@@ -364,7 +391,21 @@ def build_copy_task(source_rel: str, destination_path: Path) -> CopyTask:
     return CopyTask(source_rel=source_rel, destination_path=destination_path)
 
 
+#: 이미지를 실제로 복사할 것인가. `--no-images` 로 끈다.
+#:
+#: **이길준 추가 (2026-08-14).** 로트 26개 × 1,000장이라 복사본이 약 5.2GB 다.
+#: 그런데 `manifest.csv` · `mes.csv` 만 있으면 되는 일이 많다 — 조회 계층
+#: (`lookup/factory.py`)이 하는 것은 전부 조인이라 파일이 실제로 있어야 할
+#: 이유가 없고, 계약 테스트도 CSV 로 돈다.
+#:
+#: 시연에는 이미지가 필요하다. **끄고 만든 것으로 시연하지 말 것** —
+#: `factory_summary.txt` 에 어느 쪽으로 만들었는지 남는다.
+COPY_IMAGES = True
+
+
 def execute_copy_tasks(copy_tasks: List[CopyTask]) -> None:
+    if not COPY_IMAGES:
+        return
     unique_tasks = {}
     for task in copy_tasks:
         unique_tasks[str(task.destination_path)] = task
@@ -386,9 +427,41 @@ def collect_target_lots(selected_scenarios: List[ScenarioInfo]) -> List[Tuple[st
     return sorted(lot_keys)
 
 
+#: 라인마다 시나리오 발생 **이전에** 둘 초기 뱅크 구성 일자 수.
+#:
+#: **이길준 추가 (2026-08-15).** 로트는 시나리오 attachment 가 가리키는
+#: 자리에서만 만들어졌는데, 시나리오는 전부 미검 이미지를 하나씩 달고 있다.
+#: 그래서 **결함이 없는 날이 하루도 없었고**, 뱅크 구간과 운영 구간이
+#: 일자로 갈릴 수가 없었다(`scripts/check_factory.py` 4번).
+#:
+#: 현장 순서를 그대로 따른다 — 설비를 들이고 **정상만 모아 초기 뱅크를 만든
+#: 뒤** 운영이 시작되고, 그러다 미검이 난다. 그 앞 구간을 만들어 준다.
+BANK_WINDOW_DAYS = 3
+
+#: 초기 뱅크 구성 일자를 시나리오 첫날로부터 며칠 앞에 둘 것인가.
+BANK_WINDOW_GAP_DAYS = 7
+
+
+def bank_window_lots(selected_scenarios: List[ScenarioInfo]) -> List[Tuple[str, str, str]]:
+    """라인마다 시나리오 이전에 둘 초기 뱅크 구성 로트."""
+    earliest: Dict[str, date] = {}
+    for line, date_str, _lot_id in collect_target_lots(selected_scenarios):
+        day = date.fromisoformat(date_str)
+        if line not in earliest or day < earliest[line]:
+            earliest[line] = day
+
+    lots: List[Tuple[str, str, str]] = []
+    for line, first_day in sorted(earliest.items()):
+        for offset in range(BANK_WINDOW_DAYS, 0, -1):
+            day = first_day - timedelta(days=BANK_WINDOW_GAP_DAYS + offset)
+            lots.append((line, day.isoformat(), f"LOT-INIT-{line.split('_')[-1]}-{offset}"))
+    return lots
+
+
 def plan_lot_generation(selected_scenarios: List[ScenarioInfo]) -> Dict[Tuple[str, str, str], Set[int]]:
     lot_image_indexes = {}
-    for line, date_str, lot_id in collect_target_lots(selected_scenarios):
+    keys = list(bank_window_lots(selected_scenarios)) + list(collect_target_lots(selected_scenarios))
+    for line, date_str, lot_id in keys:
         indexes = set()
         rng = random.Random(make_seed(line, date_str, lot_id, "base-lot-population"))
         while len(indexes) < NORMAL_IMAGES_PER_LOT + ANOMALY_IMAGES_PER_LOT:
@@ -427,12 +500,25 @@ def build_base_factory(normal_pool: Dict[str, List[SourceSample]], anomaly_pool:
         shutil.rmtree(FACTORY_ROOT)
     FACTORY_ROOT.mkdir(parents=True, exist_ok=True)
     lot_image_indexes = plan_lot_generation(selected_scenarios)
+    split_calendar = build_split_calendar(
+        bank_window_lots(selected_scenarios), collect_target_lots(selected_scenarios)
+    )
     manifest_rows = []
     copy_tasks = []
     for (line, date_str, lot_id), image_indexes in sorted(lot_image_indexes.items()):
         object_name = VALID_LINES[line]
         sorted_indexes = sorted(image_indexes)
-        background_anomaly_indexes = choose_background_anomaly_indexes(sorted_indexes, line, date_str, lot_id)
+        # **뱅크 구성 구간은 정상만 수집한다.** 초기 뱅크를 만들려고 고른
+        # 구간이라 결함을 담지 않는다(현장의 골든 샘플 수집에 해당). 그래서
+        # 뱅크 구간과 운영 구간의 일자가 겹치지 않고, 화질 기준 분포를
+        # 뱅크 구간에서만 뽑아도 열화가 섞이지 않는다.
+        # `scripts/check_factory.py` 4번이 이 둘을 검사한다.
+        if split_calendar.get((line, date_str)) == "bank":
+            background_anomaly_indexes = set()
+        else:
+            background_anomaly_indexes = choose_background_anomaly_indexes(
+                sorted_indexes, line, date_str, lot_id
+            )
         for image_index in sorted_indexes:
             image_filename = f"img_{image_index:04d}.png"
             relative_image_path = Path(line) / date_str / lot_id / image_filename
@@ -457,7 +543,7 @@ def build_base_factory(normal_pool: Dict[str, List[SourceSample]], anomaly_pool:
                     date_str=date_str,
                     lot_id=lot_id,
                     equipment_id=build_equipment_id(line, lot_id),
-                    split=pick_split(date.fromisoformat(date_str), line, image_index, label),
+                    split=pick_split(split_calendar, line, date_str, label),
                     label=label,
                     mask_path=mask_path,
                     visa_source=sample.image_rel,
@@ -470,6 +556,9 @@ def build_base_factory(normal_pool: Dict[str, List[SourceSample]], anomaly_pool:
 
 
 def apply_scenarios_to_factory(manifest_rows: List[ManifestRow], anomaly_pool: Dict[str, List[SourceSample]], selected_scenarios: List[ScenarioInfo]) -> List[ManifestRow]:
+    split_calendar = build_split_calendar(
+        bank_window_lots(selected_scenarios), collect_target_lots(selected_scenarios)
+    )
     manifest_by_path = {row.image_path: row for row in manifest_rows}
     copy_tasks = []
     for scenario in selected_scenarios:
@@ -488,7 +577,7 @@ def apply_scenarios_to_factory(manifest_rows: List[ManifestRow], anomaly_pool: D
                 date_str=date_str,
                 lot_id=lot_id,
                 equipment_id=build_equipment_id(line, lot_id),
-                split=pick_split(date.fromisoformat(date_str), line, image_index, "defect"),
+                split=pick_split(split_calendar, line, date_str, "defect"),
                 label="defect",
                 mask_path=sample.mask_rel if sample.mask_rel else "",
                 visa_source=sample.image_rel,
@@ -606,9 +695,17 @@ def apply_bank_contamination(
                     date_str=date_str,
                     lot_id=lot_id,
                     equipment_id=build_equipment_id(line, lot_id),
-                    # **여기가 핵심이다.** 결함인데 split 이 bank 다. 우연이
-                    # 아니라 시나리오가 그렇게 지정했기 때문에 들어간다.
-                    split="bank",
+                    # **manifest 에는 사실대로 적는다** — 운영 구간에서 실제로
+                    # 생산된 결함이다. `split="bank"` 로 적으면 그 날짜가 뱅크
+                    # 구간으로 잡혀 운영 구간과 겹치고, "화질 기준을 뱅크
+                    # 구간에서만 뽑는다"가 깨진다(check_factory 4번).
+                    #
+                    # **뱅크에 들어갔다는 것은 manifest 의 구간이 아니라 뱅크
+                    # 구성의 사실이다.** 어느 이미지가 뱅크 vN 에 들어갔는지는
+                    # 시나리오의 `injection` 과 factory_summary.txt 가 남긴다.
+                    # 뱅크를 세우는 쪽은 split="bank" 정상 150장에 이 목록을
+                    # 더해서 만든다.
+                    split="operation",
                     label="defect",
                     mask_path=sample.mask_rel if sample.mask_rel else "",
                     visa_source=sample.image_rel,
@@ -633,7 +730,9 @@ def apply_bank_contamination(
     bank_stats: Dict[str, Dict[str, int]] = defaultdict(lambda: {"normal": 0, "defect": 0})
     for row in merged.values():
         if row.split == "bank":
-            bank_stats[row.line][row.label] += 1
+            bank_stats[row.line]["normal"] += 1
+    for row in added:
+        bank_stats[row.line]["defect"] += 1
     # 오염률은 **뱅크를 몇 장으로 세우느냐**로 갈린다. split="bank" 후보
     # 전부(라인당 수천 장)를 분모로 잡으면 안 된다 — 뱅크는 거기서
     # BANK_BUILD_SIZE 장만 뽑아 세운다.
@@ -688,8 +787,10 @@ def verify_scenario_integration(selected_scenarios: List[ScenarioInfo], manifest
                 raise ValueError(f"시나리오 attachment가 defect로 반영되지 않았습니다: {scenario.scenario_id} | {attachment_path}")
             if not manifest_row.mask_path:
                 raise ValueError(f"시나리오 attachment의 mask_path가 비어 있습니다: {scenario.scenario_id} | {attachment_path}")
+            # 이미지 복사를 건너뛴 실행에서는 파일 존재를 보지 않는다.
+            # manifest·MES 가 맞는지는 그대로 검사하므로 계약 확인에는 지장이 없다.
             factory_image_path = FACTORY_ROOT / Path(attachment_path)
-            if not factory_image_path.exists():
+            if COPY_IMAGES and not factory_image_path.exists():
                 raise ValueError(f"시나리오 attachment 이미지가 factory에 없습니다: {scenario.scenario_id} | {factory_image_path}")
             mes_matches = mes_lookup.get((manifest_row.lot_id, manifest_row.line, manifest_row.date_str, manifest_row.ercd), [])
             if not mes_matches:
@@ -800,6 +901,7 @@ def write_summary(mode: str, free_space_gb: float, scenarios: List[ScenarioInfo]
     lines = []
     lines.append("[실행 정보]")
     lines.append(f"- 실행 모드: {mode}")
+    lines.append(f"- 이미지 복사: {'했음' if COPY_IMAGES else '건너뜀 (--no-images) — 시연에 쓰지 말 것'}")
     lines.append(f"- 시작 시 여유 용량(GB): {free_space_gb:.2f}")
     lines.append(f"- 전체 시나리오 수: {len(scenarios)}")
     lines.append(f"- 이번 실행 시나리오 수: {len(selected_scenarios)}")
@@ -824,6 +926,10 @@ def write_summary(mode: str, free_space_gb: float, scenarios: List[ScenarioInfo]
 
 
 def main() -> None:
+    global COPY_IMAGES
+    if "--no-images" in sys.argv:
+        COPY_IMAGES = False
+        print("--no-images: manifest.csv · mes.csv 만 만듭니다 (이미지 복사 건너뜀)")
     random.seed(RANDOM_SEED)
     if not SOURCE_ROOT.exists():
         raise FileNotFoundError(f"원본 데이터셋 폴더가 없습니다: {SOURCE_ROOT}")

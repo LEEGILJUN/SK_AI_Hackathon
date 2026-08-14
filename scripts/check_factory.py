@@ -89,17 +89,23 @@ def main() -> int:
 
     # ── 2. 이미지가 실제로 있는가 ───────────────────────────────────
     print("\n2. 이미지 존재 확인")
-    sample = manifest["image_path"].head(200)
-    absent = [p for p in sample if not (FACTORY / str(p)).exists()]
-    if absent:
-        fail(
-            f"manifest 에 적힌 이미지 중 {len(absent)}개를 찾지 못했습니다 (200개 표본).",
-            f"예: {absent[0]}\n"
-            f"image_path 는 data/factory/ 기준 상대 경로여야 합니다.\n"
-            f"절대 경로나 VisA 원본 경로를 넣으면 안 됩니다.",
-        )
+    summary = REPO_ROOT / "data" / "factory_summary.txt"
+    if summary.exists() and "건너뜀 (--no-images)" in summary.read_text(encoding="utf-8"):
+        print(f"{OK} 건너뜁니다 — --no-images 로 만든 데이터입니다")
+        print("      조회 계층 개발에는 CSV 만 있으면 되지만, **시연에는 이미지가 필요합니다.**")
+        print("      시연용은 `python data/build_factory.py` 로 다시 만드세요 (4090 에서).")
     else:
-        print(f"{OK} 표본 {len(sample)}개 모두 존재")
+        sample = manifest["image_path"].head(200)
+        absent = [p for p in sample if not (FACTORY / str(p)).exists()]
+        if absent:
+            fail(
+                f"manifest 에 적힌 이미지 중 {len(absent)}개를 찾지 못했습니다 (200개 표본).",
+                f"예: {absent[0]}\n"
+                f"image_path 는 data/factory/ 기준 상대 경로여야 합니다.\n"
+                f"절대 경로나 VisA 원본 경로를 넣으면 안 됩니다.",
+            )
+        else:
+            print(f"{OK} 표본 {len(sample)}개 모두 존재")
 
     # ── 3. mes.csv 와 조인 ──────────────────────────────────────────
     print("\n3. mes.csv 와 조인")
@@ -145,18 +151,28 @@ def main() -> int:
         fail("split=operation 인 행이 없습니다.", "5~7일분을 운영 데이터로 표시해야 합니다.")
 
     if not bank_rows.empty and not op_rows.empty:
-        bank_dates = set(bank_rows["date"].unique())
-        op_dates = set(op_rows["date"].unique())
-        overlap = bank_dates & op_dates
-        if overlap:
+        # **라인별로 비교합니다.** 화질 기준 분포는 라인·품목마다 따로 뽑으므로
+        # 구간도 라인 안에서만 갈리면 됩니다. 전역으로 비교하면 2라인의 초기
+        # 수집일이 1라인의 운영일과 같은 날이라는 이유로 걸립니다 — 서로
+        # 아무 상관이 없는데도요. 실제로 그 오탐이 났습니다 (2026-08-15).
+        overlaps: list[str] = []
+        for line in sorted(set(manifest["line"].dropna().unique())):
+            bank_dates = set(bank_rows[bank_rows["line"] == line]["date"].unique())
+            op_dates = set(op_rows[op_rows["line"] == line]["date"].unique())
+            shared = bank_dates & op_dates
+            if shared:
+                overlaps.append(f"{line}: {sorted(shared)[:3]}")
+        if overlaps:
             fail(
-                f"뱅크 구간과 운영 구간의 일자가 겹칩니다: {sorted(overlap)[:3]}",
+                f"뱅크 구간과 운영 구간의 일자가 겹칩니다 — {' / '.join(overlaps[:3])}",
                 "화질 기준 분포를 뱅크 구간에서만 뽑아야 하는데, 겹치면\n"
                 "열화가 주입된 운영 데이터가 섞여 기준이 오염됩니다.\n"
                 "그러면 설비·광학 원인을 영영 잡지 못합니다.",
             )
         else:
-            print(f"{OK} 뱅크 {len(bank_dates)}일 / 운영 {len(op_dates)}일, 겹침 없음")
+            n_bank = len(set(bank_rows["date"].unique()))
+            n_op = len(set(op_rows["date"].unique()))
+            print(f"{OK} 라인마다 뱅크 구간과 운영 구간이 갈립니다 (뱅크 {n_bank}일 / 운영 {n_op}일)")
 
         if not (bank_rows["label"] == "normal").all():
             n = int((bank_rows["label"] != "normal").sum())
