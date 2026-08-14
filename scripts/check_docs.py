@@ -38,6 +38,7 @@ PLANNED = {
     "data/factory/",
     "lookup/factory.py",
     "indexer/scan.py",
+    "scripts/compute_quality_baseline.py",   # data/quality_baseline.yaml 이 가리킴
     "docs/화질지표정의.md",      # 깃사용법에서 파일 만들기 예시로 든 이름
 }
 
