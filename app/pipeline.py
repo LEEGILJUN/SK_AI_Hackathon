@@ -86,7 +86,7 @@ from inspection import (
     sweep_from_results,
 )
 from inspection.crop import crop_patch, crop_with_context
-from inspection.quality import assess_quality
+from inspection.quality import assess_quality, compute_baseline
 from inspection.shadow import ShadowReport
 from lookup import MockLookup
 from lookup.base import RETRIEVAL_KIND, DefectDistribution, ImageRecord
@@ -111,6 +111,27 @@ def _evidence_value(value: Any) -> str:
     if isinstance(value, float):
         return f"{value:.4f}"
     return str(value)
+
+
+#: 합성 정상 이미지에서 뽑은 기준 분포의 표준편차 하한. 평균 대비 비율이다.
+#:
+#: **합성 무늬는 정상끼리 거의 똑같아서 std 가 평균의 0.1% 밖에 안 된다.**
+#: 그러면 아주 작은 편차도 z 가 수십으로 튀어 멀쩡한 이미지가 화질 이탈로
+#: 잡힌다. VisA 실측은 지표별 2.2~9.8% 라 이 하한에 걸리지 않는다
+#: (pcb1 정상 40장: 밝기 2.24% · 대비 2.72% · 선예도 9.77% · 노이즈 8.72%).
+#:
+#: **실데이터 경로에는 적용하지 않는다.** 합성이 실물처럼 보이도록 손보는
+#: 것은 합성 경로 안에서 끝나야 한다.
+SYNTHETIC_MIN_REL_STD = 0.02
+
+
+def _widen_degenerate(stats: dict[str, dict[str, float]]) -> dict[str, dict[str, float]]:
+    """퇴화한 표준편차를 실데이터 수준으로 넓힌다. 합성 경로 전용."""
+    widened = {}
+    for key, values in stats.items():
+        floor = abs(values.get("mean", 0.0)) * SYNTHETIC_MIN_REL_STD
+        widened[key] = {**values, "std": max(values.get("std", 0.0), floor)}
+    return widened
 
 
 #: 합성 이미지 전용 설정. 128px 체커보드에 맞춘 값이라 **VisA 에 쓰면 안 된다**
@@ -217,18 +238,29 @@ class RunOutcome:
 #: 세 번째 값은 **VisA 카테고리 이름이자 합성 무늬 이름**입니다. VisA 원본이
 #: 있으면 그 카테고리를 읽고, 없으면 같은 이름의 합성 무늬를 만듭니다.
 #:
-#: **뱅크는 품목마다 따로 있습니다.** 캡슐의 정상 패치로 PCB 를 판정할 수
-#: 없습니다. 품목이 하나뿐이면 그 사실이 코드에서 드러나지 않아 뱅크가
-#: 하나뿐인 전제가 조용히 박힙니다.
+#: **라인↔품목 매핑의 출처는 `data/build_factory.py` 의 `VALID_LINES` 입니다.**
+#: 거기가 line_01=pcb1 … line_04=pcb4 이고 시나리오 24건도 그렇게 짜여
+#: 있습니다. 전에는 여기가 `line_02=capsules` 였는데, **`lookup/mock.py` 가
+#: 라인·품목을 안 보고 아무 값이나 돌려줘서 안 터지고 있었을 뿐**입니다.
+#: 조회 계층 실구현이 붙으면 그 자리에서 터집니다
+#: (`tests/test_line_object_mapping.py` 가 어긋나면 잡습니다).
+#:
+#: **뱅크는 품목마다 따로 있습니다.** pcb1 의 정상 패치로 pcb2 를 판정할 수
+#: 없습니다 — 둘은 같은 보드(HC-SR04)의 앞면과 뒷면인데, pcb1 뱅크로 재면
+#: pcb2 정상이 pcb1 **결함보다 높게** 찍힙니다(AUROC 1.000, 겹침 없음.
+#: `docs/실험_pcbAUROC.md` 3장). 품목이 하나뿐이면 그 사실이 코드에서
+#: 드러나지 않아 뱅크가 하나뿐인 전제가 조용히 박힙니다.
 DEMO_ITEMS: list[tuple[str, str, str]] = [
-    ("line_02", "capsules", "capsules"),
-    ("line_02", "pcb1", "pcb1"),
-    ("line_03", "macaroni1", "macaroni1"),
+    ("line_01", "pcb1", "pcb1"),
+    ("line_02", "pcb2", "pcb2"),
+    ("line_03", "pcb3", "pcb3"),
 ]
 
 #: 오염을 넣을 품목 하나. 나머지는 깨끗하다.
 #: 전 품목을 오염시키면 "이 품목만 문제다"를 보여줄 수 없습니다.
-CONTAMINATED_ITEM = ("line_02", "capsules")
+#:
+#: 시나리오 `SC-BC-001`(line_01 · pcb1 · 오염 3장)과 같은 자리로 맞춥니다.
+CONTAMINATED_ITEM = ("line_01", "pcb1")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -320,6 +352,9 @@ class DemoFactory:
 
         self.items: dict[tuple[str, str], ItemLine] = {}
         self.catalog: list[ImageRecord] = []
+        #: 품목별 화질 기준. 처음 물어볼 때 계산한다 — 안 쓰는 품목까지
+        #: 미리 재면 시연 첫 요청이 그만큼 느려진다.
+        self._quality_cache: dict[tuple[str, str], dict[str, dict[str, float]]] = {}
 
         for index, (line, object_name, variant) in enumerate(DEMO_ITEMS):
             if self.on_visa:
@@ -416,6 +451,32 @@ class DemoFactory:
     def item_for(self, line: str, object_name: str) -> ItemLine | None:
         return self.items.get((line, object_name))
 
+    def quality_baseline(self, line: str, object_name: str) -> dict[str, dict[str, float]] | None:
+        """그 품목의 화질 기준 분포. **뱅크에 넣은 정상 이미지에서 뽑는다.**
+
+        전에는 `lookup/mock.py` 가 품목과 무관하게 상수 하나를 돌려줬다.
+        그 값이 캡슐 합성 무늬에 맞춰져 있어서, 데모 품목을 pcb 로 바꾸자
+        **멀쩡한 이미지가 전부 화질 이탈로 잡히고 진단이 `equipment_optics`
+        로 나왔다.** 원인 여섯 중 하나가 다른 것을 가려 버린 것이다.
+
+        기준 분포는 원래 품목·라인마다 따로다. 목이라고 상수를 두면 그 사실이
+        코드에서 사라진다. 오염원은 넣지 않는다 — 열화가 섞인 구간으로 기준을
+        뽑으면 설비 문제를 영영 못 잡는다.
+
+        품목당 한 번만 계산하고 캐시한다.
+        """
+        key = (line, object_name)
+        if key in self._quality_cache:
+            return self._quality_cache[key]
+        item = self.items.get(key)
+        if item is None or not item.bank_normal:
+            return None
+        stats = compute_baseline([self.root / p for p in item.bank_normal])
+        if not self.on_visa:
+            stats = _widen_degenerate(stats)
+        self._quality_cache[key] = stats
+        return stats
+
     def relative(self, path: Path) -> str:
         return Path(path).relative_to(self.root).as_posix()
 
@@ -455,6 +516,7 @@ class _DemoSession:
             threshold=threshold,
             catalog=factory.catalog,
             banks=factory.bank_versions(),
+            quality_provider=factory.quality_baseline,
         )
         self.outcome = RunOutcome(issue_text=issue_text, patch_override=patch_override)
 
@@ -714,7 +776,19 @@ class _DemoSession:
 
         result = self.inference
         baseline = self.lookup.get_quality_baseline(line, obj)
-        quality = assess_quality([self.query], baseline.stats, min_images=1)
+        # **판별 2번은 이미지 한 장으로 판정하지 않는다.** 설비 문제는 어느
+        # 시점부터 지속되는 현상이라 구간 비율로 봐야 한다
+        # (`data/quality_baseline.yaml` 의 outlier_rule 이 그렇게 정의돼 있다).
+        #
+        # 전에는 미검 이미지 한 장(`self.query`)만 넣었다. 미검 이미지는
+        # 정의상 결함이 있어서 지표가 흔들리므로 **결함이 뚜렷할수록 설비
+        # 문제로 잡힌다.** 자리표시 기준의 std 가 실제보다 크게 잡혀 있어
+        # 가려져 있었을 뿐이고, 품목별 실제 분포로 바꾸자 바로 드러났다.
+        #
+        # MES 가 가져온 그 로트 전체를 넣는다. 이탈 비율이 기준
+        # (기본 30%)을 넘어야 설비를 의심한다.
+        lot_paths = [f.resolve(r.path) for r in self.records] or [self.query]
+        quality = assess_quality(lot_paths, baseline.stats)
         visible = judge_defect_visible(
             self.vlm, self.query, reported_defect=intake.report.defect_type or "표면 결함"
         )

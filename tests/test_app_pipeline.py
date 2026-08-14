@@ -19,7 +19,7 @@ import pytest
 
 from agents.adapters.base import ChatResponse, ModelAdapter, ToolCall
 from agents.adapters.stub import StubAdapter
-from app.pipeline import DemoFactory, default_issue, run_pipeline
+from app.pipeline import CONTAMINATED_ITEM, DemoFactory, default_issue, run_pipeline
 
 
 class ScriptedLLM(ModelAdapter):
@@ -93,8 +93,9 @@ def run(factory, **kwargs):
     """
     kwargs.setdefault("adapters", (StubAdapter(), StubAdapter()))
     kwargs.setdefault("issue_text", default_issue(factory))
+    line, object_name = CONTAMINATED_ITEM
     kwargs.setdefault("context", {
-        "line": "line_02", "object_name": "capsules",
+        "line": line, "object_name": object_name,
         "defect_type": "dent", "product_id": factory.reported_product,
     })
     return run_pipeline(factory, **kwargs)
@@ -246,7 +247,7 @@ def test_bank_is_resolved_per_item_not_shared(factory):
     outcome = run(factory, patch_override="defect")
     stage = next(s for s in outcome.stages if s.key == "mes")
     used = dict(stage.rows)["품목 뱅크"]
-    assert used == versions[("line_02", "capsules")]
+    assert used == versions[CONTAMINATED_ITEM]
 
 
 def test_unknown_item_has_no_bank_and_stops(factory):
@@ -634,3 +635,59 @@ def test_screen_says_which_data_it_stood_on():
     # 합성일 때만 주의 표시가 붙는다. VisA 로 섰는데 경고가 남으면 실측을 스스로 깎는다.
     assert "banner warn" in _source_banner(False)
     assert "banner warn" not in _source_banner(True)
+
+
+# ── 판별 2번은 한 장이 아니라 구간으로 잰다 ─────────────────────────────
+
+
+def test_quality_is_judged_over_the_lot_not_one_image(factory):
+    """화질 이탈을 미검 이미지 한 장으로 판정하지 않는다.
+
+    **한 번 여기서 진단이 통째로 바뀌었다.** `assess_quality([query])` 로
+    한 장만 재고 있었는데, 미검 이미지는 정의상 결함이 있어서 지표가
+    흔들린다. 그래서 **결함이 뚜렷할수록 설비·광학으로 잡히고**, 뱅크 오염
+    시나리오가 `equipment_optics` 로 나왔다.
+
+    설비 문제는 어느 시점부터 지속되는 현상이라 구간 비율로 봐야 한다
+    (`data/quality_baseline.yaml` 의 `outlier_rule`). MES 가 가져온 로트
+    전체를 넣고, 이탈 비율이 기준을 넘어야 의심한다.
+    """
+    outcome = run(factory, patch_override="defect")
+
+    stage = next(s for s in outcome.stages if s.key == "evidence")
+    label = next(name for name, _ in stage.rows if name.startswith("2."))
+    assert dict(stage.rows)[label].startswith("○"), "판별 2번을 재지 못했다"
+    assert "False" not in dict(stage.rows)[label], (
+        "오염된 뱅크 시연에서 화질이 이탈로 잡혔다 — 한 장만 재고 있지 않은지 보라"
+    )
+
+
+def test_the_contaminated_demo_diagnoses_bank_contamination(factory):
+    """오염을 넣은 품목에서 뱅크 오염이 나온다.
+
+    시연의 주 시나리오다. 다른 원인이 나오면 **원인 하나가 다른 것을 가리고
+    있다**는 뜻이고, 재구성·게이트·섀도·승인까지 뒷단이 통째로 안 돈다.
+    """
+    outcome = run(factory, patch_override="defect")
+
+    assert outcome.diagnosis is not None
+    assert outcome.diagnosis.cause == "bank_contamination", (
+        f"오염 품목인데 {outcome.diagnosis.cause} 로 나왔다"
+    )
+    assert outcome.diagnosis.requires_bank_rebuild
+    assert outcome.finished, "재구성이 답인 원인이면 승인 요청까지 가야 한다"
+
+
+def test_the_quality_baseline_follows_the_item(factory):
+    """화질 기준이 품목마다 다르다.
+
+    목이 상수 하나를 돌려주고 있었다. 기준 분포는 원래 라인·품목마다
+    따로이고, 상수로 두면 그 사실이 코드에서 사라진다. 실제로 그래서
+    데모 품목을 바꾸자 멀쩡한 이미지가 전부 이탈로 잡혔다.
+    """
+    from app.pipeline import DEMO_ITEMS
+
+    seen = [factory.quality_baseline(line, obj) for line, obj, _ in DEMO_ITEMS]
+    assert all(s is not None for s in seen)
+    means = [s["brightness"]["mean"] for s in seen]
+    assert len(set(means)) > 1, "품목이 달라도 기준이 같다 — 상수를 돌려주고 있다"

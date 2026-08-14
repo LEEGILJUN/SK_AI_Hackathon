@@ -89,6 +89,7 @@ class MockLookup:
         self,
         threshold: float = 2.20,
         quality_stats: dict[str, dict[str, float]] | None = None,
+        quality_provider=None,
         criteria_defect_area: float = 150.0,
         criteria_review_area: float | None = 90.0,
         bank_conditions: dict[str, list[str]] | None = None,
@@ -111,6 +112,14 @@ class MockLookup:
             "그 품목에는 배포된 모델이 없다"가 답이 된다.
         """
         self.threshold = threshold
+        #: (라인, 품목) → 화질 기준을 돌려주는 함수. 있으면 이쪽이 먼저다.
+        #:
+        #: **기준 분포는 원래 품목·라인마다 다르다.** 목이라고 상수 하나를
+        #: 돌려주면 그 사실이 코드에서 사라지고, 실제로 그래서 한 번 틀렸다 —
+        #: 아래 자리표시가 캡슐 합성 무늬에 맞춰져 있어서 데모 품목을 pcb 로
+        #: 바꾸자 멀쩡한 이미지가 전부 화질 이탈로 잡히고 진단이
+        #: `equipment_optics` 로 나왔다. 원인 하나가 다른 것을 가린 것이다.
+        self.quality_provider = quality_provider
         self.quality_stats = quality_stats or {
             # 합성 이미지의 실제 분포에 대략 맞춘 자리표시 값이다.
             "brightness": {"mean": 137.0, "std": 4.0},
@@ -158,11 +167,17 @@ class MockLookup:
         self, line: str, object_name: str
     ) -> QualityBaselineRecord | None:
         self._record("get_quality_baseline", line=line, object_name=object_name)
+        stats, note = self.quality_stats, "목 구현. 실제 산출 구간 아님."
+        if self.quality_provider is not None:
+            measured = self.quality_provider(line, object_name)
+            if measured:
+                stats = measured
+                note = "목 구현. 그 품목 뱅크 정상 이미지에서 산출."
         return QualityBaselineRecord(
             line=line,
             object_name=object_name,
-            stats=self.quality_stats,
-            computed_from={"note": "목 구현. 실제 산출 구간 아님."},
+            stats=stats,
+            computed_from={"note": note},
         )
 
     # ── 판별 7번 ────────────────────────────────────────────────────────
