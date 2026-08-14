@@ -24,7 +24,7 @@
     get_threshold         thresholds.yaml     자리표시 (장영진 확정 필요)
     get_criteria          criteria.yaml       규칙 1건뿐 — pcb 는 아직 없음
     get_quality_baseline  quality_baseline.yaml / 이미지에서 산출
-    find_similar_issues   issue_history.jsonl  아직 없음 → 빈 목록
+    find_similar_issues   issue_history.jsonl  ✓ 24건 (중복 차단 전용)
 
 ── 조인으로 답한다. 임베딩하지 않는다 ───────────────────────────────────
 
@@ -358,6 +358,11 @@ class FactoryLookup:
             if not raw:
                 continue
             node = json.loads(raw)
+            # 주석 줄. JSONL 에는 주석 문법이 없어서 이렇게 둔다 — 데이터
+            # 파일에 규칙을 적어 두지 않으면 다음 사람이 왜 이렇게 생겼는지
+            # 모른 채 고친다.
+            if "_comment" in node:
+                continue
             matched = [
                 key for key, _weight in MATCH_WEIGHT.items()
                 if query.get(key) and query[key] == node.get(key)
