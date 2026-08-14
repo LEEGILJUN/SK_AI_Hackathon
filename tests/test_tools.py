@@ -22,7 +22,6 @@ from agents.curate import CurationPlan, RemovalCandidate, plan_curation
 from agents.diagnose import DiagnosisResult
 from inspection.types import InferenceResult, NearestMatch, PatchRef
 from agents.tools import (
-    COMPARE_SPEC,
     DIAGNOSE_SPEC,
     PLAN_SPEC,
     REBUILD_SPEC,

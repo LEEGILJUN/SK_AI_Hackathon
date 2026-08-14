@@ -240,11 +240,11 @@ REBUILD_SPEC = ToolSpec(
     },
 )
 
-COMPARE_SPEC = ToolSpec(
-    name="compare_banks",
-    description="재구성 전후 뱅크의 구성 차이를 비교한다. 재구성을 먼저 실행해야 한다.",
-    parameters={"type": "object", "properties": {}},
-)
+# `compare_banks` 는 도구로 내보내지 않는다. `agents/rebuild.py` 에 함수로
+# 있고 테스트가 쓰지만, 어느 레지스트리에도 등록되지 않아 모델이 부를 수 없다.
+# **정의만 있고 아무 데서도 등록되지 않은 ToolSpec 이 있었다** — 읽는 사람에게
+# "이 도구가 있다"고 약속해 놓고 지키지 않는 셈이라 걷어냈다(2026-08-14).
+# 재구성 전후 비교를 화면에 내보내기로 정하면 그때 스펙을 다시 만든다.
 
 GATE_SPEC = ToolSpec(
     name="evaluate_gate",
