@@ -68,6 +68,25 @@ from lookup.base import (
 )
 from lookup.mock import MockLookup
 
+#: 시험이 물어볼 (라인, 품목). **출처는 `data/build_factory.py` 의
+#: `VALID_LINES` 다.** 전에는 `line_02/capsules` 를 박아 뒀는데, 매핑이
+#: pcb 로 옮겨간 뒤 그 조합이 없어져 **형태 시험 셋이 전부 건너뛰어졌다.**
+#: 초록인데 아무것도 안 재고 있었다.
+DEMO_ITEM = ("line_01", "pcb1")
+
+
+def bank_version_of(lookup) -> str | None:
+    """이 구현이 그 품목에 쓰는 뱅크 이름.
+
+    **버전 문자열을 시험에 박지 않는다.** 목은 `v3`, 공장 구현은
+    `pcb1-01-v1` 을 쓴다 — 이름 규칙은 구현의 자유이고 계약이 아니다.
+    박아 두면 한쪽에서만 시험이 건너뛰어진다(실제로 그랬다).
+    """
+    profile = lookup.resolve_bank(*DEMO_ITEM)
+    return profile.bank_version if profile else None
+
+DEMO_DEFECT = "scratch"
+
 REQUIRED_METHODS = (
     "get_threshold",
     "get_quality_baseline",
@@ -176,9 +195,9 @@ def test_find_similar_issues_returns_list_never_none(lookup):
 
 def test_threshold_shape(lookup):
     """판별 3번 — 임계값."""
-    record = lookup.get_threshold("line_02", "capsules", "v3")
+    record = lookup.get_threshold(*DEMO_ITEM, bank_version_of(lookup) or "")
     if record is None:
-        pytest.skip("line_02/capsules/v3 데이터가 아직 없다")
+        pytest.skip(f"{DEMO_ITEM} 임계값이 아직 없다")
 
     assert isinstance(record, ThresholdRecord)
     assert isinstance(record.value, (int, float)), "value 는 숫자여야 합니다."
@@ -191,9 +210,9 @@ def test_quality_baseline_shape(lookup):
     stats 는 inspection.quality.assess_quality 에 그대로 넘어갑니다.
     지표마다 mean 과 std 가 있어야 하고, std 가 0 이면 z 점수를 못 냅니다.
     """
-    record = lookup.get_quality_baseline("line_02", "capsules")
+    record = lookup.get_quality_baseline(*DEMO_ITEM)
     if record is None:
-        pytest.skip("line_02/capsules 데이터가 아직 없다")
+        pytest.skip(f"{DEMO_ITEM} 화질 기준이 아직 없다")
 
     assert isinstance(record, QualityBaselineRecord)
     assert record.stats, "stats 가 비어 있습니다."
@@ -211,7 +230,7 @@ def test_quality_baseline_shape(lookup):
 
 def test_criteria_verdict_works(lookup):
     """판별 7번 — 면적이 판정으로 옮겨져야 한다."""
-    rule = lookup.get_criteria("line_02", "capsules", "dent")
+    rule = lookup.get_criteria(*DEMO_ITEM, DEMO_DEFECT)
     if rule is None:
         pytest.skip("판정 기준 데이터가 아직 없다")
 
@@ -236,7 +255,7 @@ def test_criteria_respects_as_of_date(lookup):
     못한다. at 인자를 받는지만 확인한다.
     """
     try:
-        lookup.get_criteria("line_02", "capsules", "dent", at=date(2026, 6, 1))
+        lookup.get_criteria(*DEMO_ITEM, DEMO_DEFECT, at=date(2026, 6, 1))
     except TypeError as exc:
         pytest.fail(
             f"get_criteria 가 at 인자를 받지 못합니다: {exc}\n"
@@ -246,9 +265,10 @@ def test_criteria_respects_as_of_date(lookup):
 
 def test_bank_profile_coverage(lookup):
     """판별 6번 — 현재 조건이 뱅크 구성에 있는가."""
-    profile = lookup.get_bank_profile("v3")
+    version = bank_version_of(lookup)
+    profile = lookup.get_bank_profile(version) if version else None
     if profile is None:
-        pytest.skip("뱅크 v3 데이터가 아직 없다")
+        pytest.skip(f"{DEMO_ITEM} 뱅크 프로파일이 아직 없다")
 
     assert isinstance(profile, BankProfile)
     assert profile.conditions, (
@@ -274,9 +294,10 @@ def test_estimated_history_is_marked(lookup):
     담당자 확인 후에만 확정으로 승격한다는 원칙이 있다. 값 자체를 강제하지는
     않고 필드가 있는지만 본다.
     """
-    profile = lookup.get_bank_profile("v3")
+    version = bank_version_of(lookup)
+    profile = lookup.get_bank_profile(version) if version else None
     if profile is None:
-        pytest.skip("뱅크 v3 데이터가 아직 없다")
+        pytest.skip(f"{DEMO_ITEM} 뱅크 프로파일이 아직 없다")
     assert isinstance(profile.is_estimated, bool)
 
 
@@ -291,9 +312,10 @@ def test_diagnosis_runs_with_this_lookup(lookup):
     from agents.diagnose import collect_evidence, decide
     from inspection.types import InferenceResult, NearestMatch, PatchRef
 
-    threshold = lookup.get_threshold("line_02", "capsules", "v3")
-    profile = lookup.get_bank_profile("v3")
-    criteria = lookup.get_criteria("line_02", "capsules", "dent")
+    version = bank_version_of(lookup) or ""
+    threshold = lookup.get_threshold(*DEMO_ITEM, version)
+    profile = lookup.get_bank_profile(version)
+    criteria = lookup.get_criteria(*DEMO_ITEM, DEMO_DEFECT)
 
     match = NearestMatch(
         query=PatchRef("q.png", 1, 2, 10),
@@ -346,9 +368,9 @@ def test_resolve_bank_returns_profile_or_none(lookup):
         f"BankProfile 또는 None 이어야 합니다."
     )
 
-    known = lookup.resolve_bank("line_02", "capsules")
+    known = lookup.resolve_bank(*DEMO_ITEM)
     if known is not None:
-        assert known.line == "line_02" and known.object_name == "capsules", (
+        assert (known.line, known.object_name) == DEMO_ITEM, (
             "물어본 품목과 다른 프로파일이 왔습니다. "
             "뱅크가 하나뿐인 전제가 남아 있지 않은지 보세요."
         )
