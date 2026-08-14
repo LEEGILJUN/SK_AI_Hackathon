@@ -40,6 +40,13 @@ class VisionJudgment:
 
     usable 이 False 인 결과는 진단 근거로 쓰지 않는다. 모델이 없었거나
     (is_stub), 판단하지 못한 경우(unknown)다.
+
+    call_failed 는 **모델에게 물어보지도 못한 경우**다. 호출이 예외로 죽으면
+    verdict 가 unknown 으로 돌아오는데, 그것은 "모델이 모르겠다고 답한 것"과
+    전혀 다르다. 앞은 모델의 판단이고 뒤는 모델이 그 일을 못 하는 것이다.
+    진단 근거로는 둘 다 못 쓰지만(usable=False), 모델을 검사할 때는 갈라야
+    한다. 시각 기능이 없는 모델(투영기 미탑재)에 이미지를 보내면 400 이
+    떨어지는데, 그것을 "모를 때 지어내지 않았다"로 세면 통과가 뜬다.
     """
 
     verdict: Verdict
@@ -48,6 +55,7 @@ class VisionJudgment:
     model: str
     is_stub: bool
     raw_text: str = ""
+    call_failed: bool = False
 
     @property
     def usable(self) -> bool:
@@ -57,7 +65,9 @@ class VisionJudgment:
         return asdict(self) | {"usable": self.usable}
 
 
-def _unknown(adapter: ModelAdapter, reason: str, raw: str = "") -> VisionJudgment:
+def _unknown(
+    adapter: ModelAdapter, reason: str, raw: str = "", call_failed: bool = False
+) -> VisionJudgment:
     return VisionJudgment(
         verdict="unknown",
         confidence=0.0,
@@ -65,6 +75,7 @@ def _unknown(adapter: ModelAdapter, reason: str, raw: str = "") -> VisionJudgmen
         model=adapter.describe(),
         is_stub=adapter.is_stub,
         raw_text=raw,
+        call_failed=call_failed,
     )
 
 
@@ -124,7 +135,7 @@ def judge_defect_visible(
             [ChatMessage.user(prompt, images=[ImagePart(image)])], json_object=True
         )
     except Exception as exc:
-        return _unknown(adapter, f"시각 판독 호출이 실패했다: {exc}")
+        return _unknown(adapter, f"시각 판독 호출이 실패했다: {exc}", call_failed=True)
 
     verdict, confidence, reason = _read(response.json(), {"defect", "normal", "unknown"})
     if verdict == "unknown" and not reason:
@@ -192,7 +203,7 @@ def judge_bank_patch(
     try:
         response = adapter.chat([ChatMessage.user(prompt, images=images)], json_object=True)
     except Exception as exc:
-        return _unknown(adapter, f"패치 판독 호출이 실패했다: {exc}")
+        return _unknown(adapter, f"패치 판독 호출이 실패했다: {exc}", call_failed=True)
 
     verdict, confidence, reason = _read(response.json(), {"defect", "normal", "unknown"})
     if verdict == "unknown" and not reason:

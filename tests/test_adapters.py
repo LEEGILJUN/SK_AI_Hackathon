@@ -193,6 +193,74 @@ def test_call_failure_becomes_unknown_not_exception():
     assert "실패" in judgment.reason
 
 
+# ── 물어보지도 못한 것과 모르겠다고 답한 것 ────────────────────────────
+
+
+class _NoVision(StubAdapter):
+    """시각 기능이 없는 모델. 이미지를 보내면 400 이 떨어진다.
+
+    is_stub 를 False 로 둔다. 스텁이 아니라 **실제 모델인데 그 일을 못 하는**
+    경우를 흉내 내는 것이 목적이다.
+    """
+
+    is_stub = False
+
+    def chat(self, *args, **kwargs):
+        raise RuntimeError("Error code: 400 - vision not supported")
+
+
+def test_call_failure_is_marked_separately_from_unknown():
+    """호출이 죽어서 나온 unknown 은 call_failed 로 갈린다.
+
+    투영기 없는 모델에 이미지를 보내면 400 이 떨어지는데, verdict 만 보면
+    "모를 때 지어내지 않았다"와 구분되지 않는다. 둘은 전혀 다르다 —
+    앞은 모델이 그 일을 못 하는 것이고 뒤는 모델의 판단이다.
+    """
+    failed = judge_defect_visible(_NoVision(), make_normal(1))
+    answered = judge_defect_visible(
+        StubAdapter(scripted=[{"verdict": "unknown", "confidence": 0.0}]), make_normal(1)
+    )
+
+    assert failed.verdict == answered.verdict == "unknown"
+    assert failed.call_failed is True
+    assert answered.call_failed is False
+
+    # 판별 5번 경로도 같아야 한다.
+    assert judge_bank_patch(_NoVision(), make_normal(1)).call_failed is True
+
+
+def test_call_failed_does_not_change_diagnosis_layer():
+    """근거 계층은 그대로다. usable 이 이미 unknown 을 걸러낸다."""
+    failed = judge_defect_visible(_NoVision(), make_normal(1))
+
+    assert failed.usable is False
+    assert cause_from_patch_judgment(failed) is None
+    assert failed.to_dict()["call_failed"] is True
+
+
+def test_model_check_fails_when_vision_call_dies():
+    """시각 기능이 없는 모델에 "통과"가 뜨면 안 된다.
+
+    check_vision 이 unknown 을 전부 보류로 세던 시절, 400 으로 죽은 호출이
+    보류 2건으로 집계돼 "모두 통과"가 떴다. 투영기가 안 붙은 것을 모르고
+    시연에 들어가게 된다.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parent.parent / "scripts" / "check_models.py"
+    spec = importlib.util.spec_from_file_location("check_models", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.check_vision(_NoVision()) is False
+
+    # 모델이 스스로 unknown 이라 답한 것은 여전히 통과다.
+    held = StubAdapter(scripted=[{"verdict": "unknown"}, {"verdict": "unknown"}])
+    held.is_stub = False
+    assert module.check_vision(held) is True
+
+
 def test_confidence_is_clamped():
     adapter = StubAdapter(scripted=[{"verdict": "defect", "confidence": 3.7}])
     assert judge_bank_patch(adapter, make_normal(1)).confidence == 1.0
