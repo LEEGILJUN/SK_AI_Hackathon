@@ -166,6 +166,33 @@ CHECKS_SPEC = ToolSpec(
     parameters={"type": "object", "properties": {}},
 )
 
+ONTOLOGY_SPEC = ToolSpec(
+    name="lookup_ontology",
+    description=(
+        "미검출 원인 6종과 판별 7항목의 정의를 조회한다 — 각 원인이 무엇을 뜻하는지, "
+        "혼동하기 쉬운 원인과 무엇으로 갈리는지, 어떤 조치가 권고되고 어떤 조치가 금지인지, "
+        "뱅크 재구성이 답인지. **이 도구는 원인을 정하지 않는다.** 이번 이슈의 원인은 "
+        "diagnose_issue 가 판별 7항목으로 낸다. 여기서 읽은 정의가 그럴듯하다는 이유로 "
+        "원인을 고르면 안 된다. 언제든 부를 수 있고 순서 제약이 없다."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "cause": {
+                "type": "string",
+                "description": (
+                    "원인 id. threshold | bank_contamination | coverage_gap | "
+                    "normal_overlap | equipment_optics | criteria. 비우면 전체 요약"
+                ),
+            },
+            "check_item": {
+                "type": "integer",
+                "description": "판별 항목 번호 1~7. 비우면 전체 요약",
+            },
+        },
+    },
+)
+
 DIAGNOSE_SPEC = ToolSpec(
     name="diagnose_issue",
     description=(
@@ -256,9 +283,12 @@ available to you and report what happened, in Korean.
 
 Rules you must follow:
 - Call diagnose_issue first. Do not guess the cause yourself; the tool decides it.
+- If you are unsure what a cause means, what separates it from a similar one, or
+  which actions are forbidden for it, call lookup_ontology. It describes the six
+  causes and the seven checks. It never decides the cause of this issue.
 - If the diagnosis says a bank rebuild is not required, do NOT call rebuild_bank.
-  Four of the six causes are not solved by rebuilding, and rebuilding anyway wastes
-  effort and can make detection worse.
+  Most of the six causes are not solved by rebuilding, and rebuilding anyway wastes
+  effort and can make detection worse. lookup_ontology tells you which ones.
 - Call plan_curation before rebuild_bank. Read the plan before confirming.
 - You cannot deploy anything. A rebuilt bank is only a candidate.
 - When you are done, summarise in Korean: the cause, the evidence, what you did,

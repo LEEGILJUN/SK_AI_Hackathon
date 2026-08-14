@@ -168,6 +168,46 @@ def test_asking_the_model_for_the_patch_verdict_withholds_when_unconnected(facto
     assert value.startswith("×"), "모델이 없으면 판별 5번은 근거로 쓰이지 않아야 한다"
 
 
+# ── 온톨로지 조회는 판정에 손대지 못한다 ────────────────────────────────
+
+
+def test_the_model_can_read_the_cause_taxonomy_without_changing_the_verdict(factory):
+    """모델이 온톨로지를 읽어도 원인은 그대로 규칙이 낸다.
+
+    조회 결과에 여섯 원인의 정의가 다 들어 있으므로, 이것이 판정에 새면
+    모델이 "설명이 그럴듯한 원인"을 고를 수 있게 된다. 순서 제약도 없어야
+    한다 — 정의를 묻는 데 앞 단계가 필요할 이유가 없다.
+    """
+    with_lookup = [
+        ("lookup_ontology", {}),                       # 아무것도 하기 전에 물어도 된다
+        *FULL_PLAN[:4],
+        ("lookup_ontology", {"cause": "normal_overlap"}),
+        *FULL_PLAN[4:],
+    ]
+    read = run(factory, patch_override="defect",
+               adapters=(ScriptedLLM(with_lookup), StubAdapter()))
+    plain = run(factory, patch_override="defect",
+                adapters=(ScriptedLLM(FULL_PLAN), StubAdapter()))
+
+    statuses = dict(read.tool_trace)
+    assert statuses["lookup_ontology"] == "성공"
+    assert read.diagnosis is not None and plain.diagnosis is not None
+    assert read.diagnosis.cause == plain.diagnosis.cause, (
+        "온톨로지를 읽었다고 원인이 달라지면 진단이 유사도 맞히기가 된다"
+    )
+    assert read.diagnosis.requires_bank_rebuild == plain.diagnosis.requires_bank_rebuild
+
+
+def test_the_fixed_replay_does_not_fake_an_ontology_lookup(factory):
+    """모델이 없으면 온톨로지를 부르지 않는다.
+
+    물어볼 주체가 없는데 재생 목록에 끼워 두면, 아무도 읽지 않은 조회가
+    화면에 남아 모델이 확인한 것처럼 보인다.
+    """
+    outcome = run(factory, patch_override="defect")
+    assert "lookup_ontology" not in dict(outcome.tool_trace)
+
+
 # ── 라인·품목이 코드에 박혀 있지 않은가 ─────────────────────────────────
 
 

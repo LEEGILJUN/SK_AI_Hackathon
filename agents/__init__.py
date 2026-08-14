@@ -2,6 +2,7 @@
 
 adapters  언어 모델·시각 언어 모델 실행 환경 (설정으로 교체)
 vision    시각 언어 모델을 쓰는 두 판별 — 항목 1번과 5번
+ontology  원인·판별·조치 체계를 모델이 조회하게. 판정 권한은 없다
 """
 
 from .adapters import ModelAdapter, build_adapters, load_config
@@ -32,6 +33,15 @@ from .diagnose import (
     collect_evidence,
     decide,
     narrate,
+)
+from .ontology import (
+    CAUSES,
+    CHECKS,
+    action_label,
+    describe_cause,
+    describe_check,
+    lookup_ontology,
+    overview,
 )
 from .vision import VisionJudgment, cause_from_patch_judgment, judge_bank_patch, judge_defect_visible
 
@@ -68,6 +78,13 @@ __all__ = [
     "collect_evidence",
     "decide",
     "narrate",
+    "CAUSES",
+    "CHECKS",
+    "action_label",
+    "describe_cause",
+    "describe_check",
+    "lookup_ontology",
+    "overview",
     "build_adapters",
     "load_config",
     "VisionJudgment",

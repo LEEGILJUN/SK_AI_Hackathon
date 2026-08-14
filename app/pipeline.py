@@ -40,6 +40,7 @@ from agents.curate import CurationPlan, plan_curation
 from agents.diagnose import DiagnosisResult, collect_evidence, decide
 from agents.gate import GateResult, ReproducibilityResult, check_reproducibility, evaluate_gate
 from agents.intake import IntakeResult, receive
+from agents.ontology import lookup_ontology
 from agents.rebuild import DirectoryImageSource, RebuildResult, execute_rebuild
 from agents.release import ReleasePackage, prepare_release
 from agents.tools import (
@@ -49,6 +50,7 @@ from agents.tools import (
     INSPECT_SPEC,
     INTAKE_SPEC,
     MES_SPEC,
+    ONTOLOGY_SPEC,
     PLAN_SPEC,
     REBUILD_SPEC,
     RELEASE_SPEC,
@@ -908,6 +910,11 @@ class _DemoSession:
             Tool(MES_SPEC, self.lookup_mes),
             Tool(INSPECT_SPEC, self.run_inspection),
             Tool(CHECKS_SPEC, self.run_checks),
+            # 온톨로지는 세션 상태를 보지 않는다. 순서 제약도 없고 무엇도 바꾸지
+            # 않으며, 모델이 "이 원인이 무슨 뜻인가"를 물을 때만 답한다.
+            # **고정 순서에는 넣지 않는다** — 모델이 없으면 물어볼 주체가 없고,
+            # 재생 목록에 끼워 두면 아무도 읽지 않은 조회가 화면에 남는다.
+            Tool(ONTOLOGY_SPEC, lookup_ontology),
             Tool(DIAGNOSE_SPEC, self.diagnose_issue),
             Tool(PLAN_SPEC, self.plan_curation),
             Tool(REBUILD_SPEC, self.rebuild_bank, mutates_bank=True),

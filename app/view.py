@@ -14,6 +14,7 @@ from html import escape
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
+from agents.ontology import CAUSES, action_label, cause_names
 from app.pipeline import RunOutcome, Stage
 from lookup.base import RETRIEVAL_LABEL
 
@@ -181,6 +182,18 @@ table.ret td:first-child{width:auto;white-space:nowrap}
 .legend{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;
   gap:5px;font-size:12.5px;color:var(--ink3)}
 
+/* ── 진단 지식 체계 ────────────────────────────────────────────────── */
+table.tax td{font-size:13px;vertical-align:top}
+table.tax td:first-child{white-space:nowrap;font-weight:600}
+table.tax tr.here td{background:var(--panel2)}
+table.tax tr.here td:first-child{color:var(--accent)}
+.rb{font-family:var(--mono);font-size:10.5px;padding:2px 7px;border-radius:3px;
+  white-space:nowrap}
+.rb.yes{color:var(--stop);background:var(--stop-bg)}
+.rb.no{color:var(--ok);background:var(--ok-bg)}
+.items{font-family:var(--mono);font-size:11px;color:var(--ink3);white-space:nowrap}
+.kind.schema{color:var(--accent);background:var(--panel2)}
+
 /* ── 이슈 이력 그래프 ──────────────────────────────────────────────── */
 .query-node{background:var(--panel2);border:1px solid var(--accent);border-radius:6px;
   padding:11px 14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
@@ -231,6 +244,71 @@ CAUSE_KO = {
     "coverage_gap": "커버리지 부족", "normal_overlap": "정상 분포 중첩",
     "equipment_optics": "설비·광학", "criteria": "기준 문제",
 }
+
+
+def _taxonomy_html(outcome: RunOutcome) -> str:
+    """진단 지식 체계 — 원인 6종과 무엇으로 갈리는가.
+
+    **화면에 뜨는 이 표가 판정에 쓰인 표 그 자체다.** `agents/ontology.py` 가
+    `diagnose.py` 의 재구성 여부·조치·금지를 그대로 가져오므로, 여기 적힌 값과
+    `decide()` 가 쓴 값이 어긋날 수 없다. 설명용으로 따로 그린 그림이면
+    한쪽만 고쳐지고 화면이 조용히 거짓말을 하게 된다.
+
+    언어 모델은 이 표를 `lookup_ontology` 도구로 **읽을 수만** 있다. 원인은
+    판별 7항목으로 `decide()` 가 낸다. 이 경계가 이 화면에 적혀 있어야 하는
+    이유는, 모델에게 지식을 주는 순간 "모델이 원인을 골랐다"로 오해되기
+    때문이다.
+    """
+    diagnosis = outcome.diagnosis
+    if diagnosis is None:
+        return ""
+
+    rows = ""
+    for cause in cause_names():
+        node = CAUSES[cause]
+        data = node.to_dict()
+        here = cause == diagnosis.cause
+        rebuild = data["requires_bank_rebuild"]
+        forbidden = ", ".join(action_label(a) for a in data["forbidden_actions"]) or "—"
+        rows += (
+            f'<tr class="{"here" if here else ""}">'
+            f'<td>{escape(node.label)}{" ←" if here else ""}</td>'
+            f'<td><span class="rb {"yes" if rebuild else "no"}">'
+            f'{"재구성" if rebuild else "재구성 아님"}</span></td>'
+            f'<td class="items">판별 {"·".join(str(n) for n in data["decided_by"])}</td>'
+            f'<td>{escape(forbidden)}</td></tr>'
+        )
+
+    asked = [name for name, _ in outcome.tool_trace if name == "lookup_ontology"]
+    state = (
+        f"이번 실행에서 모델이 {len(asked)}회 조회했습니다"
+        if asked else
+        "이번 실행에서는 조회되지 않았습니다 — 물어볼 언어 모델이 없으면 부르지 않습니다"
+    )
+
+    rebuild_causes = [CAUSES[c].label for c in cause_names()
+                      if CAUSES[c].to_dict()["requires_bank_rebuild"]]
+    return f"""
+    <div class="evidence">
+      <div class="ev-head">
+        <span class="stage-title">진단 지식 체계 — 무엇으로 갈리는가</span>
+        <span class="kind schema">스키마 조회</span>
+      </div>
+      <table class="tax">{rows}</table>
+      <p class="detail">
+        원인 {len(cause_names())}종 중 <strong>뱅크 재구성이 답인 것은
+        {len(rebuild_causes)}종뿐</strong>입니다({escape(", ".join(rebuild_causes))}).
+        나머지는 다시 만들어도 해결되지 않거나 오히려 나빠집니다.
+        <strong>뱅크 오염과 정상 분포 중첩은 판별 5번 하나로 갈리고</strong>
+        조치가 정반대입니다 — 그래서 5번을 얻지 못하면 판정하지 않습니다.
+      </p>
+      <p class="note">
+        언어 모델은 이 표를 <code>lookup_ontology</code> 도구로 <strong>읽을 수만</strong>
+        있습니다. <strong>이 조회는 원인을 정하지 않습니다</strong> — 판정은 판별
+        7항목을 모아 <code>decide()</code> 가 규칙으로 냅니다. {escape(state)}.
+      </p>
+    </div>
+    """
 
 
 def _ontology_html(outcome: RunOutcome) -> str:
@@ -679,6 +757,9 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
             # 진단 바로 뒤에 근거를 그린다. 문장으로만 적으면 확인할 방법이 없다.
             if stage.key == "diagnose":
                 stages_html.append(_evidence_visual_html(outcome))
+                # 근거 다음에 체계를 놓는다. "이 근거가 왜 이 원인이 되는가"는
+                # 표를 봐야 답이 되고, 표가 앞에 오면 결론부터 읽게 된다.
+                stages_html.append(_taxonomy_html(outcome))
             if stage.key == "evidence":
                 stages_html.append(_retrieval_html(outcome))
             # 그래프는 인테이크 바로 뒤. "이미 답이 나온 일인가"를 묻는 자리다.
