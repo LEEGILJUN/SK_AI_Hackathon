@@ -279,13 +279,20 @@ def test_bank_profile_coverage(lookup):
     for key, values in profile.conditions.items():
         assert isinstance(values, list), f"conditions['{key}'] 는 리스트여야 합니다."
 
-    # covers() 가 실제로 동작하는가
+    # covers() 는 셋을 구분한다. **"기록하지 않은 축"과 "값이 없는 축"은
+    # 다르다** — 모르는 것을 없다고 답하면 뱅크 프로파일이 그 축을 안
+    # 담았다는 이유만으로 커버리지 부족으로 오진한다.
     some_key = next(iter(profile.conditions))
     known = profile.conditions[some_key]
     if known:
-        assert profile.covers(some_key, known[0]) is True
-    assert profile.covers(some_key, "이런값은없다__zzz") is False
-    assert profile.covers("이런조건은없다__zzz", "아무거나") is False
+        assert profile.covers(some_key, known[0]) is True, "있는 값을 못 찾는다"
+    assert profile.covers(some_key, "이런값은없다__zzz") is False, (
+        "기록된 축에서 값을 못 찾으면 False 여야 한다"
+    )
+    assert profile.covers("이런조건은없다__zzz", "아무거나") is None, (
+        "기록하지 않은 축은 None 이어야 한다. False 로 답하면 "
+        "'모른다'가 '없다'가 되어 커버리지 부족으로 오진한다"
+    )
 
 
 def test_estimated_history_is_marked(lookup):

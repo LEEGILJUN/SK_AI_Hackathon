@@ -323,6 +323,7 @@ class FactoryLookup:
             ),
             effective_from=_as_date(row.get("effective_from")),
             effective_to=_as_date(row.get("effective_to")),
+            measurement=dict(row.get("measurement", {}) or {}),
         )
 
     # ── 이슈 이력 그래프 ────────────────────────────────────────────────

@@ -206,6 +206,10 @@ class MockLookup:
             defect_type=defect_type,
             defect_area=self.criteria_defect_area,
             review_area=self.criteria_review_area,
+            # 목이라도 형식은 맞춘다. 비워 두면 파이프라인이 기본값으로
+            # 떨어지는데, 그 기본값이 기준 파일과 다르면 목과 실구현의
+            # 판정이 갈린다.
+            measurement={"aggregate": "largest_blob", "binarize_threshold": 0.5},
             effective_from=date(2026, 6, 1),
             effective_to=None,
         )

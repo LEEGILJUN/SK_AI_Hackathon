@@ -152,6 +152,15 @@ class CriteriaRule:
     review_area: float | None = None
     effective_from: date | None = None
     effective_to: date | None = None
+    #: 면적을 **어떻게 재는가**. `criteria.yaml` 의 `measurement` 절.
+    #:
+    #: 같은 마스크라도 세는 방법으로 판정이 갈린다. 흩어진 잡음을 다 더하면
+    #: 멀쩡한 이미지가 불량으로 나가고, 그것을 "기준 문제"로 오진한다.
+    #:
+    #:     aggregate            largest_blob | total_area
+    #:     binarize_threshold   이상맵을 마스크로 만들 때의 컷오프.
+    #:                          운영 임계값으로 정규화한 값 기준이다
+    measurement: dict[str, Any] = field(default_factory=dict)
 
     def verdict_for(self, area: float) -> str:
         """면적을 판정으로 옮긴다. defect | review | pass."""
@@ -190,11 +199,22 @@ class BankProfile:
     built_at: date | None = None
     is_estimated: bool = False  # 폴더 스캔으로 역추정한 이력인가
 
-    def covers(self, key: str, value: str) -> bool:
-        """그 조건이 뱅크 구성에 포함됐는가."""
+    def covers(self, key: str, value: str) -> bool | None:
+        """그 조건이 뱅크 구성에 포함됐는가.
+
+        셋을 구분한다. **"기록하지 않은 축"과 "값이 없는 축"은 다르다.**
+
+            True   그 축을 기록했고 값이 있다
+            False  그 축을 기록했는데 값이 없다 → 커버리지 부족
+            None   그 축을 아예 기록하지 않았다 → 모른다
+
+        전에는 `None` 자리도 `False` 를 돌려줬다. 그러면 **뱅크 프로파일이
+        설비를 안 담고 있다는 이유만으로 "설비 조건이 뱅크에 없다"가 되어**
+        커버리지 부족으로 오진한다. 모르는 것을 없다고 답하면 안 된다.
+        """
         values = self.conditions.get(key)
         if values is None:
-            return False
+            return None
         return value in values
 
     def to_dict(self) -> dict[str, Any]:

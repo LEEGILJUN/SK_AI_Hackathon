@@ -86,6 +86,7 @@ from inspection import (
     sweep_from_results,
 )
 from inspection.crop import crop_patch, crop_with_context
+from inspection.mask import LARGEST_BLOB, blob_count, defect_area
 from inspection.quality import assess_quality, compute_baseline
 from inspection.shadow import ShadowReport
 from lookup import MockLookup
@@ -640,6 +641,35 @@ class _DemoSession:
             "next": "lookup_mes" if intake.verdict == "proceed" else "중단. 사람에게 되물어야 한다.",
         }
 
+    def _coverage_conditions(self) -> dict[str, str]:
+        """판별 6번이 뱅크 구성에 있는지 물어볼 조건들.
+
+        **전에는 `{"date": "2026-06-01"}` 이 코드에 박혀 있었다.** 어떤
+        이슈를 넣어도 같은 날짜로 물었으니 커버리지 판정이 사실상 고정값이었다.
+
+        조건 축은 여럿이고 **어느 축이 비었는지가 조치를 좌우한다** — 자재
+        배치가 빠진 것과 야간 교대가 빠진 것은 보충할 이미지가 다르다.
+        MES 가 아는 축을 전부 넘기고, 뱅크 프로파일이 가진 축만 실제로
+        비교된다(`BankProfile.covers`).
+
+        미검 건이 있으면 그쪽을 먼저 본다. 문제가 난 자리의 조건이라야
+        "그 조건이 뱅크에 있었나"가 뜻을 갖는다.
+        """
+        source = self.outcome.missed_records or self.records
+        if not source:
+            return {}
+
+        record = source[0]
+        conditions: dict[str, str] = {}
+        if record.captured_at:
+            conditions["date"] = record.captured_at.isoformat()
+        if record.lot:
+            conditions["lot"] = record.lot
+        if record.equipment:
+            conditions["equipment"] = record.equipment
+        return conditions
+
+
     # ── 도구 2. MES 조회 ────────────────────────────────────────────────
 
     def lookup_mes(self, product_id: str = "", lot: str = "",
@@ -732,6 +762,7 @@ class _DemoSession:
             raise RuntimeError("먼저 lookup_mes 를 불러야 한다.")
 
         f = self.factory
+        intake = self.outcome.intake
         paths = [f.resolve(r.path) for r in self.records]
         results = score_images(paths, self.item.bank, f.embedder, root=f.root)
         by_path = {r.image: r for r in results}
@@ -761,8 +792,22 @@ class _DemoSession:
         self_matched = [r for r, i in missed if i.score < in_bank_score]
 
         # 진단은 미검 한 건을 대표로 본다. 없으면 볼 것이 없다.
-        self.query = f.resolve(missed[0][0].path) if missed else None
-        self.inference = missed[0][1] if missed else None
+        # **접수된 제품을 먼저 진단한다.** 이슈가 그 제품으로 왔기 때문이다.
+        #
+        # 전에는 `missed[0]` 을 그냥 썼다. 로트로 확장하면 순서가 바뀌고,
+        # 뱅크에 섞인 오염원은 자기 자신과 거리가 0 이라 미검 목록 맨 앞에
+        # 온다. 그래서 **접수한 제품이 아니라 오염원을 진단하고 있었다** —
+        # 화면의 히트맵도 역추적 크롭도 이슈와 다른 이미지였다.
+        #
+        # 접수 제품이 미검이 아니면(정상 판정이면) 남은 미검 중 첫 번째를
+        # 본다. 그때는 "그 제품은 잡혔는데 같은 로트의 다른 것이 빠졌다"가
+        # 답이고, 화면이 어느 제품을 보고 있는지 표시한다.
+        reported = intake.report.product_id if intake else None
+        ordered = sorted(missed, key=lambda pair: pair[0].product_id != reported)
+
+        self.query = f.resolve(ordered[0][0].path) if ordered else None
+        self.inference = ordered[0][1] if ordered else None
+        missed = ordered
 
         self.outcome.missed_records = [r for r, _ in missed]
         if missed:
@@ -833,8 +878,49 @@ class _DemoSession:
 
         patch_judgment = self._judge_nearest_patch(result)
 
-        cell = (DEMO_CONFIG.crop / result.grid_h) * (DEMO_CONFIG.crop / result.grid_w)
-        hot = sum(1 for row in result.patch_distances for v in row if v >= self.threshold * 0.8)
+        # 이 이슈가 **언제 것인가.** 기준 조회와 커버리지가 이 값을 쓴다.
+        # 이슈 원문에서 뽑은 날짜가 있으면 그것을, 없으면 MES 가 아는
+        # 촬영 일자를 쓴다. 둘 다 없으면 None 이고 그때는 현행 기준으로 본다.
+        observed_at = intake.report.observed_from or next(
+            (r.captured_at for r in self.records if r.captured_at), None
+        )
+
+        # ── 판별 7번의 면적 ────────────────────────────────────────────
+        #
+        # 전에는 격자에서 켜진 칸 수 × 칸 면적으로 냈다. 세 가지가 틀렸다.
+        #
+        #   · **합성 전용 `DEMO_CONFIG.crop`(64)을 VisA 경로에도 썼다.**
+        #     VisA 는 448 이라 칸 면적이 49배 작게 나왔고, 기준 150px² 를
+        #     절대 못 넘어 **실데이터에서는 무조건 양품**이 됐다
+        #   · 흩어진 칸을 다 더했다. 기준 파일은 `largest_blob` 을 요구한다
+        #   · 기준 파일의 `binarize_threshold` 를 안 읽고 따로 정한 값을 썼다
+        #
+        # 이제 이상맵을 이미지 해상도로 올려 연결 성분으로 잰다.
+        # 추론에 쓴 설정을 그대로 쓴다 — 합성이면 64, VisA 면 448.
+        criteria = self.lookup.get_criteria(
+            line, obj,
+            # **"dent" 를 기본값으로 쓰지 않는다.** pcb 결함 어휘에 없는
+            # 이름이라 없는 결함으로 기준을 조회하게 된다. 모델이 못 뽑았으면
+            # 결함유형을 비워 두고 일반 규칙을 찾는다.
+            intake.report.defect_type or None,
+            # **그 시점에 유효했던 기준으로 판정한다.** 지금 기준으로 과거를
+            # 보면 "기준 문제" 원인을 영영 못 찾는다 — 기준이 바뀌었다는
+            # 사실 자체가 원인인데 바뀐 뒤 기준으로만 보기 때문이다.
+            at=observed_at,
+        )
+        crop = self.factory.embedder.config.crop
+        measurement = (criteria.measurement if criteria else None) or {}
+        area = defect_area(
+            result.patch_distances,
+            crop=crop,
+            threshold=self.threshold,
+            binarize_threshold=float(measurement.get("binarize_threshold", 0.5)),
+            aggregate=str(measurement.get("aggregate", LARGEST_BLOB)),
+        )
+        blobs = blob_count(
+            result.patch_distances, crop=crop, threshold=self.threshold,
+            binarize_threshold=float(measurement.get("binarize_threshold", 0.5)),
+        )
 
         self.evidence = collect_evidence(
             defect_visible=visible,
@@ -843,9 +929,17 @@ class _DemoSession:
             threshold=self.lookup.get_threshold(line, obj, item.bank.version),
             patch_judgment=patch_judgment,
             bank_profile=self.lookup.get_bank_profile(item.bank.version),
-            conditions={"date": "2026-06-01"},
-            criteria=self.lookup.get_criteria(line, obj, intake.report.defect_type or "dent"),
-            defect_area=hot * cell,
+            # ── 판별 6번의 조건 ────────────────────────────────────────
+            #
+            # 전에는 `{"date": "2026-06-01"}` 이 박혀 있었다. **어떤 이슈를
+            # 넣어도 같은 날짜로 커버리지를 물었다.**
+            #
+            # 조건 축은 여럿이고 어느 축이 비었는지가 조치를 좌우한다 —
+            # 자재 배치가 빠진 것과 야간 교대가 빠진 것은 보충할 이미지가
+            # 다르다. MES 가 아는 축을 전부 넘긴다.
+            conditions=self._coverage_conditions(),
+            criteria=criteria,
+            defect_area=area,
         )
         self.outcome.stages.append(
             Stage(

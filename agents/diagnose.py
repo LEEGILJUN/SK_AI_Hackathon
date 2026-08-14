@@ -288,18 +288,30 @@ def collect_evidence(
     detail_6 = "뱅크 구성 이력 없음"
     if bank_profile and asked:
         checked = {key: bank_profile.covers(key, value) for key, value in asked.items()}
-        missing = [key for key, present in checked.items() if not present]
-        coverage = not missing
+        missing = [key for key, present in checked.items() if present is False]
+        # **기록하지 않은 축은 판정에서 뺀다.** 모르는 것을 "없다"로 세면
+        # 뱅크 프로파일이 그 축을 안 담았다는 이유만으로 커버리지 부족이 된다.
+        unknown = [key for key, present in checked.items() if present is None]
+        answered = [key for key, present in checked.items() if present is not None]
 
-        if coverage:
-            listed = ", ".join(f"{k}={v}" for k, v in asked.items())
+        coverage = (not missing) if answered else None
+
+        if coverage is None:
+            detail_6 = (
+                f"물어본 조건 {len(asked)}개를 뱅크 {bank_profile.bank_version} "
+                f"구성 이력이 하나도 기록하지 않아 판정할 수 없다"
+            )
+        elif coverage:
+            listed = ", ".join(f"{k}={asked[k]}" for k in answered)
             detail_6 = f"{listed} 가 모두 뱅크 {bank_profile.bank_version} 구성에 포함됨"
         else:
             listed = ", ".join(f"{k}={asked[k]}" for k in missing)
             detail_6 = (
                 f"{listed} 가 뱅크 {bank_profile.bank_version} 구성에 없음 "
-                f"(확인한 조건 {len(asked)}개 중 {len(missing)}개 누락)"
+                f"(기록된 조건 {len(answered)}개 중 {len(missing)}개 누락)"
             )
+        if unknown:
+            detail_6 += f". 기록이 없어 못 본 축: {', '.join(unknown)}"
         if bank_profile.is_estimated:
             detail_6 += " (폴더 스캔으로 역추정한 이력 — 추정)"
 
