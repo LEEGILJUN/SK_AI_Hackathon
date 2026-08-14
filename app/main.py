@@ -62,7 +62,7 @@ def index() -> str:
     "정보가 부족하면 추측하지 않고 되묻는다"가 인테이크의 설계이고, 되물었을
     때 비로소 보충 칸이 열린다.
     """
-    return render_page(None, default_issue(factory()))
+    return render_page(None, default_issue(factory()), on_visa=factory().on_visa)
 
 
 @app.post("/run", response_class=HTMLResponse)
@@ -96,7 +96,8 @@ def run(
         factory(), issue_text=issue_text, patch_override=override,
         context=context or None,
     )
-    return render_page(_last, issue_text, patch_verdict, context or None)
+    return render_page(_last, issue_text, patch_verdict, context or None,
+                       on_visa=factory().on_visa)
 
 
 @app.get("/approval", response_class=PlainTextResponse)

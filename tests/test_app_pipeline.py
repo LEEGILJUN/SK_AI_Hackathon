@@ -527,3 +527,61 @@ def test_unchecked_item_is_marked_apart():
     assert 'class="mark yes"' in _mark("○  True")
     assert "&lt;script&gt;" in _mark("○  <script>")
     assert "<script>" not in _mark("○  <script>")
+
+
+# ── VisA 실데이터로 서는 경로 ──────────────────────────────────────────
+#
+# 실제로 뱅크를 만들어 보는 것은 VisA 원본과 백본 가중치가 있는 기계의 몫이다.
+# 여기서는 **어느 쪽으로 설지 고르는 판단**과 그 판단이 화면에 드러나는지만
+# 본다. 둘 다 원본 없이 확인할 수 있고, 틀리면 조용히 무의미해지는 자리다.
+
+
+def _fake_visa(root, categories):
+    for category in categories:
+        (root / category / "Data" / "Images" / "Normal").mkdir(parents=True)
+        (root / category / "Data" / "Images" / "Anomaly").mkdir(parents=True)
+
+
+def test_visa_is_used_only_when_every_item_is_there(tmp_path):
+    """한 품목만 있으면 합성으로 떨어진다.
+
+    절반은 실데이터 절반은 합성인 화면이 되면 무엇을 보고 있는지 흐려지고,
+    품목마다 뱅크가 따로라는 것도 보여주지 못한다.
+    """
+    from app.pipeline import DEMO_ITEMS, visa_available
+
+    categories = [category for _, _, category in DEMO_ITEMS]
+
+    assert visa_available(tmp_path / "없음") is False
+
+    partial = tmp_path / "일부"
+    _fake_visa(partial, categories[:1])
+    assert visa_available(partial) is False
+
+    whole = tmp_path / "전부"
+    _fake_visa(whole, categories)
+    assert visa_available(whole) is True
+
+
+def test_visa_never_runs_at_the_synthetic_resolution():
+    """VisA 를 64/64 로 재면 실측표의 무작위 수준(0.526)보다도 아래다.
+
+    화면은 멀쩡히 그려지고 숫자만 무의미해지므로 "돌아간다"와 "맞다"가
+    갈리지 않는다. 두 설정이 섞이지 않게 못 박는다.
+    """
+    from app.pipeline import DEMO_CONFIG, VISA_CONFIG
+
+    assert (VISA_CONFIG.resize, VISA_CONFIG.crop) == (512, 448)
+    assert VISA_CONFIG.backbone == "wide_resnet50_2"
+    assert (DEMO_CONFIG.resize, DEMO_CONFIG.crop) != (VISA_CONFIG.resize, VISA_CONFIG.crop)
+
+
+def test_screen_says_which_data_it_stood_on():
+    """합성으로 떨어진 것을 모르고 보면 수치를 실측으로 오해한다."""
+    from app.view import _source_banner
+
+    assert "VisA 실데이터" in _source_banner(True)
+    assert "합성 이미지" in _source_banner(False)
+    # 합성일 때만 주의 표시가 붙는다. VisA 로 섰는데 경고가 남으면 실측을 스스로 깎는다.
+    assert "banner warn" in _source_banner(False)
+    assert "banner warn" not in _source_banner(True)

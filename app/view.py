@@ -86,6 +86,10 @@ pre{background:var(--panel2);border:1px solid var(--rule2);border-radius:6px;
   line-height:1.55;margin:0;max-height:460px}
 .banner{background:var(--panel2);border:1px solid var(--rule);border-left:3px solid var(--accent);
   border-radius:6px;padding:12px 15px;font-size:13.5px;color:var(--ink2)}
+/* 그대로 실측으로 읽으면 안 되는 상태 — 고정 순서 재생, 합성 데이터. */
+.banner.warn{border-left-color:var(--skip)}
+.banner code{font-family:var(--mono);font-size:12.5px;background:var(--panel);
+  border:1px solid var(--rule2);border-radius:3px;padding:1px 5px}
 input{width:100%;font:inherit;color:var(--ink);background:var(--panel2);
   border:1px solid var(--rule);border-radius:5px;padding:9px 10px}
 .supplement{border-top:1px dashed var(--rule2);padding-top:12px;margin-top:2px}
@@ -700,8 +704,29 @@ def _driver_html(outcome: RunOutcome) -> str:
     """
 
 
+def _source_banner(on_visa: bool) -> str:
+    """어떤 데이터로 섰는지 화면이 스스로 말하게 한다.
+
+    **합성으로 떨어진 것을 모르고 보면 수치를 실측으로 오해한다.** 반대로 VisA
+    로 섰는데 "합성입니다"가 계속 떠 있으면 실측 결과를 스스로 깎는다. 둘 다
+    시연에서 손해라 표시를 데이터에 묶는다.
+    """
+    if on_visa:
+        return """
+  <div class="banner">
+    <strong>VisA 실데이터로 돌고 있습니다.</strong> 이미지와 뱅크는 실제이고,
+    조회 계층(MES·이슈 이력)만 목입니다.
+  </div>"""
+    return """
+  <div class="banner warn">
+    <strong>합성 이미지로 돌고 있습니다.</strong> 조회 계층도 목입니다.
+    성능 수치가 아니라 <strong>경로가 이어지는지</strong>를 보는 화면입니다.
+    VisA 원본을 저장소 아래 <code>VisA_20220922/</code> 에 두면 실데이터로 섭니다.
+  </div>"""
+
+
 def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str = "defect",
-                context: dict[str, str] | None = None) -> str:
+                context: dict[str, str] | None = None, on_visa: bool = False) -> str:
     options = [
         ("defect", "결함이다 → 뱅크 오염"),
         ("normal", "진짜 정상품이다 → 정상 분포 중첩"),
@@ -810,6 +835,8 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
             + doc
         )
 
+    source_banner = _source_banner(on_visa)
+
     return f"""<!doctype html>
 <html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -822,10 +849,7 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
        승인 요청 문서까지 만듭니다. <strong>배포는 실행되지 않습니다.</strong></p>
   </header>
 
-  <div class="banner">
-    조회 계층은 목이고 데이터는 합성 이미지입니다. 성능 수치가 아니라
-    <strong>경로가 이어지는지</strong>를 보는 화면입니다.
-  </div>
+  {source_banner}
 
   <form method="post" action="/run">
     <div>
