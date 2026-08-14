@@ -76,6 +76,28 @@ from inspection.shadow import ShadowReport
 from lookup import MockLookup
 from lookup.base import RETRIEVAL_KIND, DefectDistribution, ImageRecord
 
+def _evidence_value(value: Any) -> str:
+    """판별 항목 값을 사람이 읽는 한 줄로 만든다.
+
+    4번 최근접 패치는 딕셔너리라 그대로 찍으면 파이썬 repr 이 화면에 나온다.
+    **이 항목이 진단의 핵심 근거인데 화면에서 가장 안 읽히는 자리가 된다.**
+    무엇을 어디서 얼마나 가까이 찾았는지만 남긴다. 원본은 진단 계층이 그대로
+    들고 있으므로 여기서 줄여도 판정에는 영향이 없다.
+    """
+    if isinstance(value, dict) and "source_image" in value:
+        parts = [Path(str(value["source_image"])).name]
+        row, col = value.get("row"), value.get("col")
+        if row is not None and col is not None:
+            parts.append(f"격자 ({row},{col})")
+        distance = value.get("distance")
+        if isinstance(distance, (int, float)):
+            parts.append(f"거리 {distance:.4f}")
+        return " · ".join(parts)
+    if isinstance(value, float):
+        return f"{value:.4f}"
+    return str(value)
+
+
 DEMO_CONFIG = FeatureConfig(backbone="resnet18", resize=64, crop=64)
 DEFAULT_ISSUE = "2라인 캡슐 표면 찍힘이 며칠째 계속 빠집니다. 육안으로는 명확한데 검사에서 양품으로 나옵니다."
 
@@ -620,7 +642,7 @@ class _DemoSession:
                 status="done",
                 headline=f"{sum(1 for e in self.evidence if e.usable)}/7 확인",
                 rows=[
-                    (f"{e.item_no}. {e.name}", f"{'○' if e.usable else '×'}  {e.value}")
+                    (f"{e.item_no}. {e.name}", f"{'○' if e.usable else '×'}  {_evidence_value(e.value)}")
                     for e in self.evidence
                 ],
                 note="시각 언어 모델을 쓰는 것은 1번과 5번뿐입니다. 나머지는 조회와 계산입니다.",

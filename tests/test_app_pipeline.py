@@ -429,3 +429,101 @@ def test_diagnosis_panel_draws_the_traced_pair(factory):
     assert f"row={top.query.row}&amp;col={top.query.col}" in html
     assert f"row={top.bank.row}&amp;col={top.bank.col}" in html
     assert f"grid_h={grid_h}&amp;grid_w={grid_w}" in html
+
+
+# ── 전 구간 화면의 구조 ────────────────────────────────────────────────
+#
+# 아래 다섯은 **백본 가중치 없이도 돈다.** 위쪽 테스트들은 뱅크를 만들어야 해서
+# 가중치가 캐시에 없으면 통째로 skip 되는데, 그 상태에서 화면 코드가 깨져도
+# 아무도 모른다. 실제로 view.py 가 Python 3.11 에서 import 조차 안 되던 적이
+# 있었고 이 조합 때문에 테스트가 못 잡았다.
+
+
+def _stage_outcome():
+    """가중치 없이 만들 수 있는 최소 결과. 화면 구조만 보기 위한 것이다."""
+    from app.pipeline import RunOutcome, Stage
+
+    return RunOutcome(
+        issue_text="2라인 캡슐 표면 찍힘이 계속 빠집니다.",
+        stages=[
+            Stage(key="intake", title="1. 인테이크", status="done", rows=[("판정", "넘김")]),
+            Stage(key="mes", title="2. MES 조회", status="done", rows=[("찾은 이미지", "14장")]),
+            Stage(key="evidence", title="4. 판별 7항목", status="done",
+                  rows=[("1. defect_visible", "×  unknown"), ("2. quality", "○  True")]),
+            Stage(key="diagnose", title="5. 진단", status="done", rows=[("확신도", "high")]),
+            Stage(key="release", title="10. 승인 요청", status="done", rows=[("패키지", "생성")]),
+        ],
+        approval_markdown="# 승인 요청",
+    )
+
+
+def test_navigation_points_at_sections_that_exist():
+    """이동 바의 링크가 전부 실제 절을 가리켜야 한다.
+
+    누르면 아무 데도 안 가는 링크는 시연 중에 그대로 드러난다.
+    """
+    import re
+
+    from app.view import render_page
+
+    html = render_page(_stage_outcome(), "이슈")
+    nav = re.search(r'<nav class="nav">(.*?)</nav>', html, re.S)
+    assert nav, "이동 바가 없다"
+
+    anchors = re.findall(r'href="#([\w-]+)"', nav.group(1))
+    ids = set(re.findall(r'id="([\w-]+)"', html))
+
+    assert anchors, "이동 바에 링크가 하나도 없다"
+    assert [a for a in anchors if a not in ids] == []
+    assert "stage-diagnose" in anchors
+    assert "doc-approval" in anchors
+
+
+def test_key_stages_stay_open_and_others_collapse():
+    """판별 항목과 진단은 접지 않는다. 근거 자체라 접으면 볼 것이 없다."""
+    import re
+
+    from app.view import render_page
+
+    html = render_page(_stage_outcome(), "이슈")
+
+    for key in ("evidence", "diagnose"):
+        section = re.search(rf'id="stage-{key}".*?</section>', html, re.S).group(0)
+        assert "<details>" not in section, f"{key} 단계가 접혔다"
+
+    # 부차 단계는 접는다. 전 구간 화면이 세로로 너무 길어 시연에서 이동이 안 된다.
+    mes = re.search(r'id="stage-mes".*?</section>', html, re.S).group(0)
+    assert "<details>" in mes
+
+
+def test_first_screen_has_no_navigation_bar():
+    """결과가 없으면 이동할 자리도 없다. 빈 바를 띄우지 않는다."""
+    from app.view import render_page
+
+    assert '<nav class="nav">' not in render_page(None, "이슈 원문")
+
+
+def test_nearest_patch_reads_as_a_sentence():
+    """판별 4번이 파이썬 딕셔너리 원문으로 나오면 안 된다.
+
+    진단의 핵심 근거인데 화면에서 가장 안 읽히는 자리가 된다.
+    """
+    from app.pipeline import _evidence_value
+
+    text = _evidence_value({
+        "source_image": "line_02/capsules/normal/normal_007.png",
+        "row": 3, "col": 0, "bank_row_index": 47, "distance": 0.5697905421257019,
+    })
+
+    assert text == "normal_007.png · 격자 (3,0) · 거리 0.5698"
+    assert "{" not in text
+
+
+def test_unchecked_item_is_marked_apart():
+    """확인하지 못한 항목이 눈에 띄어야 한다. 그리고 본문은 여전히 escape 된다."""
+    from app.view import _mark
+
+    assert 'class="mark no"' in _mark("×  unknown")
+    assert 'class="mark yes"' in _mark("○  True")
+    assert "&lt;script&gt;" in _mark("○  <script>")
+    assert "<script>" not in _mark("○  <script>")
