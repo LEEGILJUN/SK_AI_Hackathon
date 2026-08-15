@@ -15,10 +15,14 @@ from pathlib import Path
 from urllib.parse import quote, urlencode
 
 from agents.ontology import CAUSES, action_label, cause_names
-from app.pipeline import RunOutcome, Stage
+from app.pipeline import FALLBACK_SEQUENCE, RunOutcome, Stage
 from lookup.base import RETRIEVAL_LABEL
 
-STATUS_LABEL = {"done": "진행", "blocked": "중단", "skipped": "건드리지 않음", "pending": "대기"}
+STATUS_LABEL = {"done": "진행", "blocked": "중단", "skipped": "건드리지 않음",
+                "pending": "미도달"}
+
+#: 멈춘 단계에 붙는 이름표. 같은 "중단"이라도 고장과 설계된 정지는 다르다.
+WHY_LABEL = {"blocked": "왜 멈췄나", "skipped": "왜 건드리지 않았나"}
 
 STYLE = """
 :root{
@@ -138,37 +142,75 @@ a{color:var(--accent)}
 .tally .good b{color:var(--ok)}
 .tally .bad b{color:var(--stop)}
 @media (prefers-reduced-motion:reduce){.piece{transition:none}}
+/* 갈린 건은 흘려보내고 끝내지 않는다. 숫자만 쌓이면 "무엇이 왜 갈렸는가"가
+   남지 않아 사람이 확인할 목록이 되지 못한다. */
+.piece.flip img{box-shadow:0 0 0 3px var(--accent)}
+.flips{display:flex;flex-direction:column;gap:7px}
+.flip-row{display:flex;gap:11px;align-items:center;background:var(--panel2);
+  border:1px solid var(--rule2);border-radius:6px;padding:8px 11px}
+.flip-row.focus{border-color:var(--accent)}
+.flip-row img{width:48px;height:48px;object-fit:cover;border-radius:4px;
+  border:1px solid var(--rule);flex:0 0 auto}
+.flip-row .txt{min-width:0;display:flex;flex-direction:column;gap:2px}
+.flip-row .nm{font-family:var(--mono);font-size:11.5px;color:var(--ink3);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.flip-row .mv{font-family:var(--mono);font-size:13px;color:var(--ink)}
+.flip-row .mv s{text-decoration:none;color:var(--ink3)}
+.flip-row .mv b{color:var(--accent)}
+.flip-row .kd{font-family:var(--mono);font-size:10.5px;padding:2px 8px;
+  border-radius:3px;margin-left:auto;white-space:nowrap;flex:0 0 auto}
+.flip-row .kd.up{color:var(--ok);background:var(--ok-bg)}
+.flip-row .kd.down{color:var(--stop);background:var(--stop-bg)}
+.flip-row .why2{font-size:12px;color:var(--ink3)}
 
 /* ── 진단 근거 시각화 ──────────────────────────────────────────────── */
 .evidence{background:var(--panel);border:1px solid var(--rule);border-radius:8px;
   padding:18px;display:flex;flex-direction:column;gap:14px}
 .ev-head{display:flex;justify-content:space-between;align-items:baseline;
   gap:12px;flex-wrap:wrap}
-.ev-grid{display:flex;gap:20px;flex-wrap:wrap}
+/* 히트맵·역추적 두 자리를 한 줄에 놓는다. 세로로 쌓으면 "이 이미지의 이
+   자리가 뱅크의 저 자리와 가까웠다"가 한눈에 안 이어진다. */
+.ev-grid{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
 .ev-grid>div{flex:1;min-width:250px;display:flex;flex-direction:column;gap:8px}
+.ev-grid>div.wide{flex:1.35 1 320px}
 .ev-label{font-family:var(--mono);font-size:11px;letter-spacing:.1em;
   text-transform:uppercase;color:var(--ink3)}
 .heat{display:grid;gap:3px;background:var(--panel2);padding:8px;border-radius:6px;
-  border:1px solid var(--rule2);aspect-ratio:1;max-width:340px}
-.heat i{background:var(--stop);border-radius:2px;min-height:12px;display:block}
+  border:1px solid var(--rule2);aspect-ratio:1;max-width:300px}
+.heat i{background:var(--stop);border-radius:2px;min-height:10px;display:block}
 /* 역추적이 지목한 칸. 이 한 칸이 진단의 출발점이라 눈에 먼저 들어와야 한다. */
 .heat i.hot{outline:3px solid var(--accent);outline-offset:2px;position:relative;z-index:1}
-.score{height:12px;background:var(--panel2);border:1px solid var(--rule2);
-  border-radius:6px;overflow:hidden}
-.score>span{display:block;height:100%;background:linear-gradient(90deg,var(--ok),var(--stop))}
+
+/* 점수 눈금. 임계값을 눈금 위 한 자리에 세워, 점수가 그보다 왼쪽이라
+   양품으로 나갔다는 것이 막대 하나로 읽히게 한다. */
+.gauge{position:relative;height:22px;background:var(--panel2);
+  border:1px solid var(--rule2);border-radius:6px;overflow:hidden}
+.gauge>b{position:absolute;left:0;top:0;bottom:0;
+  background:linear-gradient(90deg,var(--ok),var(--stop));opacity:.75}
+.gauge>i{position:absolute;top:0;bottom:0;width:2px;background:var(--ink)}
+.gauge>u{position:absolute;top:0;bottom:0;width:2px;background:var(--accent);
+  text-decoration:none}
+.ticks{display:flex;justify-content:space-between;font-family:var(--mono);
+  font-size:11px;color:var(--ink3);margin:0}
 .score-num{margin:0;font-family:var(--mono);font-size:14px}
 .score-num em{font-style:normal;font-size:11px;padding:2px 8px;border-radius:3px;
   margin-left:8px;letter-spacing:.06em}
 .score-num em.under{color:var(--stop);background:var(--stop-bg)}
 .score-num em.over{color:var(--ok);background:var(--ok-bg)}
-.pair{display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+.after{font-size:13px;color:var(--ink2);margin:0;background:var(--ok-bg);
+  border-radius:5px;padding:8px 11px}
+.pair{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
   background:var(--panel2);border:1px solid var(--rule2);border-radius:6px;padding:14px}
 .pair figure{margin:0;display:flex;flex-direction:column;gap:6px;align-items:center}
-.pair img{width:120px;height:120px;object-fit:cover;border-radius:5px;
+.pair img{width:116px;height:116px;object-fit:cover;border-radius:5px;
   border:2px solid var(--rule)}
+.pair figure.bank img{border-color:var(--accent)}
 .pair figcaption{font-family:var(--mono);font-size:11px;color:var(--ink2);
   text-align:center;line-height:1.5}
 .pair figcaption span{color:var(--ink3)}
+.pair figcaption b{display:block;font-size:10.5px;letter-spacing:.06em;
+  padding:2px 7px;border-radius:3px;margin-top:3px;color:var(--accent);
+  background:var(--panel)}
 .arrow{font-family:var(--mono);font-size:11px;color:var(--ink3);text-align:center;
   letter-spacing:.08em}
 .arrow b{display:block;font-size:15px;color:var(--accent);margin-top:3px}
@@ -224,25 +266,71 @@ table.tax tr.here td:first-child{color:var(--accent)}
 .chain .res.ok{color:var(--ok);background:var(--ok-bg)}
 .chain .res.no{color:var(--skip);background:var(--skip-bg)}
 
-/* ── 단계 이동 바 ──────────────────────────────────────────────────── */
-.nav{position:sticky;top:0;z-index:20;margin:0 -22px;padding:9px 22px;
+/* ── 진행 레일 ─────────────────────────────────────────────────────── */
+.nav{position:sticky;top:0;z-index:20;margin:0 -22px;padding:10px 22px 9px;
   background:var(--bg);border-bottom:1px solid var(--rule);
-  display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  display:flex;flex-direction:column;gap:8px}
 .nav-label{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;
-  text-transform:uppercase;color:var(--ink3);margin-right:4px}
-.nav a{font-family:var(--mono);font-size:11.5px;line-height:1.35;
+  text-transform:uppercase;color:var(--ink3);margin-right:2px}
+.rail{list-style:none;margin:0;padding:0;display:flex;gap:4px;flex-wrap:wrap}
+.rail li{flex:1 1 84px;min-width:0;display:flex}
+.rail a{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;
   text-decoration:none;color:var(--ink2);background:var(--panel);
-  border:1px solid var(--rule2);border-left-width:3px;border-radius:4px;
-  padding:4px 9px;white-space:nowrap}
-.nav a:hover{border-color:var(--accent);color:var(--accent)}
-.nav a.done{border-left-color:var(--ok)}
-.nav a.blocked{border-left-color:var(--stop)}
-.nav a.skipped{border-left-color:var(--skip)}
-.nav a.pending{border-left-color:var(--rule)}
-.nav a.key{border-left-color:var(--accent);color:var(--accent);font-weight:650}
+  border:1px solid var(--rule2);border-top:3px solid var(--rule);
+  border-radius:4px;padding:4px 7px 5px}
+.rail a:hover{border-color:var(--accent);color:var(--accent)}
+.rail .no{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;
+  color:var(--ink3)}
+.rail .nm{font-size:11.5px;line-height:1.25;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.rail .done{border-top-color:var(--ok)}
+.rail .done .no{color:var(--ok)}
+.rail .blocked{border-top-color:var(--stop);background:var(--stop-bg)}
+.rail .blocked .no{color:var(--stop)}
+.rail .skipped{border-top-color:var(--skip);background:var(--skip-bg)}
+.rail .skipped .no{color:var(--skip)}
+/* 미도달은 흐리게. **지우지 않는다** — 여섯 원인 중 넷은 재구성이 답이 아니라
+   중간에 멈추는 것이 맞는 동작이고, 남은 칸이 회색으로 보이는 것 자체가
+   보여줄 것이다. 실행된 칸만 그리면 그 판단이 화면에서 사라진다. */
+.rail .pending{opacity:.45;border-style:dashed}
+.rail .at{outline:2px solid var(--accent);outline-offset:1px}
+.rail .at .nm{color:var(--accent);font-weight:650}
+.rail em{font-style:normal;color:var(--accent);font-weight:700;margin-left:4px}
+.jump{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.jump a{font-family:var(--mono);font-size:11.5px;line-height:1.35;
+  text-decoration:none;color:var(--accent);background:var(--panel);
+  border:1px solid var(--rule2);border-left:3px solid var(--accent);
+  border-radius:4px;padding:3px 9px;white-space:nowrap;font-weight:650}
+.jump a:hover{border-color:var(--accent)}
 
 /* 앵커로 뛰었을 때 이동 바에 제목이 가리지 않게 */
-.stage,.evidence,.sim,.doc{scroll-margin-top:70px}
+.stage,.evidence,.sim,.doc{scroll-margin-top:96px}
+
+/* ── 멈춘 이유는 그 자리에 ─────────────────────────────────────────── */
+/* 지금까지 중단 사유는 화면 맨 위 배너에만 있었다. 세로 7,000px 짜리 화면에서
+   맨 위와 멈춘 자리는 서로 안 보인다. 그래서 단계 안으로 내린다. */
+.why{background:var(--panel2);border:1px solid var(--rule2);
+  border-left:3px solid var(--stop);border-radius:5px;padding:10px 13px}
+.stage.skipped .why{border-left-color:var(--skip)}
+.why b{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink3);margin-bottom:3px;font-weight:600}
+.why p{margin:0;color:var(--ink);font-size:14.5px}
+.stage.thin{padding:11px 18px;gap:7px}
+.stage.thin .stage-title{font-size:14px;font-weight:600;color:var(--ink3)}
+.stage.pending{opacity:.72;border-style:dashed;border-left-style:solid}
+.chip.pending{color:var(--ink3);background:var(--panel2)}
+.halt{background:var(--panel);border:1px solid var(--rule);
+  border-left:3px solid var(--stop);border-radius:8px;padding:16px 18px;
+  display:flex;flex-direction:column;gap:9px}
+.halt.by-design{border-left-color:var(--accent)}
+.halt-head{display:flex;align-items:baseline;justify-content:space-between;
+  gap:12px;flex-wrap:wrap}
+.halt-head b{font-size:15.5px}
+.halt-head span{font-family:var(--mono);font-size:11.5px;color:var(--ink3)}
+.halt p{margin:0;font-size:14.5px;color:var(--ink2)}
+.halt .rest{font-family:var(--mono);font-size:12px;color:var(--ink3)}
+.halt .fail{font-family:var(--mono);font-size:12.5px;color:var(--stop);
+  background:var(--stop-bg);border-radius:4px;padding:6px 10px}
 
 /* ── 논거 블록은 일반 단계와 격을 나눈다 ───────────────────────────── */
 /* 진단 근거·조회 방식·이력 그래프가 이 과제의 논거가 실린 자리다. 8번 게이트와
@@ -271,6 +359,68 @@ td .mark.no{color:var(--stop)}
 #: 표를 접지 않는 단계. 판별 항목과 진단은 근거 자체라 접으면 볼 것이 없다.
 OPEN_STAGES = {"evidence", "diagnose"}
 
+#: 도구 이름 → (단계 key, 진행 레일에 쓸 짧은 이름).
+#:
+#: **순서는 여기서 정하지 않는다** — `FALLBACK_SEQUENCE` 가 정하고 이 표는
+#: 이름만 붙인다. 짧은 이름은 레일 전용이며, 실행된 단계의 이름은 언제나
+#: `stage.title`(파이프라인이 붙인 것)이라 단계 이름이 두 벌이 되지 않는다.
+#: 짧은 이름이 필요한 자리는 **아직 실행되지 않아 Stage 가 없는 칸** 하나다.
+#:
+#: `lookup_ontology` 는 여기 없다. 단계가 아니라 순서 제약 없는 조회이고,
+#: 고정 순서 재생 목록에도 들어 있지 않다.
+STEP_NAMES: dict[str, tuple[str, str]] = {
+    "intake_issue": ("intake", "인테이크"),
+    "lookup_mes": ("mes", "MES 조회"),
+    "run_inspection": ("inspect", "추론"),
+    "run_checks": ("evidence", "판별 7항목"),
+    "diagnose_issue": ("diagnose", "진단"),
+    "plan_curation": ("curate", "큐레이션"),
+    "rebuild_bank": ("rebuild", "재구성"),
+    "evaluate_gate": ("gate", "게이트"),
+    "shadow_compare": ("shadow", "섀도"),
+    "prepare_release": ("release", "승인 요청"),
+}
+
+#: 화면이 훑을 열 단계. (단계 key, 짧은 이름, 도구 이름).
+PIPELINE_STEPS: list[tuple[str, str, str]] = [
+    (STEP_NAMES[name][0], STEP_NAMES[name][1], name)
+    for name, _ in FALLBACK_SEQUENCE if name in STEP_NAMES
+]
+
+
+def _step_views(outcome: RunOutcome) -> list[tuple[int, str, str, Stage | None, str, str]]:
+    """열 단계를 순서대로 훑는다 — (번호, key, 짧은 이름, Stage, 상태, 오류).
+
+    **값을 만들지 않는다.** 상태는 Stage 가 있으면 그 status 를 그대로 쓰고,
+    Stage 가 없으면 도구 호출 기록에 남은 성공·실패를 읽고, 그것도 없으면
+    미도달이다. 도구가 앞 단계를 요구하며 거절하면 Stage 가 안 생기므로
+    (`rebuild_bank` 가 그렇다) 호출 기록을 함께 봐야 그 자리가 왜 비었는지
+    화면이 말할 수 있다.
+    """
+    stages = {s.key: s for s in outcome.stages}
+    last_call: dict[str, str] = {}
+    for name, status in outcome.tool_trace:
+        last_call[name] = status
+
+    views: list[tuple[int, str, str, Stage | None, str, str]] = []
+    for number, (key, short, tool) in enumerate(PIPELINE_STEPS, start=1):
+        stage = stages.get(key)
+        error = ""
+        if stage is not None:
+            status = stage.status
+        else:
+            call = last_call.get(tool, "")
+            status, error = ("blocked", call) if call.startswith("실패") else ("pending", "")
+        views.append((number, key, short, stage, status, error))
+
+    # 표에 없는 단계가 생기면 뒤에 붙인다. 조용히 빠뜨리면 실제로 돈 단계를
+    # 화면이 "미도달"로 그려 거짓말을 하게 된다.
+    known = {key for key, _, _ in PIPELINE_STEPS}
+    extra = [s for s in outcome.stages if s.key not in known]
+    for offset, stage in enumerate(extra, start=len(views) + 1):
+        views.append((offset, stage.key, stage.title, stage, stage.status, ""))
+    return views
+
 
 def _mark(value: str) -> str:
     """앞머리의 확인 표시에만 색을 준다. 나머지 본문은 그대로 escape 한다.
@@ -295,8 +445,23 @@ def _stage_html(stage: Stage) -> str:
 
     # 부차 단계는 표만 접는다. 제목·판정·한 줄 요약은 남으므로 접힌 상태에서도
     # "무엇이 어디까지 돌았는가"가 읽히고, 앵커로 뛰어도 빈 자리에 떨어지지 않는다.
-    if body and stage.key not in OPEN_STAGES:
+    #
+    # **멈춘 단계는 접지 않는다.** 거기 실린 표가 곧 멈춘 근거다 — 게이트라면
+    # 어느 지표가 미달인지, 큐레이션이라면 대신 무엇을 하라는 것인지가 표에
+    # 있고, 그것을 접으면 "왜 멈췄나"가 한 줄 요약으로만 남는다.
+    if body and stage.key not in OPEN_STAGES and stage.status == "done":
         body = f"<details><summary>자세히</summary>{body}</details>"
+
+    # 멈춘 이유는 다른 단계의 설명문과 같은 먹색으로 두지 않는다. 화면에서
+    # 제일 먼저 찾는 것이 "어디서 왜 멈췄나"인데 지금은 그것이 done 단계의
+    # 부연과 구분되지 않아 스크롤로 찾아야 했다.
+    why = WHY_LABEL.get(stage.status)
+    if stage.detail and why:
+        detail = f'<div class="why"><b>{why}</b><p>{escape(stage.detail)}</p></div>'
+    elif stage.detail:
+        detail = f'<p class="detail">{escape(stage.detail)}</p>'
+    else:
+        detail = ""
 
     return f"""
     <section class="stage {stage.status}" id="stage-{escape(stage.key)}">
@@ -305,28 +470,114 @@ def _stage_html(stage: Stage) -> str:
         <span class="chip {stage.status}">{STATUS_LABEL.get(stage.status, stage.status)}</span>
       </div>
       {f'<div class="headline">{escape(stage.headline)}</div>' if stage.headline else ''}
-      {f'<p class="detail">{escape(stage.detail)}</p>' if stage.detail else ''}
+      {detail}
       {body}
     </section>
     """
 
 
-def _nav_html(marks: list[tuple[str, str, str]]) -> str:
-    """단계 이동 바.
+def _unreached_html(number: int, key: str, short: str, error: str) -> str:
+    """실행되지 않은 단계 한 칸. **빈 자리로 두지 않는다.**
 
-    전 구간 화면은 세로로 매우 길다(실측 7,466px). 시연 중에 보고 싶은 자리로
-    못 가면 스크롤이 발표를 잡아먹는다. **자바스크립트를 붙이지 않는다** —
-    앵커와 position:sticky 로 되는 일이고, 화면 하나짜리 시연에 스크립트를
-    더하면 시연 중에 깨질 자리만 늘어난다.
-
-    칩의 왼쪽 색이 단계 상태다. 어디서 멈췄는지가 스크롤하지 않고 보인다.
+    레일이 가리키는 자리라 없으면 눌러도 아무 데도 안 가고, 무엇보다 "열
+    단계 중 여기서 멈췄다"가 화면에서 읽히지 않는다. 도구가 앞 단계를
+    요구하며 거절했으면 그 거절 문구를 이 자리에 적는다 — 위쪽 배너까지
+    올라가 보지 않아도 왜 안 돌았는지 알 수 있어야 한다.
     """
-    if not marks:
+    kind = "blocked" if error else "pending"
+    return f"""
+    <section class="stage {kind} thin" id="stage-{escape(key)}">
+      <div class="stage-head">
+        <span class="stage-title">{number}. {escape(short)}</span>
+        <span class="chip {kind}">{STATUS_LABEL[kind]}</span>
+      </div>
+      {f'<div class="why"><b>도구가 거절했습니다</b><p>{escape(error)}</p></div>' if error else ''}
+    </section>
+    """
+
+
+def _halt_html(outcome: RunOutcome, views: list) -> str:
+    """어디서 왜 멈췄는가 — 마지막으로 실행된 단계 바로 뒤에 놓는다.
+
+    이 문장은 지금까지 화면 맨 위 배너 안에만 있었다. 전 구간 화면이 세로로
+    7,000px 이라 맨 위와 멈춘 자리는 서로 안 보인다.
+
+    **멈춤이 곧 고장은 아니다.** 여섯 원인 중 넷은 뱅크 재구성이 답이 아니고,
+    그때 큐레이션이 뱅크를 건드리지 않기로 하면 파이프라인은 거기서 끝난다.
+    그것은 설계대로 동작한 것이라 색을 달리 쓴다.
+    """
+    pending = [v for v in views if v[4] == "pending"]
+    if not pending:
         return ""
-    items = "".join(
-        f'<a class="{kind}" href="#{anchor}">{escape(label)}</a>' for anchor, label, kind in marks
+
+    ran = [v for v in views if v[4] != "pending"]
+    last = ran[-1] if ran else None
+    by_design = last is not None and last[4] == "skipped"
+
+    reason = outcome.agent_run.stopped_reason if outcome.agent_run else ""
+    failed = [f"{name} — {status}" for name, status in outcome.tool_trace
+              if status.startswith("실패")]
+    rest = ", ".join(f"{v[0]}. {v[2]}" for v in pending)
+
+    design_note = (
+        "<p>재구성이 답이 아닌 원인이라 여기서 끝난 것입니다. "
+        "<strong>여섯 원인 중 넷은 뱅크를 다시 만드는 것이 답이 아닙니다</strong> — "
+        "멈춘 것이 결론이며 고장이 아닙니다.</p>"
+        if by_design else ""
     )
-    return f'<nav class="nav"><span class="nav-label">단계</span>{items}</nav>'
+    return f"""
+    <div class="halt{' by-design' if by_design else ''}" id="block-halt">
+      <div class="halt-head">
+        <b>{escape(f'열 단계 중 {len(ran)}단계를 실행했습니다')}</b>
+        <span>{escape(f'{len(pending)}단계 미도달')}</span>
+      </div>
+      {f'<p>{escape(reason)}</p>' if reason else ''}
+      {design_note}
+      {''.join(f'<p class="fail">{escape(f)}</p>' for f in failed)}
+      <p class="rest">{escape(f'남은 단계 — {rest}')}</p>
+    </div>
+    """
+
+
+def _nav_html(views: list, blocks: list[tuple[str, str]]) -> str:
+    """진행 레일 — 열 단계 중 지금 어디이고 무엇이 멈췄는가.
+
+    전 구간 화면은 세로로 매우 길다(실측 7,466px). 단계 표가 세로로 쌓이기만
+    하면 어디까지 갔는지를 스크롤해서 세어야 하고, 시연 중에는 그 시간이
+    그대로 발표를 잡아먹는다. **자바스크립트를 붙이지 않는다** — 앵커와
+    position:sticky 로 되는 일이고, 화면 하나짜리 시연에 스크립트를 더하면
+    깨질 자리만 늘어난다.
+
+    칸 위쪽 색이 상태이고, 실행되지 않은 칸은 흐리게 남긴다. 넉 칸만 그리고
+    나머지를 지우면 "여기서 멈추는 것이 맞다"는 판단이 화면에서 사라진다.
+
+    아래 줄은 논거 블록으로 가는 자리다. 단계와 같은 줄에 섞여 있으면 열
+    단계가 몇 개인지부터 안 읽힌다.
+    """
+    if not views:
+        return ""
+
+    ran = [i for i, v in enumerate(views) if v[4] != "pending"]
+    at = ran[-1] if ran else -1
+
+    items = ""
+    for index, (number, key, short, stage, status, _error) in enumerate(views):
+        title = stage.title if stage is not None else short
+        here = ' <em>지금</em>' if index == at else ""
+        items += (
+            f'<li><a class="step {status}{" at" if index == at else ""}"'
+            f' href="#stage-{escape(key)}" title="{escape(title)}">'
+            f'<span class="no">{number}{here}</span>'
+            f'<span class="nm">{escape(short)}</span></a></li>'
+        )
+
+    jump = "".join(f'<a href="#{anchor}">{escape(label)}</a>' for anchor, label in blocks)
+    return (
+        '<nav class="nav">'
+        f'<ol class="rail">{items}</ol>'
+        + (f'<div class="jump"><span class="nav-label">근거</span>{jump}</div>' if jump else "")
+        + "</nav>"
+    )
 
 
 CAUSE_KO = {
@@ -516,19 +767,32 @@ def _evidence_visual_html(outcome: RunOutcome) -> str:
     )
 
     threshold = outcome.threshold or 1.0
-    # 점수 막대는 임계값을 눈금 100% 로 잡는다. 넘으면 100% 에서 멈추되
-    # 숫자는 그대로 적는다 — 막대가 잘렸다고 값이 바뀐 것은 아니다.
-    fill = min(result.score / threshold, 1.0) * 100 if threshold else 0.0
     verdict = "검출" if result.score >= threshold else "미검"
+    # 눈금은 점수와 임계값 중 큰 쪽에 여유를 둔 길이다. **그림의 길이일 뿐
+    # 값이 아니다** — 점수도 임계값도 숫자를 그대로 함께 적는다. 전에는 임계값을
+    # 눈금 끝으로 잡아, 임계값을 넘긴 점수가 막대 끝에서 잘려 얼마나 넘겼는지
+    # 안 보였다.
+    span_max = max(result.score, threshold) * 1.15 or 1.0
+    score_at = min(result.score / span_max, 1.0) * 100
+    thr_at = min(threshold / span_max, 1.0) * 100
 
     def crop_url(image: str, row: int, col: int) -> str:
         query = urlencode({"row": row, "col": col, "grid_h": grid_h,
                            "grid_w": grid_w, "margin": 24})
         return f"/crop/{quote(image)}?{query}"
 
+    # 판별 5번은 **화면이 다시 판정하지 않는다.** 4번 단계가 이미 낸 값을
+    # 그 자리에 옮겨 적을 뿐이다. 뱅크 크롭 옆이 그 값이 있어야 할 자리다 —
+    # 이 한 값으로 원인이 뱅크 오염과 정상 분포 중첩으로 갈린다.
+    check5 = ""
+    stage = next((s for s in outcome.stages if s.key == "evidence"), None)
+    if stage is not None:
+        check5 = next((str(v) for k, v in stage.rows if str(k).startswith("5.")), "")
+
     traced = ""
     if top:
         q, b = top.query, top.bank
+        badge = f"<b>판별 5번 {escape(check5)}</b>" if check5 else ""
         traced = f"""
         <div class="pair">
           <figure>
@@ -536,13 +800,39 @@ def _evidence_visual_html(outcome: RunOutcome) -> str:
             <figcaption>질의 패치 ({q.row},{q.col})<br><span>못 잡은 이미지의 이 자리</span></figcaption>
           </figure>
           <div class="arrow">최근접<br><b>{top.distance:.4f}</b></div>
-          <figure>
+          <figure class="bank">
             <img src="{escape(crop_url(b.source_image, b.row, b.col))}" alt="뱅크 패치">
             <figcaption>뱅크 패치 ({b.row},{b.col})<br>
-              <span>{escape(Path(b.source_image).name)}</span></figcaption>
+              <span>{escape(Path(b.source_image).name)}</span>{badge}</figcaption>
           </figure>
         </div>
         """
+
+    # 시연에서 판별 5번을 손으로 지정했으면 그렇다고 적는다. 지우면 모델이
+    # 판독한 값으로 보이고, 그 한 값이 원인을 정반대로 돌린다.
+    override = ""
+    if outcome.patch_override:
+        override = (
+            f'<p class="note">판별 5번은 <strong>시연을 위해 지정한 값</strong>입니다'
+            f'({escape(outcome.patch_override)}). 역추적이 가리킨 자리를 시각 언어'
+            f' 모델에 물으려면 "모델에게 묻기"로 다시 실행하세요.</p>'
+        )
+
+    # 같은 이미지가 신규 뱅크에서 어떻게 갈렸는가. 섀도가 실제로 낸 값이고,
+    # 없으면(섀도까지 못 갔거나 그 이미지가 대상이 아니면) 적지 않는다.
+    after = ""
+    shadow = outcome.shadow
+    if shadow is not None:
+        case = next((c for c in shadow.cases if c.image == outcome.query_image), None)
+        if case is not None and not case.agreed:
+            after = (
+                f'<p class="after">재구성 뒤 이 이미지는 '
+                f'<strong>{case.current_score:.3f} → {case.candidate_score:.3f}</strong> '
+                f'({escape(case.current_verdict)} → {escape(case.candidate_verdict)}, '
+                f'임계값 {shadow.current_threshold:.2f} → {shadow.candidate_threshold:.2f}). '
+                f'섀도 비교가 실제로 낸 값입니다.</p>'
+            )
+
     return f"""
     <div class="evidence" id="block-evidence">
       <div class="ev-head">
@@ -553,11 +843,17 @@ def _evidence_visual_html(outcome: RunOutcome) -> str:
         <div>
           <div class="ev-label">이상 점수 히트맵 · {grid_h}×{grid_w}</div>
           <div class="heat" style="grid-template-columns:repeat({grid_w},1fr)">{cells}</div>
-          <p class="hint">진할수록 정상에서 멀다. 테두리 친 칸이 가장 높은 자리다.</p>
+          <p class="hint">진할수록 정상에서 멀다. 테두리 친 칸이 가장 높은 자리이고,
+             아래 두 조각이 그 칸을 잘라낸 것이다.</p>
         </div>
-        <div>
-          <div class="ev-label">이상 점수</div>
-          <div class="score"><span style="width:{fill:.1f}%"></span></div>
+        <div class="wide">
+          <div class="ev-label">이상 점수 · 임계값</div>
+          <div class="gauge">
+            <b style="width:{score_at:.1f}%"></b>
+            <i style="left:{score_at:.1f}%" title="이상 점수"></i>
+            <u style="left:{thr_at:.1f}%" title="임계값"></u>
+          </div>
+          <p class="ticks"><span>0</span><span>{span_max:.2f}</span></p>
           <p class="score-num">
             <b>{result.score:.4f}</b> / 임계값 {threshold:.2f}
             <em class="{'over' if verdict == '검출' else 'under'}">{verdict}</em>
@@ -566,6 +862,7 @@ def _evidence_visual_html(outcome: RunOutcome) -> str:
             임계값 아래라 양품으로 나갔습니다. <strong>점수가 낮다고 이상이
             없는 것이 아닙니다</strong> — 어디가 이상한지는 히트맵이 압니다.
           </p>
+          {after}
         </div>
       </div>
       {traced}
@@ -574,6 +871,7 @@ def _evidence_visual_html(outcome: RunOutcome) -> str:
         <strong>이 뱅크 패치가 결함이면 뱅크 오염, 진짜 정상품이면 정상 분포
         중첩이며 조치가 정반대입니다</strong>(판별 5번).
       </p>
+      {override}
     </div>
     """
 
@@ -642,10 +940,17 @@ def _simulator_html(outcome: RunOutcome) -> str:
     두 뱅크를 나란히 보여주는 것이 요점이다. 신규 뱅크만 돌려서는 "좋아졌다"를
     말할 수 없다 — 양산 데이터에는 정답이 없으므로 **같은 이미지에 두 모델을
     돌려 갈리는 것을 보는 것**이 섀도 평가다.
+
+    **흘려보내고 끝내지 않는다.** 갈린 건은 아래 목록에 쌓인다. 숫자만 남으면
+    "몇 장이 갈렸다"까지이고, 사람이 확인해야 할 것이 무엇인지는 안 남는다.
     """
     shadow = outcome.shadow
     if shadow is None or not shadow.cases:
         return ""
+
+    # 갈린 건의 성격(새로 검출인가 새로 놓침인가)과 신규 뱅크에서의 최근접
+    # 이미지는 `disagreements` 에만 있다. 이미지 이름으로 맞춰 붙인다.
+    detail = {d.image: d for d in shadow.disagreements}
 
     cases = json.dumps(
         [
@@ -657,10 +962,25 @@ def _simulator_html(outcome: RunOutcome) -> str:
                 "beforeScore": round(c.current_score, 3),
                 "afterScore": round(c.candidate_score, 3),
                 "agreed": c.agreed,
+                # 갈린 건은 **왜 갈렸는지**를 함께 들고 간다. 어느 쪽으로
+                # 갈렸는지(kind)와 신규 뱅크에서 무엇과 가까웠는지가 그것이다.
+                # 없으면 빈 문자열이고, 화면은 없는 것을 지어내지 않는다.
+                "kind": detail[c.image].kind if c.image in detail else "",
+                "nearest": (
+                    Path(detail[c.image].candidate_nearest_image).name
+                    if c.image in detail and detail[c.image].candidate_nearest_image
+                    else ""
+                ),
+                # 이번에 진단한 바로 그 이미지인가. 시연에서 제일 먼저 봐야 할 줄이다.
+                "focus": c.image == outcome.query_image,
             }
             for c in shadow.cases
         ],
         ensure_ascii=False,
+    )
+    moved = (
+        f"임계값 {shadow.current_threshold:.2f} → {shadow.candidate_threshold:.2f}"
+        if shadow.current_threshold or shadow.candidate_threshold else ""
     )
     return f"""
     <div class="sim" id="block-simulator">
@@ -671,6 +991,7 @@ def _simulator_html(outcome: RunOutcome) -> str:
       <p class="detail">
         신규 코어셋 <code>{escape(shadow.candidate_version)}</code> 을 현행
         <code>{escape(shadow.current_version)}</code> 과 나란히 돌립니다.
+        {f'<code>{escape(moved)}</code>. ' if moved else ''}
         <strong>신규 뱅크는 실제 판정에 쓰이지 않습니다.</strong>
       </p>
       <div class="belt" id="belt"><div class="scanner"></div></div>
@@ -681,6 +1002,8 @@ def _simulator_html(outcome: RunOutcome) -> str:
         <div class="bad"><b id="t-lost">0</b><span>새로 놓침</span></div>
         <div><b id="t-same">0</b><span>판정 동일</span></div>
       </div>
+      <div class="ev-label">판정이 갈린 건 — 사람이 확인할 목록</div>
+      <div class="flips" id="flips"></div>
       <p class="note" id="sim-note">
         흘러가는 판정은 전부 섀도 비교가 실제로 낸 값입니다. 화면은 그것을
         한 장씩 재생합니다.
@@ -692,6 +1015,7 @@ def _simulator_html(outcome: RunOutcome) -> str:
       const belt = document.getElementById("belt");
       const state = document.getElementById("sim-state");
       const bar = document.getElementById("sim-bar");
+      const flips = document.getElementById("flips");
       const out = {{
         total: document.getElementById("t-total"),
         caught: document.getElementById("t-caught"),
@@ -700,19 +1024,78 @@ def _simulator_html(outcome: RunOutcome) -> str:
       }};
       let done = 0, caught = 0, lost = 0, same = 0, i = 0;
 
-      function release() {{
-        if (i >= cases.length) {{
-          state.textContent = "검증 완료 — 사람 승인 대기";
-          document.getElementById("sim-note").textContent =
-            "판정이 갈린 " + (caught + lost) + "장만 사람이 확인하면 됩니다. " +
-            "나머지 " + same + "장은 두 뱅크가 같게 판정했습니다.";
-          return;
+      function text(tag, cls, value) {{
+        const el = document.createElement(tag);
+        if (cls) el.className = cls;
+        el.textContent = value;
+        return el;
+      }}
+
+      // 갈린 건 한 줄. **여기 적히는 값은 전부 섀도가 낸 것**이고 화면이
+      // 더하는 것은 순서와 배치뿐이다. 지어낸 숫자를 끼우면 애니메이션이
+      // 근거가 아니라 장식이 된다.
+      function addFlip(c) {{
+        const up = c.before !== "defect" && c.after === "defect";
+        const row = document.createElement("div");
+        row.className = "flip-row" + (c.focus ? " focus" : "");
+
+        const img = document.createElement("img");
+        img.src = c.src;
+        img.alt = c.name;
+        row.appendChild(img);
+
+        const txt = document.createElement("div");
+        txt.className = "txt";
+        txt.appendChild(text("span", "nm",
+          c.name + (c.focus ? "  \\u2190 이번에 진단한 그 이미지" : "")));
+
+        const mv = document.createElement("div");
+        mv.className = "mv";
+        mv.appendChild(text("s", "", (c.before === "defect" ? "불량" : "양품")
+          + " " + c.beforeScore));
+        mv.appendChild(text("span", "", "  \\u2192  "));
+        mv.appendChild(text("b", "", (c.after === "defect" ? "불량" : "양품")
+          + " " + c.afterScore));
+        txt.appendChild(mv);
+
+        if (c.nearest) {{
+          txt.appendChild(text("span", "why2",
+            "신규 뱅크에서의 최근접 정상 패치 출처 \\u2014 " + c.nearest));
         }}
+        row.appendChild(txt);
+        row.appendChild(text("span", "kd " + (up ? "up" : "down"),
+          c.kind === "newly_detected" ? "새로 검출"
+            : c.kind === "newly_missed" ? "새로 놓침"
+            : up ? "새로 검출" : "새로 놓침"));
+        flips.appendChild(row);
+      }}
+
+      function count(c) {{
+        done++;
+        if (c.agreed) same++;
+        else if (c.before === "pass" && c.after === "defect") caught++;
+        else lost++;
+        out.total.textContent = done;
+        out.caught.textContent = caught;
+        out.lost.textContent = lost;
+        out.same.textContent = same;
+      }}
+
+      function finish() {{
+        state.textContent = "검증 완료 \\u2014 사람 승인 대기";
+        document.getElementById("sim-note").textContent =
+          "판정이 갈린 " + (caught + lost) + "장만 사람이 확인하면 됩니다. " +
+          "나머지 " + same + "장은 두 뱅크가 같게 판정했습니다.";
+      }}
+
+      function release() {{
+        if (i >= cases.length) {{ finish(); return; }}
         const c = cases[i++];
         state.textContent = "코어셋 검증 중입니다 \\u2014 " + i + "/" + cases.length;
 
         const piece = document.createElement("div");
-        piece.className = "piece " + (c.after === "defect" ? "defect" : "pass");
+        piece.className = "piece " + (c.after === "defect" ? "defect" : "pass")
+          + (c.agreed ? "" : " flip");
         piece.style.left = "-80px";
         piece.innerHTML =
           '<img src="' + c.src + '" alt="' + c.name + '">' +
@@ -723,37 +1106,27 @@ def _simulator_html(outcome: RunOutcome) -> str:
         requestAnimationFrame(function() {{ piece.style.left = "45%"; }});
 
         setTimeout(function() {{
-          done++;
-          if (c.agreed) same++;
-          else if (c.before === "pass" && c.after === "defect") caught++;
-          else lost++;
-          out.total.textContent = done;
-          out.caught.textContent = caught;
-          out.lost.textContent = lost;
-          out.same.textContent = same;
+          count(c);
+          if (!c.agreed) addFlip(c);
           bar.style.width = (done / cases.length * 100) + "%";
           piece.style.left = "108%";
           setTimeout(function() {{ piece.remove(); }}, 600);
         }}, 620);
 
-        setTimeout(release, 780);
+        // 갈린 건은 조금 더 세워 둔다. 눈에 걸려야 왜 갈렸는지를 보게 된다.
+        setTimeout(release, c.agreed ? 780 : 1400);
       }}
 
-      const start = function() {{ setTimeout(release, 300); }};
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {{
         // 애니메이션을 끈 환경에서는 결과만 즉시 채운다.
         cases.forEach(function(c) {{
-          done++;
-          if (c.agreed) same++;
-          else if (c.before === "pass" && c.after === "defect") caught++;
-          else lost++;
+          count(c);
+          if (!c.agreed) addFlip(c);
         }});
-        out.total.textContent = done; out.caught.textContent = caught;
-        out.lost.textContent = lost; out.same.textContent = same;
         bar.style.width = "100%";
-        state.textContent = "검증 완료 — 사람 승인 대기";
+        finish();
       }} else {{
-        start();
+        setTimeout(release, 300);
       }}
     }})();
     </script>
@@ -861,9 +1234,15 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
 
     body = ""
     if outcome:
+        # ── 열 단계를 canonical 순서로 훑는다 ──────────────────────────────
+        #
+        # 실행된 것만 그리면 "열 단계 중 어디까지 왔는가"가 화면에 없다.
+        # 안 돈 칸도 자리를 지키게 두고, 멈춘 이유는 멈춘 자리에 적는다.
+        views = _step_views(outcome)
         stages_html: list[str] = []
-        #: 이동 바에 실을 자리들. (앵커, 이름, 칩 종류)
-        marks: list[tuple[str, str, str]] = []
+        #: 논거 블록으로 가는 자리들. (앵커, 이름)
+        blocks: list[tuple[str, str]] = []
+        halted = False
 
         def add_block(html: str, anchor: str, label: str) -> None:
             """논거 블록을 끼우고 이동 바에도 올린다.
@@ -874,31 +1253,42 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
             if not html.strip():
                 return
             stages_html.append(html)
-            marks.append((anchor, label, "key"))
+            blocks.append((anchor, label))
 
-        for stage in outcome.stages:
+        for number, key, short, stage, status, error in views:
+            if stage is None:
+                # 멈춤 설명은 실행된 마지막 단계 바로 뒤, 미도달 칸이 시작되기
+                # 전에 한 번만 놓는다.
+                if not halted:
+                    halted = True
+                    halt = _halt_html(outcome, views)
+                    if halt.strip():
+                        stages_html.append(halt)
+                        blocks.append(("block-halt", "멈춘 자리"))
+                stages_html.append(_unreached_html(number, key, short, error))
+                continue
+
             # 시뮬레이터는 섀도 단계 바로 앞에 끼운다. 숫자만 적힌 표보다
             # 무엇이 어떻게 갈렸는지가 먼저 보여야 한다.
-            if stage.key == "shadow":
+            if key == "shadow":
                 add_block(_simulator_html(outcome), "block-simulator", "코어셋 검증")
             stages_html.append(_stage_html(stage))
-            marks.append((f"stage-{stage.key}", stage.title, stage.status))
             # 진단 바로 뒤에 근거를 그린다. 문장으로만 적으면 확인할 방법이 없다.
-            if stage.key == "diagnose":
+            if key == "diagnose":
                 add_block(_evidence_visual_html(outcome), "block-evidence", "진단 근거")
                 # 근거 다음에 체계를 놓는다. "이 근거가 왜 이 원인이 되는가"는
                 # 표를 봐야 답이 되고, 표가 앞에 오면 결론부터 읽게 된다.
                 add_block(_taxonomy_html(outcome), "block-taxonomy", "원인 체계")
-            if stage.key == "evidence":
+            if key == "evidence":
                 add_block(_retrieval_html(outcome), "block-retrieval", "조회 방식")
             # 그래프는 인테이크 바로 뒤. "이미 답이 나온 일인가"를 묻는 자리다.
-            if stage.key == "intake":
+            if key == "intake":
                 add_block(_ontology_html(outcome), "block-ontology", "이력 그래프")
 
         doc = ""
         if outcome.approval_markdown:
             # 10번 단계 이름이 "승인 요청"이라 문서 쪽은 다르게 적는다.
-            marks.append(("doc-approval", "승인 문서", "key"))
+            blocks.append(("doc-approval", "승인 문서"))
             doc = f"""
             <div class="doc" id="doc-approval">
               <h2>승인 요청 문서</h2>
@@ -908,7 +1298,7 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
             """
 
         body = (
-            _nav_html(marks)
+            _nav_html(views, blocks)
             + _driver_html(outcome)
             + '<div class="flow">'
             + "".join(stages_html)
