@@ -55,6 +55,18 @@ from typing import Any, Protocol, runtime_checkable
 #: 하나뿐이며, 그 하나의 역할도 진단 근거가 아니라 중복 차단이다.
 #:
 #: 새 조회 함수를 추가하면 여기에도 등록한다. 빠지면 화면이 "미분류"로 뜬다.
+def bank_item_key(line: str, object_name: str) -> str:
+    """뱅크를 라인·품목 단위로 묶는 열쇠. **저장소 폴더 이름이기도 하다.**
+
+    `bank_version_for` 와 같은 규칙을 쓴다. 버전만 떼어낸 것이며, 뱅크
+    저장소(`inspection/store.py`)가 이 값으로 폴더를 나눈다.
+
+    저장소가 이 규칙을 따로 갖지 않는다. 두 벌이 되면 저장한 자리와 찾는
+    자리가 갈린다.
+    """
+    return f"{object_name}-{line.split('_')[-1]}"
+
+
 def bank_version_for(line: str, object_name: str) -> str:
     """이 라인·품목을 판정하는 뱅크의 이름.
 
@@ -68,7 +80,7 @@ def bank_version_for(line: str, object_name: str) -> str:
     라인↔품목이 1:1 이라 품목만으로도 유일하지만, 같은 품목이 두 라인에서
     돌면 이름이 겹쳐 서로의 뱅크를 물게 된다.
     """
-    return f"{object_name}-{line.split('_')[-1]}-v1"
+    return f"{bank_item_key(line, object_name)}-v1"
 
 
 RETRIEVAL_KIND: dict[str, str] = {
