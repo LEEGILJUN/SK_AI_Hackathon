@@ -42,7 +42,7 @@ from inspection import PatchEmbedder, build_bank, score_image  # noqa: E402
 from inspection.baseline_map import MODES, build_baseline, hottest_cells  # noqa: E402
 from inspection.crop import patch_box  # noqa: E402
 from inspection.types import PatchRef  # noqa: E402
-from inspection.visa import visa_category_dir  # noqa: E402
+from app.pipeline import visa_category_dir  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
