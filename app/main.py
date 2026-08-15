@@ -73,6 +73,7 @@ def run(
     object_name: str = Form(""),
     defect_type: str = Form(""),
     product_id: str = Form(""),
+    threshold: str = Form(""),
 ) -> str:
     """이슈를 접수하고 전 구간을 실행한다.
 
@@ -85,6 +86,19 @@ def run(
         판별 5번을 손으로 지정한다. 시연에서 이 값을 바꿔 가며 같은 이미지·
         같은 점수에서 조치가 정반대로 갈리는 것을 보여준다. "ask_model" 이면
         역추적이 가리킨 자리를 잘라 시각 언어 모델에 묻는다.
+
+    threshold
+        판정 임계값. **비워 두면 넘기지 않는다** — 기본값은 `run_pipeline` 이
+        갖고 있고, 화면이나 여기서 숫자를 다시 적으면 같은 값의 사본이 셋이
+        되어 한 곳만 고쳐진다.
+
+        임계값을 바꿔도 원인 판정은 바뀌지 않는다. 그것을 직접 확인하게 하려고
+        열어 둔 칸이다 — **임계값 조절로 풀리는 문제가 아니라는 것**이 이
+        서비스의 논거이고, 만져 보는 것이 설명보다 빠르다.
+
+        게이트 통과 기준과 판정 기준은 여기서 못 바꾼다. `data/gate.yaml` ·
+        `data/criteria.yaml` 에서 오고 값마다 근거가 함께 적혀 있어서, 화면에서
+        즉석으로 바꾸면 근거 없는 숫자가 된다.
     """
     global _last
     override = None if patch_verdict == "ask_model" else patch_verdict
@@ -92,12 +106,23 @@ def run(
                (("line", line), ("object_name", object_name),
                 ("defect_type", defect_type), ("product_id", product_id)) if v}
     issue_text = issue_text or default_issue(factory())
+
+    # 못 읽는 값이면 조용히 기본값으로 간다. 시연 중에 오타 하나로 500 이
+    # 뜨면 거기서 발표가 끊긴다. 0 이하는 전 건이 불량이 되어 화면이 무의미해진다.
+    options = {}
+    try:
+        parsed = float(threshold)
+        if parsed > 0:
+            options["threshold"] = parsed
+    except ValueError:
+        pass
+
     _last = run_pipeline(
         factory(), issue_text=issue_text, patch_override=override,
-        context=context or None,
+        context=context or None, **options,
     )
     return render_page(_last, issue_text, patch_verdict, context or None,
-                       on_visa=factory().on_visa)
+                       on_visa=factory().on_visa, threshold=threshold)
 
 
 @app.get("/approval", response_class=PlainTextResponse)

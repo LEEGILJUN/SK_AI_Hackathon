@@ -10,12 +10,14 @@
 from __future__ import annotations
 
 import json
+import re
 from html import escape
+from inspect import signature
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
-from agents.ontology import CAUSES, action_label, cause_names
-from app.pipeline import FALLBACK_SEQUENCE, RunOutcome, Stage
+from agents.ontology import CAUSES, CHECKS, action_label, cause_names
+from app.pipeline import FALLBACK_SEQUENCE, RunOutcome, Stage, run_pipeline
 from lookup.base import RETRIEVAL_LABEL
 
 STATUS_LABEL = {"done": "진행", "blocked": "중단", "skipped": "건드리지 않음",
@@ -23,6 +25,153 @@ STATUS_LABEL = {"done": "진행", "blocked": "중단", "skipped": "건드리지 
 
 #: 멈춘 단계에 붙는 이름표. 같은 "중단"이라도 고장과 설계된 정지는 다르다.
 WHY_LABEL = {"blocked": "왜 멈췄나", "skipped": "왜 건드리지 않았나"}
+
+#: 판정 임계값의 기본값. **여기 숫자를 적지 않는다** — `run_pipeline` 의 기본값을
+#: 그대로 읽는다. 화면에 손으로 적어 두면 파이프라인이 값을 바꿨을 때 화면만
+#: 옛 숫자를 계속 보여준다.
+DEFAULT_THRESHOLD = signature(run_pipeline).parameters["threshold"].default
+
+# ── 화면에 영어로 나오던 것들 ───────────────────────────────────────────
+#
+# 지적을 받았다. *"각 작업 이름이 영어거나 이해하기 어려운 단어로 표시된다"*.
+# 실제로 화면에 `intake_issue` · `defect_visible` · `pass` · `auroc` 가 그대로
+# 나가고 있었다.
+#
+# **원래 이름을 바꾸지 않고 한국어를 덧붙인다.** 이름의 출처는 `agents/` 와
+# `app/pipeline.py` 이고, 화면에서 갈아치우면 같은 것의 이름이 둘이 되어
+# 한쪽만 고쳐진다. 그래서 화면은 한국어를 앞에 놓고 원래 이름을 함께 남긴다.
+#
+# 판별 7항목은 여기 적지 않는다 — `agents/ontology.py` 의 `CHECKS` 에 이미
+# 한국어 물음이 있어 그것을 읽는다.
+
+#: 값에 그대로 나오던 영어. 낱말 단위로만 바꾼다.
+VALUE_KO: dict[str, str] = {
+    "pass": "양품",
+    "defect": "불량",
+    "review": "사람 확인 필요",
+    "high": "높음",
+    "medium": "보통",
+    "low": "낮음",
+    "none": "없음",
+    "above": "임계값 위",
+    "near": "임계값 근처",
+    "below": "임계값 아래",
+    "unknown": "판독 못 함",
+    "not_visible": "결함이 안 보임",
+    "visible": "결함이 보임",
+    "genuine_normal": "진짜 정상품",
+    "normal": "정상",
+    "true": "예",
+    "false": "아니오",
+    "True": "예",
+    "False": "아니오",
+}
+
+_VALUE_RE = re.compile(
+    "|".join(rf"\b{re.escape(k)}\b" for k in sorted(VALUE_KO, key=len, reverse=True))
+)
+
+#: 표 왼쪽 칸에 영어 식별자로 나오던 것. 게이트 지표 이름이 대부분이다.
+ROW_LABEL_KO: dict[str, str] = {
+    "detection_rate": "검출률 — 불량을 실제로 잡는 비율",
+    "false_positive_rate": "과검률 — 양품을 불량이라 하는 비율",
+    "auroc": "분리도(AUROC) — 임계값과 무관한 구분 능력",
+    "newly_missed": "새로 놓친 건수 — 전에는 잡던 것을 못 잡게 된 수",
+    "improvement": "개선 폭 — 고치려던 문제가 나아졌는가",
+}
+
+#: 과제 고유 용어의 한 줄 풀이. 물음표 표시로 붙는다.
+#:
+#: **정의의 출처는 `docs/용어사전.md` 다.** 여기 있는 것은 화면에 걸 한 줄
+#: 요약이며, 뜻이 갈리면 용어사전 쪽이 맞다. 새 용어를 만들지 않는다.
+TERM_KO: dict[str, str] = {
+    "뱅크": "정상 이미지를 잘라 만든 특징값 모음. 검사할 때 여기서 가장 가까운 것을 찾아 거리로 판정한다",
+    "품목 뱅크": "품목마다 따로 있는 뱅크. 캡슐 뱅크로 기판을 판정할 수 없다",
+    "코어셋": "뱅크에서 서로 먼 것만 추려 크기를 줄인 것. 전부 담으면 느려서 대표만 남긴다",
+    "역추적": "미검출 이미지가 뱅크의 어느 정상 패치와 가까웠는지 되돌아 찾는 것",
+    "패치": "이미지를 격자로 자른 칸 하나",
+    "섀도": "새 뱅크를 실제 판정에 쓰지 않고 같은 이미지에 나란히 돌려 판정이 갈리는 것만 뽑는 검증",
+    "홀드아웃": "학습에 안 쓰고 남겨 둔 이미지. 성능을 재는 데 쓴다",
+    "게이트": "새 뱅크를 배포 후보로 넘길지 정하는 통과 기준",
+    "미검": "불량인데 양품으로 판정한 것. 이 과제가 다루는 문제",
+    "미검출": "불량인데 양품으로 판정한 것. 이 과제가 다루는 문제",
+    "과검": "양품인데 불량으로 판정한 것. 임계값을 내리면 늘어난다",
+    "과검출": "양품인데 불량으로 판정한 것. 임계값을 내리면 늘어난다",
+    "임계값": "이 값을 넘으면 불량이라 판정하는 경계 점수",
+    "이상 점수": "가장 가까운 정상 패치와의 거리. 클수록 정상에서 멀다",
+    "혼입": "정상만 들어가야 할 뱅크에 결함 이미지가 잘못 섞여 들어간 것",
+    "인테이크": "이슈를 접수해 정보가 충분한지, 이미 해결된 건인지 판단하는 단계",
+    "큐레이션": "뱅크에 무엇을 넣고 무엇을 뺄지 정하는 단계",
+    "MES": "생산 실행 시스템. 어느 제품이 어느 로트에서 언제 나왔는지가 여기 있다",
+    "로트": "같은 조건에서 함께 생산된 묶음",
+}
+
+
+#: 긴 것부터 본다. "미검출"이 "미검"보다 먼저 걸려야 뒤에 "출"만 남지 않는다.
+_TERMS = sorted(TERM_KO, key=len, reverse=True)
+
+
+def _gloss(text: str) -> str:
+    """본문에 나온 과제 용어에 뜻풀이를 붙인다 — **처음 한 번만.**
+
+    같은 낱말이 나올 때마다 표시가 붙으면 문장이 읽히지 않는다. 그리고
+    이 함수는 **이미 escape 된 문자열을 받는다** — 안 그러면 붙인 표시가
+    다시 escape 되어 화면에 태그가 그대로 보인다.
+
+    **원문을 한 번만 훑는다.** 낱말마다 `replace` 를 돌리면 앞서 끼운 뜻풀이
+    안을 다시 뒤진다. 뜻풀이 문장에도 용어가 들어 있어서(예: "품목 뱅크" 의
+    풀이에 "뱅크" 가 있다) `title` 속성 안에 `<abbr>` 이 또 들어가고, 그러면
+    설명이 통째로 깨진다. 실제로 그렇게 깨져 있었다.
+    """
+    used: set[str] = set()
+    out: list[str] = []
+    i = 0
+    while i < len(text):
+        for term in _TERMS:
+            if term in used or not text.startswith(term, i):
+                continue
+            out.append(f'<abbr title="{escape(TERM_KO[term])}">{escape(term)}</abbr>')
+            used.add(term)
+            i += len(term)
+            break
+        else:
+            out.append(text[i])
+            i += 1
+    return "".join(out)
+
+
+def _value_ko(text: str) -> str:
+    """값에 남은 영어를 한국어로. 낱말 전체가 맞을 때만 바꾼다.
+
+    부분 일치로 바꾸면 `defect_visible` 의 `defect` 까지 건드려 말이 깨진다.
+    낱말 경계를 쓰면 밑줄은 낱말 문자라 `genuine_normal` 안의 `normal` 도
+    안 걸린다.
+    """
+    return _VALUE_RE.sub(lambda m: VALUE_KO[m.group(0)], text)
+
+
+def _row_label(key: str) -> str:
+    """표 왼쪽 칸을 사람 말로. 원래 이름은 함께 남긴다.
+
+    판별 항목은 `agents/ontology.py` 의 `CHECKS` 에서 한국어 물음을 읽는다.
+    화면이 따로 적으면 정의가 둘이 되고, 그러면 규칙이 바뀌었을 때 화면만
+    옛 물음을 보여준다.
+    """
+    raw = str(key)
+
+    # "3. score_position" 꼴 — 판별 7항목.
+    head = raw.split(".", 1)
+    if len(head) == 2 and head[0].strip().isdigit():
+        item_no = int(head[0].strip())
+        name = head[1].strip()
+        item = next((c for c in CHECKS if c.item_no == item_no), None)
+        if item is not None:
+            return (f'{item_no}. {_gloss(escape(item.question))}'
+                    f'<small>{escape(name)}</small>')
+
+    if raw in ROW_LABEL_KO:
+        return f'{escape(ROW_LABEL_KO[raw])}<small>{escape(raw)}</small>'
+    return _gloss(escape(raw))
 
 STYLE = """
 :root{
@@ -353,6 +502,51 @@ table.tax tr.here td:first-child{color:var(--accent)}
 td .mark{font-family:var(--mono);font-weight:700;margin-right:7px}
 td .mark.yes{color:var(--ok)}
 td .mark.no{color:var(--stop)}
+
+/* ── 영어 이름은 지우지 않고 아래에 작게 남긴다 ─────────────────────── */
+/* 한국어로 갈아치우면 모델이 실제로 부른 도구 이름과 화면이 달라져, 호출
+   기록이라는 성격 자체가 없어진다. 그래서 병기한다. */
+small{display:block;font-family:var(--mono);font-size:10.5px;color:var(--ink3);
+  font-weight:400;letter-spacing:0;margin-top:1px}
+td:first-child{white-space:normal}
+/* 뜻풀이가 붙은 낱말. 밑줄만으로는 누를 수 있다는 것이 안 보인다. */
+abbr{text-decoration:none;border-bottom:1px dotted var(--accent);cursor:help}
+
+/* ── 설정값 ────────────────────────────────────────────────────────── */
+/* 판정이 어떤 숫자 위에 서 있는지가 화면 어디에도 없었다. 값만 적으면
+   "누가 정한 값인가"를 못 물으므로 출처와 소유자를 함께 적는다. */
+table.cfg td{font-size:13.5px}
+table.cfg td:first-child{width:38%}
+table.cfg td:nth-child(2){font-family:var(--mono);font-weight:650;color:var(--ink);
+  white-space:nowrap;width:16%}
+.src{font-family:var(--mono);font-size:10.5px;padding:2px 8px;border-radius:3px;
+  white-space:nowrap}
+.src.editable{color:var(--accent);background:var(--panel2)}
+.src.fixed{color:var(--ink3);background:var(--panel2)}
+.src.derived{color:var(--skip);background:var(--skip-bg)}
+
+/* ── 실행 중 덮개 ──────────────────────────────────────────────────── */
+/* 열 단계가 한 덩어리로 돌고 끝나야 화면이 뜬다. 4090 실모델 실측 151초 동안
+   흰 화면이라 고장으로 읽힌다. **진행률을 지어내지 않는다** — 어디까지
+   갔는지는 파이프라인만 알고, 화면이 아는 것은 경과 시간뿐이다. */
+.veil{position:fixed;inset:0;z-index:99;background:var(--bg);
+  display:none;align-items:center;justify-content:center;padding:22px}
+.veil.on{display:flex}
+.veil-box{background:var(--panel);border:1px solid var(--rule);border-radius:10px;
+  padding:26px 28px;max-width:560px;width:100%;display:flex;
+  flex-direction:column;gap:15px}
+.veil-box h2{margin:0;font-size:18px;display:flex;align-items:center;gap:10px}
+.spin{width:13px;height:13px;border-radius:50%;background:var(--accent);
+  animation:pulse 1.1s ease-in-out infinite;flex:0 0 auto}
+@keyframes pulse{0%,100%{opacity:.25;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none;opacity:.8}}
+.veil .rail a{pointer-events:none}
+.elapsed{font-family:var(--mono);font-size:30px;font-variant-numeric:tabular-nums;
+  color:var(--accent);line-height:1}
+.veil p{margin:0;font-size:13.5px;color:var(--ink2)}
+.veil .stopwarn{background:var(--stop-bg);color:var(--stop);border-radius:6px;
+  padding:11px 14px;font-size:13.5px;font-weight:600}
+.nostop{font-size:12.5px;color:var(--stop);font-weight:600}
 """
 
 
@@ -368,17 +562,28 @@ OPEN_STAGES = {"evidence", "diagnose"}
 #:
 #: `lookup_ontology` 는 여기 없다. 단계가 아니라 순서 제약 없는 조회이고,
 #: 고정 순서 재생 목록에도 들어 있지 않다.
-STEP_NAMES: dict[str, tuple[str, str]] = {
-    "intake_issue": ("intake", "인테이크"),
-    "lookup_mes": ("mes", "MES 조회"),
-    "run_inspection": ("inspect", "추론"),
-    "run_checks": ("evidence", "판별 7항목"),
-    "diagnose_issue": ("diagnose", "진단"),
-    "plan_curation": ("curate", "큐레이션"),
-    "rebuild_bank": ("rebuild", "재구성"),
-    "evaluate_gate": ("gate", "게이트"),
-    "shadow_compare": ("shadow", "섀도"),
-    "prepare_release": ("release", "승인 요청"),
+#: 값은 (단계 key, 짧은 이름, 이 단계가 무엇을 하는가 한 줄).
+STEP_NAMES: dict[str, tuple[str, str, str]] = {
+    "intake_issue": ("intake", "인테이크",
+                     "올라온 글에서 라인·품목을 뽑고, 정보가 모자라면 되묻는다"),
+    "lookup_mes": ("mes", "MES 조회",
+                   "제품명·로트로 검사할 이미지를 찾고 그 품목의 뱅크를 확인한다"),
+    "run_inspection": ("inspect", "추론",
+                       "찾은 이미지를 뱅크로 판정해 미검·과검을 가려낸다"),
+    "run_checks": ("evidence", "판별 7항목",
+                   "원인을 구분하기 위한 일곱 가지를 잰다"),
+    "diagnose_issue": ("diagnose", "진단",
+                       "일곱 가지를 모아 원인 6종 중 하나로 규명한다"),
+    "plan_curation": ("curate", "큐레이션",
+                      "뱅크에서 무엇을 빼고 무엇을 채울지 정한다"),
+    "rebuild_bank": ("rebuild", "재구성",
+                     "계획대로 새 뱅크를 만든다. 배포하지 않는다"),
+    "evaluate_gate": ("gate", "게이트",
+                      "새 뱅크가 배포 후보가 될 만한지 기준과 대조한다"),
+    "shadow_compare": ("shadow", "섀도",
+                       "새 뱅크를 판정에 쓰지 않고 나란히 돌려 갈린 것만 뽑는다"),
+    "prepare_release": ("release", "승인 요청",
+                        "배포 패키지와 승인 요청 문서를 만든다. 배포는 사람이 한다"),
 }
 
 #: 화면이 훑을 열 단계. (단계 key, 짧은 이름, 도구 이름).
@@ -431,16 +636,17 @@ def _mark(value: str) -> str:
     text = str(value)
     for sign, kind in (("○", "yes"), ("×", "no")):
         if text.startswith(sign):
-            return f'<span class="mark {kind}">{sign}</span>{escape(text[1:])}'
-    return escape(text)
+            body = _gloss(_value_ko(escape(text[1:])))
+            return f'<span class="mark {kind}">{sign}</span>{body}'
+    return _gloss(_value_ko(escape(text)))
 
 
 def _stage_html(stage: Stage) -> str:
     rows = "".join(
-        f"<tr><td>{escape(str(k))}</td><td>{_mark(v)}</td></tr>" for k, v in stage.rows
+        f"<tr><td>{_row_label(k)}</td><td>{_mark(v)}</td></tr>" for k, v in stage.rows
     )
     body = (f"<table>{rows}</table>" if rows else "") + (
-        f'<p class="note">{escape(stage.note)}</p>' if stage.note else ""
+        f'<p class="note">{_gloss(escape(stage.note))}</p>' if stage.note else ""
     )
 
     # 부차 단계는 표만 접는다. 제목·판정·한 줄 요약은 남으므로 접힌 상태에서도
@@ -457,19 +663,20 @@ def _stage_html(stage: Stage) -> str:
     # 부연과 구분되지 않아 스크롤로 찾아야 했다.
     why = WHY_LABEL.get(stage.status)
     if stage.detail and why:
-        detail = f'<div class="why"><b>{why}</b><p>{escape(stage.detail)}</p></div>'
+        detail = (f'<div class="why"><b>{why}</b>'
+                  f'<p>{_gloss(_value_ko(escape(stage.detail)))}</p></div>')
     elif stage.detail:
-        detail = f'<p class="detail">{escape(stage.detail)}</p>'
+        detail = f'<p class="detail">{_gloss(_value_ko(escape(stage.detail)))}</p>'
     else:
         detail = ""
 
     return f"""
     <section class="stage {stage.status}" id="stage-{escape(stage.key)}">
       <div class="stage-head">
-        <span class="stage-title">{escape(stage.title)}</span>
+        <span class="stage-title">{_gloss(escape(stage.title))}</span>
         <span class="chip {stage.status}">{STATUS_LABEL.get(stage.status, stage.status)}</span>
       </div>
-      {f'<div class="headline">{escape(stage.headline)}</div>' if stage.headline else ''}
+      {f'<div class="headline">{_gloss(_value_ko(escape(stage.headline)))}</div>' if stage.headline else ''}
       {detail}
       {body}
     </section>
@@ -792,7 +999,7 @@ def _evidence_visual_html(outcome: RunOutcome) -> str:
     traced = ""
     if top:
         q, b = top.query, top.bank
-        badge = f"<b>판별 5번 {escape(check5)}</b>" if check5 else ""
+        badge = f"<b>판별 5번 {_value_ko(escape(check5))}</b>" if check5 else ""
         traced = f"""
         <div class="pair">
           <figure>
@@ -814,8 +1021,8 @@ def _evidence_visual_html(outcome: RunOutcome) -> str:
     if outcome.patch_override:
         override = (
             f'<p class="note">판별 5번은 <strong>시연을 위해 지정한 값</strong>입니다'
-            f'({escape(outcome.patch_override)}). 역추적이 가리킨 자리를 시각 언어'
-            f' 모델에 물으려면 "모델에게 묻기"로 다시 실행하세요.</p>'
+            f'({_value_ko(escape(outcome.patch_override))}). 역추적이 가리킨 자리를'
+            f' 시각 언어 모델에 물으려면 "모델에게 묻기"로 다시 실행하세요.</p>'
         )
 
     # 같은 이미지가 신규 뱅크에서 어떻게 갈렸는가. 섀도가 실제로 낸 값이고,
@@ -828,7 +1035,8 @@ def _evidence_visual_html(outcome: RunOutcome) -> str:
             after = (
                 f'<p class="after">재구성 뒤 이 이미지는 '
                 f'<strong>{case.current_score:.3f} → {case.candidate_score:.3f}</strong> '
-                f'({escape(case.current_verdict)} → {escape(case.candidate_verdict)}, '
+                f'({_value_ko(escape(case.current_verdict))} → '
+                f'{_value_ko(escape(case.candidate_verdict))}, '
                 f'임계값 {shadow.current_threshold:.2f} → {shadow.candidate_threshold:.2f}). '
                 f'섀도 비교가 실제로 낸 값입니다.</p>'
             )
@@ -1133,6 +1341,72 @@ def _simulator_html(outcome: RunOutcome) -> str:
     """
 
 
+def _settings_html(outcome: RunOutcome) -> str:
+    """이 판정이 어떤 숫자 위에 서 있는가 — 값과 **출처와 소유자**.
+
+    지적을 받았다. *"사용자가 설정할 수 있는 임계값들을 어디에서 보여주고
+    조절할 수 있어야 하지 않나."* 맞다. 지금까지 화면 어디에도 없었고, 값이
+    안 보이면 "누가 정한 숫자인가"를 물을 수조차 없다.
+
+    **조절은 판정 임계값 하나뿐이다.** 게이트 통과 기준과 판정 기준은
+    `data/gate.yaml` · `data/criteria.yaml` 에서 오고 장영진 소유이며, 그
+    파일들의 규칙이 **값마다 근거를 함께 적는 것**이다. 화면에서 즉석으로
+    바꾸면 근거 없는 숫자가 되어 그 규칙이 무너진다.
+
+    신규 뱅크 임계값은 사람이 정하는 값이 아니라 스윕이 계산해 낸 값이라
+    표시만 한다.
+    """
+    rows = ""
+
+    def row(label: str, value: str, kind: str, source: str) -> str:
+        return (f'<tr><td>{_gloss(escape(label))}</td>'
+                f'<td>{escape(value)}</td>'
+                f'<td><span class="src {kind}">{escape(source)}</span></td></tr>')
+
+    if outcome.threshold:
+        rows += row("판정 임계값 — 이 값을 넘으면 불량이라 판정한다",
+                    f"{outcome.threshold:.2f}", "editable", "화면에서 조절")
+
+    shadow = outcome.shadow
+    if shadow is not None and shadow.candidate_threshold:
+        rows += row("신규 뱅크의 임계값 — 전건을 잡는 지점으로 스윕이 계산했다",
+                    f"{shadow.candidate_threshold:.2f}", "derived", "자동 계산")
+
+    gate = outcome.gate
+    if gate is not None:
+        for check in gate.checks:
+            # `improvement` 는 빼놓는다. 그 기준값은 사람이 정한 설정이 아니라
+            # **이전 뱅크의 실측 AUROC** 라, 설정값 표에 넣으면 장영진이 정한
+            # 숫자로 읽힌다. 게이트 단계 표에는 그대로 남아 있다.
+            if check.name == "improvement":
+                continue
+            rows += row(ROW_LABEL_KO.get(check.name, check.name),
+                        str(check.threshold), "fixed", "data/gate.yaml · 장영진")
+
+    if not rows:
+        return ""
+    return f"""
+    <div class="evidence" id="block-settings">
+      <div class="ev-head">
+        <span class="stage-title">이 판정이 선 숫자들 — 어디서 온 값인가</span>
+        <span class="kind schema">설정값</span>
+      </div>
+      <table class="cfg">{rows}</table>
+      <p class="detail">
+        <strong>바꿀 수 있는 것은 판정 임계값 하나입니다.</strong> 게이트 통과
+        기준은 <code>data/gate.yaml</code> 에서 오고 값마다 근거가 함께 적혀
+        있습니다 — 화면에서 즉석으로 바꾸면 근거 없는 숫자가 됩니다.
+      </p>
+      <p class="note">
+        임계값을 내리면 미검은 줄지만 <strong>과검이 늘고, 원인은 그대로입니다.</strong>
+        뱅크에 결함이 섞여 들어간 것은 임계값을 아무리 옮겨도 뱅크에 섞인 채입니다 —
+        <strong>임계값 조절로 풀리는 문제가 아니라는 것이 이 서비스가 있는 이유</strong>입니다.
+        직접 바꿔 보시면 원인 판정이 그대로인 것을 확인할 수 있습니다.
+      </p>
+    </div>
+    """
+
+
 def _driver_html(outcome: RunOutcome) -> str:
     """도구 순서를 누가 정했는가.
 
@@ -1141,8 +1415,17 @@ def _driver_html(outcome: RunOutcome) -> str:
     """
     by_model = outcome.driver == "model"
     label = "언어 모델이 도구 순서를 정했습니다" if by_model else "고정 순서로 실행했습니다"
+
+    # 이 표가 `intake_issue` · `lookup_mes` 로만 적혀 있었다. 무엇을 한 것인지
+    # 읽을 수 없다는 지적을 받았다. **원래 이름을 지우지 않고** 한국어를 앞에
+    # 놓는다 — 이름을 갈아치우면 모델이 실제로 부른 도구와 화면에 적힌 것이
+    # 달라져, 도구 호출 기록이라는 성격 자체가 없어진다.
     trace = "".join(
-        f'<tr><td>{i}. {escape(name)}</td><td>{escape(status)}</td></tr>'
+        f'<tr><td>{i}. {escape(STEP_NAMES.get(name, ("", name, ""))[1])}'
+        f'<small>{escape(name)}</small></td>'
+        f'<td>{escape(status)}'
+        f'{f"<small>{escape(STEP_NAMES[name][2])}</small>" if name in STEP_NAMES else ""}'
+        f'</td></tr>'
         for i, (name, status) in enumerate(outcome.tool_trace, start=1)
     )
     stopped = outcome.agent_run.stopped_reason if outcome.agent_run else ""
@@ -1152,6 +1435,72 @@ def _driver_html(outcome: RunOutcome) -> str:
       {f'<table>{trace}</table>' if trace else ''}
       {f'<p class="note">{escape(stopped)}</p>' if stopped else ''}
     </div>
+    """
+
+
+def _veil_html(on_visa: bool) -> str:
+    """실행 중 덮개 — "고장난 것이 아니라 돌고 있다"를 말해 준다.
+
+    지적을 받았다. *"고장나서 멈춘 것이 아니라 진행 중이라는 것을 보여주고,
+    진행 경과도 표현되면 오해가 없겠다."* 지금은 단추를 누르면 흰 화면이고,
+    4090 실모델 실측이 151초다. 2분 반 동안 아무 반응이 없으면 고장으로
+    읽는 것이 당연하다.
+
+    **진행률을 지어내지 않는다.** 지금 몇 번째 단계인지는 `run_pipeline` 이
+    끝나야 알 수 있고, 그것을 실시간으로 받으려면 `app/pipeline.py` 를 고쳐야
+    한다. 화면이 정직하게 아는 것은 **경과 시간**뿐이라 그것만 센다. 채워지는
+    진행 막대를 그려 놓으면 보기에는 좋지만 아무것도 재지 않는 그림이 된다.
+
+    열 단계 이름은 회색으로 미리 보여준다. "무엇이 남았는지"는 알 수 있고,
+    실제 상태를 아는 척하지도 않는다.
+    """
+    steps = "".join(
+        f'<li><a class="step pending">'
+        f'<span class="no">{number}</span>'
+        f'<span class="nm">{escape(short)}</span></a></li>'
+        for number, (_key, short, _tool) in enumerate(PIPELINE_STEPS, start=1)
+    )
+    # 걸리는 시간은 데이터에 따라 다르다. **실측한 것만 적는다.**
+    took = (
+        "VisA 실데이터입니다. 4090 에서 실모델로 <strong>약 2분 30초</strong> "
+        "걸렸습니다(실측 151초)."
+        if on_visa else
+        "합성 이미지입니다. 보통 <strong>수 초</strong> 안에 끝납니다."
+    )
+    return f"""
+    <div class="veil" id="veil">
+      <div class="veil-box">
+        <h2><span class="spin"></span>실행 중입니다</h2>
+        <p><strong>고장이 아닙니다.</strong> 열 단계가 한 번에 돌고 있고,
+           다 끝나야 화면이 뜹니다.</p>
+        <ol class="rail">{steps}</ol>
+        <p class="hint">지금 몇 번째인지는 표시하지 않습니다 — 단계별 신호를
+           받으려면 파이프라인을 고쳐야 하고, <strong>모르는 것을 아는 척하는
+           진행 막대는 만들지 않습니다.</strong></p>
+        <div class="elapsed" id="elapsed">0:00</div>
+        <p>{took}</p>
+        <div class="stopwarn">한 번 시작하면 중단할 수 없습니다.
+           창을 닫아도 서버에서는 끝까지 실행됩니다.</div>
+      </div>
+    </div>
+    <script>
+    (function() {{
+      const form = document.getElementById("runform");
+      const veil = document.getElementById("veil");
+      const out = document.getElementById("elapsed");
+      if (!form || !veil) return;
+      form.addEventListener("submit", function() {{
+        veil.classList.add("on");
+        const began = performance.now();
+        setInterval(function() {{
+          const s = Math.floor((performance.now() - began) / 1000);
+          out.textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+        }}, 1000);
+      }});
+      // 뒤로 가기로 돌아왔을 때 덮개가 남아 있으면 화면이 잠긴다.
+      window.addEventListener("pageshow", function() {{ veil.classList.remove("on"); }});
+    }})();
+    </script>
     """
 
 
@@ -1177,7 +1526,8 @@ def _source_banner(on_visa: bool) -> str:
 
 
 def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str = "defect",
-                context: dict[str, str] | None = None, on_visa: bool = False) -> str:
+                context: dict[str, str] | None = None, on_visa: bool = False,
+                threshold: str = "") -> str:
     options = [
         ("defect", "결함이다 → 뱅크 오염"),
         ("genuine_normal", "진짜 정상품이다 → 정상 분포 중첩"),
@@ -1281,6 +1631,10 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
                 add_block(_taxonomy_html(outcome), "block-taxonomy", "원인 체계")
             if key == "evidence":
                 add_block(_retrieval_html(outcome), "block-retrieval", "조회 방식")
+                # 설정값도 여기 놓는다. **게이트 뒤가 아니다** — 재구성이 답이
+                # 아닌 원인은 게이트까지 가지 않는데, 그런 실행에서도 판정
+                # 임계값은 이미 쓰였고 그 값이 화면에 있어야 한다.
+                add_block(_settings_html(outcome), "block-settings", "설정값")
             # 그래프는 인테이크 바로 뒤. "이미 답이 나온 일인가"를 묻는 자리다.
             if key == "intake":
                 add_block(_ontology_html(outcome), "block-ontology", "이력 그래프")
@@ -1307,6 +1661,18 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
         )
 
     source_banner = _source_banner(on_visa)
+    veil = _veil_html(on_visa)
+
+    # 임계값 칸은 **실제로 쓰인 값**을 되비춘다. 비어 있으면 파이프라인의
+    # 기본값이 쓰이며, 그 기본값도 코드에서 읽어 온 것이라 화면이 따로 적지 않는다.
+    #
+    # 추론까지 못 가고 인테이크에서 멈추면 `outcome.threshold` 가 비어 있다.
+    # 그때 사람이 적어 넣은 값까지 지워 버리면 되물음에 답할 때마다 임계값을
+    # 다시 타이핑해야 한다. 그래서 실행된 값이 없으면 적어 낸 값을 남긴다.
+    threshold_value = (f"{outcome.threshold:g}"
+                       if outcome and outcome.threshold else threshold.strip())
+    run_cost = ("4090 실모델 실측 약 2분 30초입니다."
+                if on_visa else "합성 이미지라 보통 수 초입니다.")
 
     return f"""<!doctype html>
 <html lang="ko"><head><meta charset="utf-8">
@@ -1322,7 +1688,7 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
 
   {source_banner}
 
-  <form method="post" action="/run">
+  <form method="post" action="/run" id="runform">
     <div>
       <label for="issue">현장에서 올라온 이슈</label>
       <textarea id="issue" name="issue_text"
@@ -1339,9 +1705,23 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
         <select id="patch" name="patch_verdict">{select}</select>
         <span class="hint">이 값 하나로 조치가 정반대로 갈립니다.</span>
       </div>
+      <div>
+        <label for="threshold">판정 임계값</label>
+        <input id="threshold" name="threshold" inputmode="decimal"
+               value="{escape(threshold_value)}"
+               placeholder="비우면 기본값 {DEFAULT_THRESHOLD}">
+        <span class="hint">
+          이 값을 넘으면 불량입니다. <strong>내리면 미검은 줄고 과검이 늘지만,
+          원인 판정은 바뀌지 않습니다.</strong>
+        </span>
+      </div>
     </div>
+    <p class="nostop">
+      ⚠ 한 번 시작하면 중단할 수 없습니다 — 열 단계가 끝까지 실행되고, 그동안
+      화면은 기다립니다. {escape(run_cost)}
+    </p>
     {supplement}
   </form>
 
   {body}
-</div></body></html>"""
+</div>{veil}</body></html>"""
