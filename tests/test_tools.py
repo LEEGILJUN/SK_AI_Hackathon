@@ -443,3 +443,93 @@ def test_id_shaped_arguments_carry_an_example(demo_factory):
             if described and "예:" not in described:
                 bare.append(f"{spec.name}.{name}")
     assert not bare, f"형식 예시가 없는 ID 인자: {bare}"
+
+
+# ── 지시가 모델에 도달하는가 ────────────────────────────────────────────
+#
+# **4090 실측에서 시스템 프롬프트가 통째로 버려지고 있었다.** gemma 모델의
+# ollama 템플릿에 `system` 분기가 아예 없어서, 역할이 user·assistant·tool
+# 셋만 처리되고 system 은 조용히 지나간다. 프롬프트를 고쳐도 모델이 본 적이
+# 없었다. 그 템플릿은 도구 목록을 대화 **맨 끝**에 붙이기까지 해서, 모델이 매
+# 턴 마지막으로 읽는 것이 "도구를 부르라"는 지시였다.
+
+
+def test_a_tool_result_tells_the_model_what_to_call_next():
+    """다음 단계 지시를 **도구 결과 안에** 싣는다.
+
+    시스템 프롬프트는 템플릿이 버릴 수 있지만 도구 결과(tool 역할)는 어느
+    템플릿이든 렌더링한다. 여기 실으면 반드시 도달한다.
+    """
+    from agents.tools import ToolResult
+
+    result = ToolResult(name="intake_issue", arguments={},
+                        output={"verdict": "proceed", "next": "lookup_mes"}, ok=True)
+    content = result.to_message("c1").content
+
+    assert "Call lookup_mes next" in content
+    assert "Do not call intake_issue again" in content
+    assert '"next": "lookup_mes"' in content, "원래 결과도 그대로 있어야 한다"
+
+
+def test_no_next_means_no_instruction():
+    """도구가 다음을 안 알려 주면 **지어내지 않는다.**"""
+    from agents.tools import ToolResult
+
+    quiet = ToolResult(name="lookup_ontology", arguments={},
+                       output={"causes": 6}, ok=True)
+    assert "INSTRUCTION" not in quiet.to_message("c1").content
+
+    failed = ToolResult(name="lookup_mes", arguments={}, output=None,
+                        ok=False, error="뱅크가 없다")
+    assert "INSTRUCTION" not in failed.to_message("c2").content
+
+
+def test_a_stop_message_is_not_turned_into_a_tool_name():
+    """`next` 가 도구 이름이 아니라 안내문일 때가 있다.
+
+    "여기서 멈춘다. 재구성은 답이 아니다." 를 도구 이름처럼 부르라고 하면
+    모델이 없는 도구를 찾는다.
+    """
+    from agents.tools import ToolResult
+
+    result = ToolResult(name="plan_curation", arguments={},
+                        output={"next": "여기서 멈춘다. 재구성은 답이 아니다."}, ok=True)
+    content = result.to_message("c1").content
+
+    assert "Call 여기서" not in content
+    assert "여기서 멈춘다" in content
+    assert "Do not call plan_curation again" in content
+
+
+def test_the_system_prompt_survives_a_model_that_drops_it():
+    """`carries_system = False` 인 모델에는 지시를 사용자 메시지에 싣는다."""
+    from agents.tools import SYSTEM_PROMPT, _opening_messages
+
+    class Drops:
+        carries_system = False
+
+    class Keeps:
+        carries_system = True
+
+    kept = _opening_messages(SYSTEM_PROMPT, "이슈 원문", Keeps())
+    assert [m.role for m in kept] == ["system", "user"]
+
+    folded = _opening_messages(SYSTEM_PROMPT, "이슈 원문", Drops())
+    assert [m.role for m in folded] == ["user"], "system 역할로 보내면 버려진다"
+    assert "Follow the pipeline" in folded[0].content
+    assert "이슈 원문" in folded[0].content
+
+
+def test_an_adapter_that_says_nothing_keeps_the_system_role():
+    """어댑터가 표시를 안 하면 지금까지대로 system 역할로 보낸다.
+
+    지시가 두 번 실리면 토큰을 그만큼 쓰고, 어떤 모델은 사용자 메시지의
+    지시를 시스템보다 약하게 본다. **되는 모델까지 바꾸지 않는다.**
+    """
+    from agents.tools import SYSTEM_PROMPT, _opening_messages
+
+    class Silent:
+        pass
+
+    assert [m.role for m in _opening_messages(SYSTEM_PROMPT, "x", Silent())] == \
+        ["system", "user"]

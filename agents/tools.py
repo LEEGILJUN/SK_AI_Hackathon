@@ -46,10 +46,38 @@ class ToolResult:
 
     def to_message(self, call_id: str) -> ChatMessage:
         payload = {"ok": self.ok, "result": self.output} if self.ok else {"ok": False, "error": self.error}
-        return ChatMessage(
-            role="tool",
-            content=json.dumps(payload, ensure_ascii=False, default=str),
-            tool_call_id=call_id,
+        content = json.dumps(payload, ensure_ascii=False, default=str)
+
+        # **지시를 도구 결과 안에 넣는다.** 시스템 프롬프트는 모델 템플릿이
+        # 버릴 수 있다 — 4090 의 gemma 템플릿에는 system 분기가 아예 없어서
+        # SYSTEM_PROMPT 가 통째로 사라졌다. 도구 결과(tool 역할)는 어느
+        # 템플릿이든 렌더링하므로 여기 실으면 반드시 도달한다.
+        #
+        # 그 템플릿은 도구 목록을 대화 **맨 끝**에 붙이기까지 한다. 모델이 매
+        # 턴 마지막으로 읽는 것이 "도구를 부르라"는 지시라, 결과를 읽고
+        # 다음으로 가는 대신 같은 도구를 다시 불렀다.
+        nudge = self._next_step_note()
+        if nudge:
+            content = f"{content}\n\n{nudge}"
+        return ChatMessage(role="tool", content=content, tool_call_id=call_id)
+
+    def _next_step_note(self) -> str:
+        """다음에 무엇을 부를지 한 줄로 못박는다.
+
+        도구가 `next` 를 돌려주면 그것을 그대로 지시로 바꾼다. 값을 지어내지
+        않는다 — 도구가 안 알려 주면 아무 말도 하지 않는다.
+        """
+        if not self.ok or not isinstance(self.output, dict):
+            return ""
+        step = self.output.get("next")
+        if not isinstance(step, str) or not step:
+            return ""
+        if not step.isidentifier():
+            # "중단. 사람에게 되물어야 한다." 처럼 도구 이름이 아닌 안내다.
+            return f"INSTRUCTION: {step} Do not call {self.name} again."
+        return (
+            f"INSTRUCTION: This call succeeded. Call {step} next. "
+            f"Do not call {self.name} again."
         )
 
 
@@ -359,6 +387,23 @@ class AgentRun:
         }
 
 
+def _opening_messages(system: str, prompt: str, adapter) -> list[ChatMessage]:
+    """첫 두 메시지를 만든다. **시스템 프롬프트가 버려지는 경우를 막는다.**
+
+    4090 실측에서 gemma 모델의 ollama 템플릿에 `system` 분기가 아예 없었다.
+    역할이 user·assistant·tool 셋만 처리되고 system 은 조용히 지나간다.
+    프롬프트를 아무리 고쳐도 **모델이 본 적이 없다.**
+
+    어댑터가 `carries_system = False` 라고 하면 시스템 지시를 사용자 메시지
+    앞에 붙여 보낸다. 잘 도착하는 모델에는 그대로 system 역할로 보낸다 —
+    지시가 두 번 실리면 그만큼 토큰을 쓰고, 어떤 모델은 사용자 메시지의
+    지시를 시스템보다 약하게 본다.
+    """
+    if getattr(adapter, "carries_system", True):
+        return [ChatMessage.system(system), ChatMessage.user(prompt)]
+    return [ChatMessage.user(f"{system}\n\n---\n\n{prompt}")]
+
+
 #: 한 도구를 이만큼 부르면 인자가 달라도 멈춘다.
 #:
 #: 모델이 인자를 조금씩 바꿔 가며 같은 도구를 반복하면 위의 "같은 인자" 검사에
@@ -380,7 +425,7 @@ def run_agent(
     끝내지 못하는 경우가 있으므로 상한을 둔다.
     """
     run = AgentRun(prompt=prompt)
-    messages: list[ChatMessage] = [ChatMessage.system(system), ChatMessage.user(prompt)]
+    messages: list[ChatMessage] = _opening_messages(system, prompt, adapter)
 
     for step in range(max_steps):
         run.steps = step + 1

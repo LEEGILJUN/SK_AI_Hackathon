@@ -168,6 +168,14 @@ class ModelAdapter(ABC):
     #: 실제 모델이 아니라 대체 구현인가
     is_stub: bool = False
 
+    #: 이 모델이 system 역할 메시지를 실제로 읽는가.
+    #:
+    #: **False 면 시스템 지시가 사용자 메시지에 실려 나간다.** 4090 의
+    #: gemma 모델은 ollama 템플릿에 system 분기가 없어 시스템 프롬프트가
+    #: 통째로 버려졌다 — 프롬프트를 고쳐도 모델이 본 적이 없었다.
+    #: 환경변수 `SHVO_LLM_NO_SYSTEM=1` 로 켠다.
+    carries_system: bool = True
+
     @abstractmethod
     def chat(
         self,

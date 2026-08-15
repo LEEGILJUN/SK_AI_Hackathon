@@ -17,6 +17,8 @@ health_check 만이 아니라 도구 호출까지 한 번 확인해야 한다
 
 from __future__ import annotations
 
+import os
+
 import json
 import uuid
 from typing import Any, Sequence
@@ -46,6 +48,9 @@ class OpenAICompatAdapter(ModelAdapter):
 
         self.model = model
         self.base_url = base_url
+        # 모델 템플릿이 system 역할을 안 읽으면 시스템 지시가 통째로 버려진다.
+        # 4090 의 gemma 가 그랬다. 그때는 사용자 메시지에 실어 보낸다.
+        self.carries_system = os.environ.get("SHVO_LLM_NO_SYSTEM", "") not in ("1", "true", "True")
         self.temperature = temperature
         self.max_tokens = max_tokens
         # 재현성 목표 때문에 기본값을 0으로 둔다. 서버가 무시할 수도 있다.
