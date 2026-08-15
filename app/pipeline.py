@@ -194,6 +194,17 @@ AGENT_PROMPT = """현장에서 미검출 이슈가 하나 접수됐다. 접수�
 풀리는 것이 아니면 재구성을 부르지 말고 거기서 멈춰라."""
 
 
+def _sampled(rows: list[tuple[str, str]], total: int, shown: int) -> list[tuple[str, str]]:
+    """표를 자를 때 **남은 건수를 마지막 줄에 적는다.**
+
+    총계는 headline 에 있지만 표만 보는 사람은 그것이 전부라고 읽는다.
+    조용히 자르면 "다 봤다"가 된다.
+    """
+    if total > shown:
+        rows = rows + [("…", f"외 {total - shown}건은 접었습니다")]
+    return rows
+
+
 @dataclass
 class Stage:
     """화면에 한 칸으로 표시되는 단계."""
@@ -812,7 +823,8 @@ class _DemoSession:
         #: 자기 패치와의 거리라 0 에 가깝게 나온다. 오염의 가장 뚜렷한 흔적이다.
         in_bank_score = 0.05
 
-        for record, inferred in (missed + overkill)[:8]:
+        shown = 8
+        for record, inferred in (missed + overkill)[:shown]:
             kind = "미검" if record.ground_truth == "defect" else "과검"
             mark = "  ← 이 이미지가 뱅크 안에 있다" if inferred.score < in_bank_score else ""
             rows.append((f"{kind} · {record.product_id}",
@@ -857,7 +869,8 @@ class _DemoSession:
                     f"{self.item.object_name} 뱅크 {self.item.bank.version} 로 판정했습니다. "
                     f"설비 판정과 사람 확인이 갈린 건만 추렸습니다."
                 ),
-                rows=rows or [("갈린 건", "없음")],
+                rows=_sampled(rows, len(missed) + len(overkill), shown)
+                or [("갈린 건", "없음")],
                 note=(
                     (f"미검 {len(self_matched)}건은 이상 점수가 0 에 가깝습니다 — "
                      f"그 이미지 자신이 뱅크에 들어 있다는 뜻이고, 뱅크 오염의 "
@@ -1080,9 +1093,12 @@ class _DemoSession:
                 status="done" if plan.touches_bank else "skipped",
                 headline=plan.summary(),
                 detail=plan.reason,
-                rows=[(c.image, f"근거 {c.evidence_count}갈래 · 패치 {c.patch_count}개 · {c.reason}")
-                      for c in plan.remove[:6]]
-                or [(a.condition_key + "=" + a.condition_value, a.reason) for a in plan.add[:6]],
+                rows=_sampled(
+                    [(c.image, f"근거 {c.evidence_count}갈래 · 패치 {c.patch_count}개 · {c.reason}")
+                     for c in plan.remove[:6]], len(plan.remove), 6)
+                or _sampled(
+                    [(a.condition_key + "=" + a.condition_value, a.reason)
+                     for a in plan.add[:6]], len(plan.add), 6),
                 note="; ".join(plan.alternative_actions),
             )
         )
@@ -1194,9 +1210,11 @@ class _DemoSession:
                 status="done",
                 headline=f"{shadow.total}장 중 {shadow.review_count}장만 확인",
                 detail=shadow.summary(),
-                rows=[(d.image, f"{d.current_verdict} → {d.candidate_verdict} "
-                                f"({d.current_score:.3f} → {d.candidate_score:.3f})")
-                      for d in shadow.disagreements[:8]],
+                rows=_sampled(
+                    [(d.image, f"{d.current_verdict} → {d.candidate_verdict} "
+                               f"({d.current_score:.3f} → {d.candidate_score:.3f})")
+                     for d in shadow.disagreements[:8]],
+                    len(shadow.disagreements), 8),
                 note="신규 뱅크를 실제 판정에 쓰지 않고 병렬로만 돌린 결과입니다.",
             )
         )

@@ -228,6 +228,8 @@ def write_approval_document(
             parts.append("|---|---|---|")
             for d in shadow.newly_missed[:15]:
                 parts.append(f"| `{d.image}` | {d.current_score:.4f} | {d.candidate_score:.4f} |")
+            if len(shadow.newly_missed) > 15:
+                parts.append(f"| … | | 외 {len(shadow.newly_missed) - 15}건 |")
             parts.append("")
 
         if shadow.newly_detected:
@@ -236,6 +238,8 @@ def write_approval_document(
             parts.append("|---|---|---|")
             for d in shadow.newly_detected[:15]:
                 parts.append(f"| `{d.image}` | {d.current_score:.4f} | {d.candidate_score:.4f} |")
+            if len(shadow.newly_detected) > 15:
+                parts.append(f"| … | | 외 {len(shadow.newly_detected) - 15}건 |")
             parts.append("")
 
     # ── 승인 ────────────────────────────────────────────────────────

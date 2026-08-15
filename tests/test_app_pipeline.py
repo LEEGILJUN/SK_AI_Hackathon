@@ -770,3 +770,20 @@ def test_hitting_the_scan_limit_is_written_on_the_screen(demo_factory):
     stage = next(s for s in session.outcome.stages if s.key == "mes")
     found = dict(stage.rows)["찾은 이미지"]
     assert "잘렸을 수 있습니다" in found, f"상한에 닿았는데 화면에 안 적힌다: {found}"
+
+
+def test_a_truncated_table_says_how_many_were_folded():
+    """화면 표를 자를 때 남은 건수를 적는다.
+
+    총계는 headline 에 있지만 **표만 보는 사람은 그것이 전부라고 읽는다.**
+    특히 섀도 불일치는 사람이 직접 눈으로 볼 목록이라, 8건만 보여주고 나머지를
+    안 알리면 "이만큼만 보면 된다"는 섀도의 논거 자체가 무너진다.
+    """
+    from app.pipeline import _sampled
+
+    rows = [(f"img_{i}", "…") for i in range(8)]
+    assert _sampled(rows, total=8, shown=8) == rows, "다 보여줬으면 덧붙이지 않는다"
+
+    folded = _sampled(rows, total=31, shown=8)
+    assert folded[-1] == ("…", "외 23건은 접었습니다")
+    assert len(folded) == 9
