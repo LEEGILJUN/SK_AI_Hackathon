@@ -19,6 +19,7 @@
   2. check_docs          문서가 코드와 어긋나지 않는가
   3. check_factory       공장 데이터가 계약에 맞는가
   4. check_scenarios     시나리오 형식이 맞는가
+  5. check_public        저장소를 공개해도 되는가 (가점 항목이다)
 
 3·4 는 데이터 파일이 없으면 건너뛴다 — 아직 안 만들었을 수 있고, 그때
 빨간불을 내면 이 명령 자체를 안 쓰게 된다.
@@ -42,6 +43,7 @@ CHECKS: list[tuple[str, list[str], Path | None]] = [
     ("문서", [PYTHON, "scripts/check_docs.py"], None),
     ("공장 데이터", [PYTHON, "scripts/check_factory.py"], REPO_ROOT / "data" / "manifest.csv"),
     ("시나리오", [PYTHON, "scripts/check_scenarios.py"], REPO_ROOT / "data" / "scenarios.yaml"),
+    ("공개 준비", [PYTHON, "scripts/check_public.py"], None),
 ]
 
 

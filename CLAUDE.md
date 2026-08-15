@@ -97,7 +97,7 @@ MES 데이터와 이미지 메타데이터는 **벡터화하지 않습니다.** 
 ## 기술 스택
 
 - Python, 웹 애플리케이션
-- PatchCore (현행 SVI base 모델과 동일하게 맞춤)
+- PatchCore (현장에 배포된 외관검사 모델과 같은 구조로 맞춤)
 - 언어 모델·시각 언어 모델은 어댑터 계층으로 추상화하여 로컬 모델과 외부 API를 설정으로 교체 가능하게 구성
 - 개발·시연 모두 RTX 4090 노트북. 별도 클라우드 GPU 불필요
 - **시연 장비 기준 Python 3.11** (4090 은 3.11.15). 3.12+ 문법을 쓰면 맥에서는 돌고 시연 장비에서만 죽는다 — `app/view.py` 가 f-string 식 안의 역슬래시로 실제로 그랬다. 그 장비는 PyPI·PyTorch 저장소가 막혀 있어 **환경을 되돌릴 수 없으므로 코드가 3.11 을 맞춘다**
@@ -105,7 +105,7 @@ MES 데이터와 이미지 메타데이터는 **벡터화하지 않습니다.** 
 
 ## 지금 어디까지 구현됐는가
 
-2026-08-15 기준. 본선(8/21) 전 사전 작업 구간. 테스트 429건 통과.
+2026-08-15 기준. 본선(8/21) 전 사전 작업 구간. 테스트 431건 통과.
 
 ```
 이슈 접수 → 인테이크 → MES조회 → 추론 → 판별 7항목 → 진단 → 큐레이션 → 재구성 → 게이트 → 섀도 → 승인요청
@@ -262,6 +262,7 @@ LLM 과 VLM 에 같은 이름을 넣는다 — 모델 하나, 스왑 없음. 등
 .venv/bin/python scripts/check_scenarios.py     # 시나리오 형식 (장영진)
 .venv/bin/python scripts/check_factory.py       # 가상 공장 데이터 (이동현)
 .venv/bin/python scripts/check_all.py           # 위 검사들을 한 번에
+.venv/bin/python scripts/check_public.py        # 저장소를 공개해도 되는가
 .venv/bin/python scripts/check_docs.py          # 문서가 코드와 어긋나지 않는지
 .venv/bin/python scripts/scan_bank_history.py banks/   # 뱅크 구성 이력 복원
 .venv/bin/python scripts/switch_bank.py --item pcb1-01  # 운영 뱅크 판 교체·원복 (사람이 실행)
