@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -22,6 +23,7 @@ from agents.curate import CurationPlan, RemovalCandidate, plan_curation
 from agents.diagnose import DiagnosisResult
 from inspection.types import InferenceResult, NearestMatch, PatchRef
 from agents.tools import (
+    REPEAT_TOOL_LIMIT,
     DIAGNOSE_SPEC,
     PLAN_SPEC,
     REBUILD_SPEC,
@@ -273,12 +275,36 @@ def test_agent_stops_when_the_same_call_repeats():
     assert len(run.tool_results) == 2
 
 
-def test_max_steps_is_still_the_last_net():
-    """인자를 바꿔 가며 부르면 반복 감지에 안 걸린다. 그때는 상한이 잡는다."""
+def test_a_tool_called_over_and_over_stops_even_when_the_arguments_wobble():
+    """인자를 조금씩 바꿔 가며 같은 도구를 부르면 그것도 끊는다.
+
+    "같은 인자" 검사는 인자가 **똑같을** 때만 걸린다. 4090 실측에서 모델이
+    `defect_type` 을 '미세 스크래치' → 'micro-scratch' 로 바꿔 가며 같은
+    도구를 불러 한 바퀴를 더 돌았다. 진행이 아니라 제자리다.
+    """
     registry = make_registry({"cause": "bank_contamination", "rebuild": True})
     adapter = ScriptedAdapter(
         scripted=[""] * 20,
         tool_calls=[[ToolCall(str(i), "diagnose_issue", {"line": f"l{i}", "object_name": "o"})]
+                    for i in range(20)],
+    )
+
+    run = run_agent("돌려줘", adapter, registry, max_steps=8)
+
+    assert run.steps == REPEAT_TOOL_LIMIT, "인자가 흔들려도 세 번째에서 끊어야 한다"
+    assert "인자만 바뀌고" in run.stopped_reason
+
+
+def test_max_steps_is_still_the_last_net():
+    """도구를 바꿔 가며 계속 부르면 위 그물에 안 걸린다. 그때는 상한이 잡는다.
+
+    상한은 **마지막 그물**이지 정상적인 정지 지점이 아니다.
+    """
+    registry = make_registry({"cause": "bank_contamination", "rebuild": True})
+    names = ["diagnose_issue", "lookup_ontology", "plan_curation"]
+    adapter = ScriptedAdapter(
+        scripted=[""] * 20,
+        tool_calls=[[ToolCall(str(i), names[i % len(names)], {"line": f"l{i}"})]
                     for i in range(20)],
     )
 
@@ -330,3 +356,98 @@ def test_agent_survives_model_failure():
 
     assert "모델 호출 실패" in run.stopped_reason
     assert run.tool_results == []
+
+
+# ── 시스템 프롬프트가 도구 목록과 어긋나지 않는가 ───────────────────────
+#
+# **한 번 어긋난 적이 있다.** 도구가 넷이던 시절의 프롬프트가 열한 개가 된
+# 뒤에도 남아, "Call diagnose_issue first" 라고 지시하면서 나머지 일곱을 아예
+# 언급하지 않았다. 4090 실측에서 모델이 intake_issue 만 세 번 부르고 멈췄다.
+# 시험 274건이 전부 통과하는 동안 아무도 못 잡았다.
+
+
+def _pipeline_tool_names():
+    """실제 시연 파이프라인이 등록하는 도구 이름."""
+    from agents.adapters import build_adapters
+    from app.pipeline import DemoFactory, _DemoSession
+
+    session = _DemoSession(
+        DemoFactory(), "x", {}, None, build_adapters(), 2.20, None
+    )
+    return [spec.name for spec in session.registry().specs]
+
+
+def test_the_system_prompt_names_every_tool():
+    """등록된 도구가 프롬프트에 다 있어야 한다.
+
+    없는 도구는 모델이 부를 이유를 못 찾는다. 도구를 추가하고 프롬프트를 안
+    고치면 여기서 걸린다.
+    """
+    from agents.tools import SYSTEM_PROMPT
+
+    missing = [n for n in _pipeline_tool_names() if n not in SYSTEM_PROMPT]
+    assert not missing, f"프롬프트가 모르는 도구가 있다: {missing}"
+
+
+def test_the_system_prompt_does_not_name_a_tool_that_is_gone():
+    """반대로, 없는 도구를 부르라고 하지 않는다."""
+    from agents.tools import SYSTEM_PROMPT
+
+    registered = set(_pipeline_tool_names())
+    mentioned = {
+        word.strip(".,\"'()")
+        for word in SYSTEM_PROMPT.replace("->", " ").split()
+        if word.strip(".,\"'()").endswith(("_issue", "_mes", "_inspection",
+                                            "_checks", "_ontology", "_curation",
+                                            "_bank", "_gate", "_compare", "_release"))
+    }
+    assert mentioned <= registered, f"등록 안 된 도구를 부르라고 한다: {mentioned - registered}"
+
+
+def test_the_first_tool_is_not_pinned_to_the_middle_of_the_pipeline():
+    """"진단부터 불러라" 같은 지시가 없어야 한다.
+
+    진단은 판별 7항목이 모인 **뒤에** 오는 단계다. 먼저 부르라고 하면 모델이
+    앞 단계와 충돌해 아무 데도 못 간다 — 실제로 그랬다.
+    """
+    from agents.tools import SYSTEM_PROMPT
+
+    assert "Call diagnose_issue first" not in SYSTEM_PROMPT
+    order = SYSTEM_PROMPT.index("intake_issue"), SYSTEM_PROMPT.index("diagnose_issue")
+    assert order[0] < order[1], "접수가 진단보다 먼저 나와야 한다"
+
+
+def test_the_prompt_tells_the_model_to_follow_next():
+    """도구가 주는 `next` 를 따르라고 말해야 한다.
+
+    모든 도구 결과에 `next` 가 들어 있는데 **따르라는 말이 없었다.** 주기만
+    하고 읽으라고 안 하면 모델은 그 칸을 무시한다.
+    """
+    from agents.tools import SYSTEM_PROMPT
+
+    assert '"next"' in SYSTEM_PROMPT
+    assert "Call\nthat tool" in SYSTEM_PROMPT or "Call that tool" in SYSTEM_PROMPT
+
+
+def test_id_shaped_arguments_carry_an_example():
+    """ID 를 받는 인자에는 형식 예시가 붙어 있어야 한다.
+
+    예시가 없으면 모델이 이슈 원문의 말("1라인")을 그대로 넣는다. 예시가 붙은
+    인자는 형식을 맞춰 부르는 것이 4090 실측에서 확인됐다.
+    """
+    specs = None
+    from agents.adapters import build_adapters
+    from app.pipeline import DemoFactory, _DemoSession
+
+    specs = _DemoSession(
+        DemoFactory(), "x", {}, None, build_adapters(), 2.20, None
+    ).registry().specs
+
+    bare = []
+    for spec in specs:
+        params = spec.parameters.get("properties", {})
+        for name in ("line", "object_name", "product_id", "lot"):
+            described = params.get(name, {}).get("description", "")
+            if described and "예:" not in described:
+                bare.append(f"{spec.name}.{name}")
+    assert not bare, f"형식 예시가 없는 ID 인자: {bare}"

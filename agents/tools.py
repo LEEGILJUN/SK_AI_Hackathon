@@ -136,8 +136,8 @@ INTAKE_SPEC = ToolSpec(
     parameters={
         "type": "object",
         "properties": {
-            "line": {"type": "string", "description": "라인 ID. 이슈 원문에 있으면 넣는다"},
-            "object_name": {"type": "string", "description": "대상 품목"},
+            "line": {"type": "string", "description": "라인 ID (예: line_01). 1라인 같은 말이 아니다"},
+            "object_name": {"type": "string", "description": "품목 (예: pcb1). 제품 ID 를 넣지 않는다"},
             "defect_type": {"type": "string", "description": "결함 유형"},
         },
     },
@@ -154,10 +154,10 @@ MES_SPEC = ToolSpec(
     parameters={
         "type": "object",
         "properties": {
-            "product_id": {"type": "string", "description": "제품명. 이슈 원문에 있으면 넣는다"},
-            "lot": {"type": "string", "description": "로트 번호"},
-            "line": {"type": "string", "description": "라인 ID"},
-            "object_name": {"type": "string", "description": "품목"},
+            "product_id": {"type": "string", "description": "제품 ID (예: PCB1-01-002)"},
+            "lot": {"type": "string", "description": "로트 번호 (예: LOT-20260601-001)"},
+            "line": {"type": "string", "description": "라인 ID (예: line_01)"},
+            "object_name": {"type": "string", "description": "품목 (예: pcb1)"},
         },
     },
 )
@@ -295,11 +295,34 @@ RELEASE_SPEC = ToolSpec(
 # ── 에이전트 루프 ───────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = """You are an operations agent for an AI visual inspection system in a factory.
-A defect was missed by the deployed model. Your job is to work through the tools
-available to you and report what happened, in Korean.
+A defect was missed by the deployed model. Work through the tools and report in Korean.
 
-Rules you must follow:
-- Call diagnose_issue first. Do not guess the cause yourself; the tool decides it.
+## Follow the pipeline. Do not skip and do not go back.
+
+    intake_issue -> lookup_mes -> run_inspection -> run_checks -> diagnose_issue
+                 -> plan_curation -> rebuild_bank -> evaluate_gate
+                 -> shadow_compare -> prepare_release
+
+**Every tool result contains a "next" field naming the tool to call next. Call
+that tool. Never call the same tool twice.** A result with "ok": true succeeded
+even if it looks incomplete to you — calling it again returns the same thing and
+wastes a turn. If "next" tells you to stop, stop and summarise.
+
+## Argument format
+
+Use canonical IDs, not the words from the issue text.
+
+    line: "line_01"              not "1라인"
+    object_name: "pcb1"          not "PCB 기판", and never a product ID
+    product_id: "PCB1-01-002"    the specific item
+    lot: "LOT-20260601-001"
+
+Convert Korean line names to IDs. Leave a field out rather than guessing it.
+
+## Rules
+
+- Do not decide the cause yourself. diagnose_issue decides it from the seven
+  checks, so call it only after run_checks has produced them.
 - If you are unsure what a cause means, what separates it from a similar one, or
   which actions are forbidden for it, call lookup_ontology. It describes the six
   causes and the seven checks. It never decides the cause of this issue.
@@ -334,6 +357,14 @@ class AgentRun:
                 for r in self.tool_results
             ],
         }
+
+
+#: 한 도구를 이만큼 부르면 인자가 달라도 멈춘다.
+#:
+#: 모델이 인자를 조금씩 바꿔 가며 같은 도구를 반복하면 위의 "같은 인자" 검사에
+#: 안 걸린다. 정상 흐름에서 한 도구를 세 번 부를 일은 없다 — 도구 결과가
+#: `next` 로 다음 단계를 알려 주기 때문이다.
+REPEAT_TOOL_LIMIT = 3
 
 
 def run_agent(
@@ -399,6 +430,19 @@ def run_agent(
                 run.stopped_reason = (
                     f"'{result.name}' 을 같은 인자로 {len(repeats)}번 불렀고 결과가 "
                     f"바뀌지 않았다. 더 진행해도 달라질 것이 없어 멈춘다."
+                )
+                return run
+
+            # ── 인자가 흔들려도 같은 도구를 계속 부르면 끊는다 ──────────
+            #
+            # 위 검사는 인자가 **똑같을** 때만 걸린다. 4090 실측에서 모델이
+            # defect_type 을 '미세 스크래치' → 'micro-scratch' 로 바꿔 가며
+            # 같은 도구를 불러 한 바퀴를 더 돌았다. 진행이 아니라 제자리다.
+            same_tool = [r for r in run.tool_results if r.name == result.name]
+            if len(same_tool) >= REPEAT_TOOL_LIMIT:
+                run.stopped_reason = (
+                    f"'{result.name}' 을 {len(same_tool)}번 불렀다. 인자만 바뀌고 "
+                    f"다음 단계로 가지 못하고 있어 멈춘다."
                 )
                 return run
 
