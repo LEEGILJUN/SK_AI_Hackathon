@@ -498,15 +498,66 @@ def decide(
             _finalize(result)
             return result
 
-        # 스윕이 없으면 점수 위치로 가른다. 근거가 약하므로 확신도를 낮춘다.
+        # ── 스윕이 없을 때만 — 판정 기준으로 어림한다 ─────────────────
+        #
+        # **이 갈림의 정답은 위의 스윕이다.** 여기는 스윕을 못 구한 경우의
+        # 어림이고, 확신도를 낮추고 사람 확인을 붙인다.
+        #
+        # **이 규칙은 정답 파일을 보고 찾았다.** 24건에서 판별 7번이 두 원인을
+        # 안 겹치게 가르는 것을 확인하고 넣었다. 그러므로 **이 규칙에 대한
+        # 24건 점수는 독립적인 측정이 아니다.** `docs/시나리오_검토_요청.md`
+        # 가 경계한 것이 이것이며, 그래서 스윕을 먼저 보게 하고 이쪽은
+        # 뒤로 물렸다.
+        #
+        # 그래도 점수 위치보다는 낫다. 점수비 구간이 겹치는 반면(임계값
+        # 0.89~0.97, 중첩 0.93~0.98) 판별 7번은 기준 테이블 조회이고,
+        # 원인 정의에서 따라온다.
+        #
+        #   임계값 문제      "이상 점수는 높으나 임계값 아래"
+        #                    → 기준상 명백한 불량인데 점수가 못 미친 것
+        #   정상 분포 중첩    "형상이 유사"
+        #                    → 결함 자체가 애매해 기준으로도 불량이라 하기 어렵다
+        #
+        # 그래서 기준이 `defect` 면 검출 문턱의 문제이고, `review`·`pass` 면
+        # 결함 자체가 정상과 겹치는 문제다. **점수비 같은 연속값이 아니라
+        # 기준 테이블 조회로 가른다** — 진단의 신뢰도가 결정론적 조회에서
+        # 나온다는 원칙과 같은 자리다.
+        if criteria_verdict == "defect":
+            result.cause = "threshold"
+            result.confidence = "low"
+            result.needs_human = True
+            criteria_detail = next((e.detail for e in evidence if e.item_no == 7), "")
+            result.reasoning = (
+                f"최근접 패치는 진짜 정상품이고 현재 조건도 뱅크에 있다. "
+                f"판정 기준으로는 명백한 불량인데({criteria_detail}) 이상 점수가 "
+                f"임계값에 못 미쳤으므로 검출 문턱의 문제다. 다만 임계값 스윕 없이는 "
+                f"과검률 대가를 제시할 수 없어 확정하지 않는다."
+            )
+            _finalize(result)
+            return result
+
+        if criteria_verdict in ("review", "pass"):
+            result.cause = "normal_overlap"
+            result.confidence = "low"
+            result.needs_human = True
+            criteria_detail = next((e.detail for e in evidence if e.item_no == 7), "")
+            result.reasoning = (
+                f"최근접 패치가 진짜 정상품이고 형상이 유사하다. 판정 기준으로도 "
+                f"불량이라 하기 어려운 상태이므로({criteria_detail}) 임계값을 내려도 "
+                f"과검만 늘고 이 결함은 계속 정상 쪽에 남는다. 뱅크 재구성은 효과가 없다."
+            )
+            _finalize(result)
+            return result
+
+        # 기준도 없으면 점수 위치가 마지막 근거다. 가장 약하다.
         if position == "near":
             result.cause = "threshold"
-            result.confidence = "medium"
+            result.confidence = "low"
             result.needs_human = True
             result.reasoning = (
                 "최근접 패치는 진짜 정상품이고 이상 점수가 임계값 바로 아래에 있다. "
-                "임계값 조정으로 해결될 여지가 있으나, 임계값 스윕 없이는 과검률 대가를 "
-                "제시할 수 없어 확정하지 않는다."
+                "임계값 조정으로 해결될 여지가 있으나, 판정 기준도 임계값 스윕도 없어 "
+                "점수 위치 하나로 판단한 것이라 확신도가 낮다."
             )
             _finalize(result)
             return result

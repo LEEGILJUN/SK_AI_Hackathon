@@ -258,16 +258,23 @@ def test_defect_not_visible_stops_before_diagnosis():
 
 
 def test_no_sweep_lowers_confidence():
-    """스윕 없이 내린 판정은 확신도가 낮고 사람 확인이 붙어야 한다."""
+    """스윕 없이 내린 판정은 확신도가 낮고 사람 확인이 붙어야 한다.
+
+    면적을 기준 아래로 둔다 — 판정 기준이 `defect` 면 새 규칙이 임계값
+    문제로 보내므로 이 시험이 재려는 것과 달라진다.
+    """
     with_sweep = decide(
-        build(patch="genuine_normal", score=0.8),
+        build(patch="genuine_normal", score=0.8, area=50.0),
         sweep=FeasibilityVerdict(False, 1.0, 0.05, 0.45, 0.7, 1.0, 0.6, "겹친다"),
     )
-    without = decide(build(patch="genuine_normal", score=0.8))
+    without = decide(build(patch="genuine_normal", score=0.8, area=50.0))
 
     assert with_sweep.cause == without.cause == "normal_overlap"
-    assert with_sweep.confidence == "high"
-    assert without.confidence == "medium"
+    assert with_sweep.confidence == "high", "스윕은 실제로 잰 값이라 확신도가 높다"
+    assert without.confidence == "low", (
+        "스윕 없이 판정 기준으로 어림한 것이라 확신도가 낮아야 한다 — "
+        "그 규칙은 정답 파일을 보고 찾은 것이다"
+    )
     assert without.needs_human is True
 
 
@@ -461,3 +468,52 @@ def test_single_axis_form_still_works():
         condition_key="date", condition_value="2026-06-01",
     )
     assert next(e for e in evidence if e.item_no == 6).value is True
+
+
+# ── 임계값 문제와 정상 분포 중첩을 무엇으로 가르는가 ───────────────────
+
+
+def test_the_criteria_split_threshold_from_overlap():
+    """**점수비로는 못 가른다. 판정 기준으로 가른다.**
+
+    두 원인의 점수비 구간이 겹친다 — 임계값 문제 0.89~0.97, 정상 분포 중첩
+    0.93~0.98 이라 0.93~0.97 에 양쪽이 다 들어 있다. 어떤 경계값을 잡아도
+    몇은 틀린다.
+
+    판별 7번은 겹치지 않고, 그것이 원인 정의에서 곧바로 따라온다.
+
+        임계값 문제     "이상 점수는 높으나 임계값 아래"
+                        → 기준상 명백한 불량인데 점수가 못 미친 것
+        정상 분포 중첩  "형상이 유사"
+                        → 결함 자체가 애매해 기준으로도 불량이라 하기 어렵다
+    """
+    clear_defect = decide(build(patch="genuine_normal", score=2.0, area=300.0))
+    assert clear_defect.cause == "threshold", "기준상 불량인데 못 잡았으면 문턱 문제다"
+
+    ambiguous = decide(build(patch="genuine_normal", score=2.0, area=50.0))
+    assert ambiguous.cause == "normal_overlap", "기준으로도 양품이면 형상이 겹치는 것이다"
+
+    # 점수는 같다 — 갈린 것은 판정 기준이다.
+    assert clear_defect.cause != ambiguous.cause
+
+
+def test_the_same_score_lands_on_both_causes():
+    """같은 점수비에서 두 원인이 다 나와야 한다.
+
+    이 시험이 실패하면 점수로 가르고 있는 것이다.
+    """
+    causes = {
+        decide(build(patch="genuine_normal", score=2.1, area=300.0)).cause,
+        decide(build(patch="genuine_normal", score=2.1, area=50.0)).cause,
+    }
+    assert causes == {"threshold", "normal_overlap"}
+
+
+def test_the_sweep_still_wins_when_present():
+    """스윕이 있으면 그 판정을 우선한다. 실제로 재본 값이기 때문이다."""
+    verdict = decide(
+        build(patch="genuine_normal", score=2.0, area=300.0),
+        sweep=FeasibilityVerdict(False, 1.0, 0.05, 0.45, 0.7, 1.0, 0.6, "겹친다"),
+    )
+    assert verdict.cause == "normal_overlap", "기준이 defect 여도 스윕이 우선한다"
+    assert verdict.confidence == "high"

@@ -89,6 +89,7 @@ from inspection import (
     score_image,
     score_images,
     shadow_compare,
+    assess_threshold_feasibility,
     sweep_from_results,
 )
 from inspection.crop import crop_patch, crop_with_context
@@ -1180,6 +1181,28 @@ class _DemoSession:
             "next": "diagnose_issue",
         }
 
+    def _threshold_feasibility(self):
+        """지금 뱅크에서 임계값을 내리면 해결되는지 잰다.
+
+        **홀드아웃이 모자라면 None 이다.** 몇 장으로 만든 곡선은 곡선이 아니고,
+        없는 근거로 원인을 정하느니 진단이 확신도를 낮추는 편이 낫다.
+        """
+        item = self.item
+        if item is None or len(item.holdout_normal) < 3 or len(item.holdout_defect) < 3:
+            return None
+
+        f = self.factory
+        try:
+            curve = sweep_from_results(
+                score_images(item.holdout_normal, item.bank, f.embedder, root=f.root),
+                score_images(item.holdout_defect, item.bank, f.embedder, root=f.root),
+                current_threshold=self.threshold,
+            )
+            return assess_threshold_feasibility(curve)
+        except Exception:
+            # 진단이 스윕 때문에 멈추면 안 된다. 없으면 없는 대로 간다.
+            return None
+
     def _judge_nearest_patch(self, result) -> VisionJudgment | None:
         """판별 5번 — 최근접 뱅크 패치가 결함인가 진짜 정상품인가.
 
@@ -1248,7 +1271,22 @@ class _DemoSession:
         if self.evidence is None:
             raise RuntimeError("먼저 run_checks 를 불러야 한다.")
 
-        diagnosis = decide(self.evidence, similar_issues=self.outcome.intake.similar,
+        # ── 임계값 스윕을 진단에 넘긴다 ────────────────────────────────
+        #
+        # **임계값 문제와 정상 분포 중첩은 이것으로만 갈린다.** 점수비로는
+        # 두 구간이 0.93~0.97 에서 겹쳐 원리적으로 못 가른다. "임계값을 내려
+        # 목표 검출률에 닿는가, 그때 과검률이 감당 가능한가"가 두 원인의
+        # 정의 그대로다.
+        #
+        # 진단 시점에 재는 이유는 **그 답이 진단의 입력**이기 때문이다.
+        # 게이트가 뒤에서 같은 계산을 하지만 그때는 이미 뱅크를 다시 만든
+        # 뒤라, 재구성이 답인지를 정하는 데 쓸 수 없다.
+        #
+        # 지금 뱅크의 홀드아웃으로 잰다. 이미지 열댓 장이라 비용이 작다.
+        sweep = self._threshold_feasibility()
+
+        diagnosis = decide(self.evidence, sweep=sweep,
+                           similar_issues=self.outcome.intake.similar,
                            current_line=self.outcome.intake.report.line)
         self.outcome.diagnosis = diagnosis
         self.outcome.stages.append(

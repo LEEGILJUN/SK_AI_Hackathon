@@ -104,6 +104,11 @@ scenarios:
         nearest_patch_is_defect: false
         coverage_present: true
         criteria_verdict: defect
+        # 임계값을 내려 목표 검출률에 닿는가, 그때 과검률이 감당 가능한가.
+        # 두 원인의 정의가 이것이고 score_ratio 로는 구간이 겹쳐 못 가른다.
+        threshold_sweep:
+          achievable: true
+          resulting_fpr: 0.06
       expected_actions: [threshold_recalibration, roc_pr_reanalysis, shadow_compare]
       forbidden_actions: [rebuild_bank]
  
@@ -159,6 +164,11 @@ scenarios:
         nearest_patch_is_defect: false
         coverage_present: true
         criteria_verdict: defect
+        # 임계값을 내려 목표 검출률에 닿는가, 그때 과검률이 감당 가능한가.
+        # 두 원인의 정의가 이것이고 score_ratio 로는 구간이 겹쳐 못 가른다.
+        threshold_sweep:
+          achievable: true
+          resulting_fpr: 0.06
       expected_actions: [threshold_recalibration, roc_pr_reanalysis, shadow_compare]
       forbidden_actions: [rebuild_bank]
  
@@ -214,6 +224,11 @@ scenarios:
         nearest_patch_is_defect: false
         coverage_present: true
         criteria_verdict: defect
+        # 임계값을 내려 목표 검출률에 닿는가, 그때 과검률이 감당 가능한가.
+        # 두 원인의 정의가 이것이고 score_ratio 로는 구간이 겹쳐 못 가른다.
+        threshold_sweep:
+          achievable: true
+          resulting_fpr: 0.06
       expected_actions: [threshold_recalibration, roc_pr_reanalysis, shadow_compare]
       forbidden_actions: [rebuild_bank]
  
@@ -269,6 +284,11 @@ scenarios:
         nearest_patch_is_defect: false
         coverage_present: true
         criteria_verdict: defect
+        # 임계값을 내려 목표 검출률에 닿는가, 그때 과검률이 감당 가능한가.
+        # 두 원인의 정의가 이것이고 score_ratio 로는 구간이 겹쳐 못 가른다.
+        threshold_sweep:
+          achievable: true
+          resulting_fpr: 0.06
       expected_actions: [threshold_recalibration, roc_pr_reanalysis, shadow_compare]
       forbidden_actions: [rebuild_bank]
  
@@ -773,6 +793,11 @@ scenarios:
         nearest_patch_is_defect: false
         coverage_present: true
         criteria_verdict: review
+        # 임계값을 내려 목표 검출률에 닿는가, 그때 과검률이 감당 가능한가.
+        # 두 원인의 정의가 이것이고 score_ratio 로는 구간이 겹쳐 못 가른다.
+        threshold_sweep:
+          achievable: false
+          resulting_fpr: 0.71
       expected_actions: [criteria_review, algorithm_level_review]
       forbidden_actions: [rebuild_bank, lower_threshold]
  
@@ -828,6 +853,11 @@ scenarios:
         nearest_patch_is_defect: false
         coverage_present: true
         criteria_verdict: pass
+        # 임계값을 내려 목표 검출률에 닿는가, 그때 과검률이 감당 가능한가.
+        # 두 원인의 정의가 이것이고 score_ratio 로는 구간이 겹쳐 못 가른다.
+        threshold_sweep:
+          achievable: false
+          resulting_fpr: 0.71
       expected_actions: [visual_reverification, close_as_no_defect]
       forbidden_actions: [rebuild_bank, lower_threshold]
  
@@ -883,6 +913,11 @@ scenarios:
         nearest_patch_is_defect: false
         coverage_present: true
         criteria_verdict: pass
+        # 임계값을 내려 목표 검출률에 닿는가, 그때 과검률이 감당 가능한가.
+        # 두 원인의 정의가 이것이고 score_ratio 로는 구간이 겹쳐 못 가른다.
+        threshold_sweep:
+          achievable: false
+          resulting_fpr: 0.71
       expected_actions: [visual_reverification, spec_change_confirmation, close_as_no_defect]
       forbidden_actions: [rebuild_bank, lower_threshold]
  
@@ -938,6 +973,11 @@ scenarios:
         nearest_patch_is_defect: false
         coverage_present: true
         criteria_verdict: review
+        # 임계값을 내려 목표 검출률에 닿는가, 그때 과검률이 감당 가능한가.
+        # 두 원인의 정의가 이것이고 score_ratio 로는 구간이 겹쳐 못 가른다.
+        threshold_sweep:
+          achievable: false
+          resulting_fpr: 0.71
       expected_actions: [criteria_review, algorithm_level_review]
       forbidden_actions: [rebuild_bank, lower_threshold]
  

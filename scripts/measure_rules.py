@@ -18,6 +18,7 @@ import yaml
 REPO = Path(sys.argv[1]) if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else Path.cwd()
 sys.path.insert(0, str(REPO))
 
+from inspection.sweep import FeasibilityVerdict  # noqa: E402
 from agents.diagnose import Evidence, decide  # noqa: E402
 
 # 판별 3번을 라벨에서 가져올지 비율에서 계산할지. 운영에서는 계산이다.
@@ -74,6 +75,36 @@ def build_evidence(ev: dict) -> list[Evidence]:
     ]
 
 
+def build_sweep(ev: dict) -> "FeasibilityVerdict | None":
+    """시나리오의 `threshold_sweep` 을 진단이 받는 형태로.
+
+    **없으면 None 이다.** 스윕이 없는 시나리오까지 지어내면 측정이 아니라
+    연출이 된다.
+
+    두 원인의 정의가 곧 이 값이다 — 임계값 문제는 "내리면 해결된다"이고
+    정상 분포 중첩은 "내려도 과검만 는다"이다. `score_ratio` 로는 두 구간이
+    0.93~0.97 에서 겹쳐 원리적으로 못 가른다.
+    """
+    sweep = ev.get("threshold_sweep")
+    if not sweep:
+        return None
+    fpr = sweep.get("resulting_fpr")
+    return FeasibilityVerdict(
+        achievable=bool(sweep.get("achievable")),
+        target_detection=1.0,
+        max_acceptable_fpr=0.05,
+        required_threshold=None,
+        resulting_fpr=fpr,
+        resulting_detection=1.0 if sweep.get("achievable") else None,
+        auroc=0.0,
+        reason=(
+            f"임계값 조정으로 목표 검출률에 "
+            f"{'닿는다' if sweep.get('achievable') else '닿지 못한다'}"
+            + (f" (그때 과검률 {fpr:.0%})" if fpr is not None else "")
+        ),
+    )
+
+
 def main() -> None:
     data = yaml.safe_load((REPO / "data" / "scenarios.yaml").read_text(encoding="utf-8"))
     scenarios = data.get("scenarios", [])
@@ -102,7 +133,7 @@ def main() -> None:
 
         gt = s.get("ground_truth") or {}
         ev = gt.get("evidence") or {}
-        result = decide(build_evidence(ev))
+        result = decide(build_evidence(ev), sweep=build_sweep(ev))
 
         forbidden = set(gt.get("forbidden_actions") or [])
         rows.append({
@@ -121,7 +152,7 @@ def main() -> None:
         })
 
     mode = "score_ratio 에서 계산" if USE_COMPUTED_POSITION else "시나리오 라벨 사용"
-    print(f"decide() 규칙 정확도 — 근거는 정답 그대로, 스윕 없음, 판별 3번은 {mode}\n")
+    print(f"decide() 규칙 정확도 — 근거는 정답 그대로, 판별 3번은 {mode}\n")
     head = f"{'id':<12} {'정답':<19} {'판정':<19} {'맞음':<5} {'재구성':<7} {'확신':<7} 금지위반"
     print(head)
     print("-" * len(head))
