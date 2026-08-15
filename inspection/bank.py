@@ -197,10 +197,22 @@ class MemoryBank:
         if stored is None:
             return
         current = config.fingerprint()
-        mismatched = {k: (stored.get(k), current.get(k)) for k in current if stored.get(k) != current.get(k)}
+
+        # **양쪽 키를 다 본다.** 현재 키만 훑으면 **없어진 설정을 못 잡는다** —
+        # 전처리를 바꾸며 `resize` 를 없앴을 때, 나머지 값이 같아서 중앙 크롭
+        # 시절 뱅크가 그대로 통과했다. 거리 척도가 다른데 오류가 안 났다.
+        keys = set(stored) | set(current)
+        mismatched = {
+            k: (stored.get(k, "없음"), current.get(k, "없음"))
+            for k in sorted(keys)
+            if stored.get(k) != current.get(k)
+        }
         if mismatched:
             detail = ", ".join(f"{k}: 뱅크={a} 추론={b}" for k, (a, b) in mismatched.items())
-            raise ValueError(f"뱅크와 추론 설정이 다르다 ({detail}). 같은 설정으로 맞춰라.")
+            raise ValueError(
+                f"뱅크와 추론 설정이 다르다 ({detail}). "
+                f"이 뱅크는 다시 세워야 한다 — 폴더를 지우고 새로 만들어라."
+            )
 
 
 # ── 구축 ────────────────────────────────────────────────────────────────

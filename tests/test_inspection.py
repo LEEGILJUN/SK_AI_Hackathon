@@ -268,3 +268,22 @@ def test_there_is_only_one_size_to_configure():
     names = {f.name for f in fields(FeatureConfig)}
     assert "resize" not in names, "크기를 정하는 값이 둘이면 어긋난다"
     assert "crop" in names
+
+
+def test_a_bank_from_a_removed_setting_is_refused():
+    """**없어진 설정도 잡아야 한다.**
+
+    전처리를 정사각 리사이즈로 바꾸며 `resize` 필드를 없앴다. 현재 키만
+    훑으면 예전 뱅크의 `resize` 를 안 보고, 나머지 값이 같아서 **중앙 크롭
+    시절 뱅크가 그대로 통과한다.** 거리 척도가 다른데 오류가 안 난다.
+    """
+    import pytest
+
+    from inspection import FeatureConfig
+    from inspection.bank import MemoryBank
+
+    bank = MemoryBank.__new__(MemoryBank)
+    bank.meta = {"feature_config": dict(FeatureConfig().fingerprint(), resize=512)}
+
+    with pytest.raises(ValueError, match="resize"):
+        bank.assert_compatible(FeatureConfig())
