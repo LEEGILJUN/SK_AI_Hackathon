@@ -28,7 +28,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any
 
 from lookup.base import ImageRecord
@@ -93,6 +93,8 @@ class NightlyReport:
     issues: list[PendingIssue] = field(default_factory=list)
     #: 상한에 걸려 이번에 처리하지 않은 건수. **조용히 자르지 않는다.**
     deferred: int = 0
+    #: 돌지 못하고 건너뛴 품목과 이유. 이것도 조용히 넘기지 않는다.
+    skipped: list[str] = field(default_factory=list)
     note: str = ""
 
     @property
@@ -106,10 +108,11 @@ class NightlyReport:
     def describe(self) -> str:
         """사람이 읽는 한 문단."""
         if not self.scanned:
-            return (
+            head = (
                 f"{self.ran_at:%Y-%m-%d %H:%M} — 처리할 생산분이 없습니다. "
                 f"아직 검사하지 않은 이미지가 쌓이지 않았습니다."
             )
+            return "\n".join([head] + [f"  건너뜀 — {n}" for n in self.skipped])
         if not self.missed:
             return (
                 f"{self.ran_at:%Y-%m-%d %H:%M} — {self.scanned}장을 검사했고 "
@@ -126,11 +129,22 @@ class NightlyReport:
                 f"(한 번에 {MAX_ISSUES_PER_RUN}건까지)."
             )
         for issue in self.issues:
-            mark = "재구성 필요" if issue.needs_rebuild else "재구성 아님"
+            if issue.cause is None:
+                # **판정이 안 난 것을 "재구성 아님"으로 적지 않는다.** 결론이
+                # 난 것처럼 읽혀서 사람이 넘겨 버린다.
+                lines.append(f"  · {issue.product_id} — 판정 보류 (사람 확인 필요)")
+            else:
+                mark = "재구성 필요" if issue.needs_rebuild else "재구성 아님"
+                lines.append(f"  · {issue.product_id} — {issue.cause} ({mark})")
+        held = sum(1 for i in self.issues if i.cause is None)
+        if held:
             lines.append(
-                f"  · {issue.product_id} — {issue.cause or '진단 보류'} ({mark})"
+                f"  {held}건은 판별 5번(최근접 패치가 결함인가)에 답이 없어 "
+                f"판정을 보류했습니다. **추측으로 원인을 정하지 않습니다.**"
             )
-        if self.rebuild_requested:
+        for note in self.skipped:
+            lines.append(f"  건너뜀 — {note}")
+        if self.approvals:
             lines.append(
                 f"  승인 요청 {self.approvals}건을 만들어 두었습니다. "
                 f"**배포는 사람이 합니다.**"
@@ -146,9 +160,31 @@ class NightlyReport:
             "deferred": self.deferred,
             "rebuild_requested": self.rebuild_requested,
             "approvals": self.approvals,
+            "skipped": list(self.skipped),
             "issues": [i.to_dict() for i in self.issues],
             "note": self.describe(),
         }
+
+
+def is_missed(record: ImageRecord, score: float, threshold: float) -> bool:
+    """이 건이 미검인가.
+
+    **미검의 정의는 `ImageRecord.is_missed` 하나뿐이다** — 사람이 확인한
+    결과는 불량인데 설비는 양품으로 흘려보낸 것. 여기서 다시 정의하면 두 벌이
+    되고 한쪽만 고쳐진다.
+
+    설비 판정(`verdict`)이 기록돼 있으면 그것을 그대로 믿는다. 안 돼 있는
+    구간이면 **지금 뱅크로 다시 추론한 점수**로 판정을 대신 세운다 — 야간
+    누적분은 아직 판정 기록이 없을 수 있다.
+
+    `ground_truth` 가 없으면(사람이 아직 안 본 건) 미검이라 말할 수 없다.
+    **점수가 낮다는 것만으로 미검이라 부르면 진짜 양품을 이슈로 만든다.**
+    """
+    if record.ground_truth is None:
+        return False
+    if record.verdict is not None:
+        return record.is_missed
+    return record.ground_truth == "defect" and score < threshold
 
 
 def scan_pending(lookup, line: str, object_name: str) -> list[ImageRecord]:
@@ -182,12 +218,15 @@ def run_nightly(
     adapters,
     *,
     now: datetime | None = None,
-    threshold: float = 2.20,
     max_issues: int = MAX_ISSUES_PER_RUN,
 ) -> NightlyReport:
     """쌓인 생산분을 처리하고 보고서를 낸다.
 
     **배포하지 않는다.** 파이프라인이 승인 요청 문서까지 만들고 멈춘다.
+
+    임계값을 인자로 받지 않는다. **판별 3번은 조회 계층이 답하는 값**이고
+    (`get_threshold`), 여기서 기본값을 들고 있으면 파이프라인이 쓰는 값과
+    달라진다. 품목마다 다른 것도 그 이유다.
     """
     from app.pipeline import DEMO_ITEMS, run_pipeline
     from inspection import score_images
@@ -195,7 +234,7 @@ def run_nightly(
     ran_at = now or datetime.now()
     report = NightlyReport(ran_at=ran_at)
 
-    candidates: list[tuple[ImageRecord, float]] = []
+    candidates: list[tuple[ImageRecord, float, float]] = []
     for line, object_name, _category in DEMO_ITEMS:
         item = factory.item_for(line, object_name)
         if item is None:
@@ -205,6 +244,17 @@ def run_nightly(
             continue
         report.scanned += len(records)
 
+        # 판별 3번 — 임계값은 품목·뱅크판마다 다르고 조회 계층이 답한다.
+        record = lookup.get_threshold(line, object_name, item.bank.version)
+        if record is None:
+            # 값을 못 찾으면 예외가 아니라 None 이 오는 것이 조회 계층의 규약이다.
+            # 임계값 없이 미검을 가리면 그 기준을 우리가 지어내는 것이 된다.
+            report.skipped.append(
+                f"{line}/{object_name} — 운영 임계값이 없어 판정하지 않았습니다"
+            )
+            continue
+        threshold = record.value
+
         paths = [factory.resolve(r.path) for r in records]
         results = score_images(paths, item.bank, factory.embedder, root=factory.root)
         by_path = {r.image: r for r in results}
@@ -213,20 +263,19 @@ def run_nightly(
             inferred = by_path.get(record.path)
             if inferred is None:
                 continue
-            # 미검 — 사람이 확인한 결과는 불량인데 설비 점수가 임계값 아래다.
-            if record.ground_truth == "defect" and inferred.score < threshold:
-                candidates.append((record, inferred.score))
+            if is_missed(record, inferred.score, threshold):
+                candidates.append((record, inferred.score, threshold))
 
     report.missed = len(candidates)
     if not candidates:
         return report
 
     # 점수가 낮을수록 "확실히 놓친 것"이라 먼저 본다.
-    candidates.sort(key=lambda pair: pair[1])
+    candidates.sort(key=lambda found: found[1])
     handled, deferred = candidates[:max_issues], candidates[max_issues:]
     report.deferred = len(deferred)
 
-    for record, score in handled:
+    for record, score, threshold in handled:
         issue = PendingIssue(
             product_id=record.product_id,
             line=record.line,
@@ -240,8 +289,16 @@ def run_nightly(
         issue.outcome = run_pipeline(
             factory,
             issue.issue_text,
+            # **판별 5번을 미리 정하지 않는다.** 최근접 패치가 결함인지 진짜
+            # 정상품인지가 뱅크 오염과 정상 분포 중첩을 가르는 유일한 자리다.
+            # 여기에 "defect" 를 넣으면 스케줄러가 만든 이슈는 전부 오염으로
+            # 기운다. 모델이 없으면 판정은 보류되고, **그것이 옳은 동작이다.**
+            patch_override=None,
             adapters=adapters,
             threshold=threshold,
+            # 같은 조회 계층을 넘긴다. 안 넘기면 파이프라인이 자기 목을 새로
+            # 만들어, 여기서 찾은 미검을 저기서 못 찾는다.
+            lookup=lookup,
             context={
                 "line": record.line,
                 "object_name": record.object_name,

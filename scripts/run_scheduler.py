@@ -36,8 +36,20 @@ def main() -> int:
     hour, minute = (int(v) for v in args.at.split(":"))
     at, now = time(hour, minute), datetime.now()
 
-    if not args.now and not due(now, at):
-        print(f"아직 돌 차례가 아닙니다. 다음 실행 {next_run(now, at):%Y-%m-%d %H:%M}")
+    # 마지막으로 돈 시각을 파일에 남긴다. **이것이 없으면 "같은 날 두 번은 안
+    # 돈다"가 시험에만 있고 실제로는 안 걸려서**, cron 이 매시 깨울 때마다
+    # 같은 이슈가 다시 접수된다.
+    stamp = REPO_ROOT / "runs" / "scheduler_last_run.txt"
+    last_run = None
+    if stamp.exists():
+        try:
+            last_run = datetime.fromisoformat(stamp.read_text().strip())
+        except ValueError:
+            pass  # 손상됐으면 안 돈 것으로 본다 — 건너뛰는 것보다 낫다.
+
+    if not args.now and not due(now, at, last_run):
+        when = "오늘은 이미 돌았습니다." if last_run and last_run.date() >= now.date() else ""
+        print(f"아직 돌 차례가 아닙니다. {when} 다음 실행 {next_run(now, at):%Y-%m-%d %H:%M}")
         return 0
 
     factory = DemoFactory()
@@ -54,6 +66,8 @@ def main() -> int:
         lookup = MockLookup(catalog=factory.catalog, banks=factory.bank_versions())
 
     report = run_nightly(factory, lookup, build_adapters(), now=now)
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    stamp.write_text(now.isoformat())
     print(report.describe())
     print(f"\n다음 실행 {next_run(now, at):%Y-%m-%d %H:%M}")
     return 0

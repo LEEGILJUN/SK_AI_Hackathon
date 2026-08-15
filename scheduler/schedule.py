@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+from datetime import datetime, time, timedelta
 
 
 def due(now: datetime, at: time, last_run: datetime | None = None) -> bool:

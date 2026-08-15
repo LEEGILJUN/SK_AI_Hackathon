@@ -259,6 +259,11 @@ class RunOutcome:
 #: pcb2 정상이 pcb1 **결함보다 높게** 찍힙니다(AUROC 1.000, 겹침 없음.
 #: `docs/실험_pcbAUROC.md` 3장). 품목이 하나뿐이면 그 사실이 코드에서
 #: 드러나지 않아 뱅크가 하나뿐인 전제가 조용히 박힙니다.
+#: 시연 카탈로그에서 정상·결함 각 몇 장을 pending(야간 누적분)으로 둘 것인가.
+#: 스케줄러가 집는 대상이다. 가상 공장에서는 manifest 의 `split` 이 이 역할을
+#: 하고, 여기는 VisA 없이 도는 시연용 대체물이다.
+DEMO_PENDING_PER_GROUP = 2
+
 DEMO_ITEMS: list[tuple[str, str, str]] = [
     ("line_01", "pcb1", "pcb1"),
     ("line_02", "pcb2", "pcb2"),
@@ -437,6 +442,10 @@ class DemoFactory:
         """이미지마다 MES 레코드를 만든다. 로트와 설비를 붙여 집계가 되게 한다."""
         lots = [f"LOT-2026060{index + 1}-{n:03d}" for n in (1, 2)]
         for group, kind in ((normal, "pass"), (defect, "defect")):
+            # 뒤쪽 몇 장은 **아직 검사하지 않은 야간 누적분**으로 둔다. 가상
+            # 공장의 pending 구간에 해당하고, 스케줄러가 집는 것이 이것이다.
+            # 정상과 결함이 섞여 있어야 "전건이 미검"이 아닌 실제 모양이 된다.
+            pending_from = max(len(group) - DEMO_PENDING_PER_GROUP, 0)
             for i, path in enumerate(group):
                 #: 결함은 첫 로트에 몰아 넣는다. 로트 집중도가 화면에 뜨는지
                 #: 확인하려면 실제로 몰려 있는 데이터가 있어야 한다.
@@ -453,6 +462,7 @@ class DemoFactory:
                         verdict="pass",
                         ground_truth=kind,
                         equipment=f"CAM-{line[-2:]}-{(i % 2) + 1}",
+                        split="pending" if i >= pending_from else "operation",
                     )
                 )
 
@@ -539,6 +549,7 @@ class _DemoSession:
         patch_override: str | None,
         adapters: tuple[ModelAdapter, ModelAdapter],
         threshold: float,
+        lookup: Any = None,
     ):
         self.factory = factory
         self.issue_text = issue_text
@@ -546,7 +557,11 @@ class _DemoSession:
         self.patch_override = patch_override
         self.llm, self.vlm = adapters
         self.threshold = threshold
-        self.lookup = MockLookup(
+        # **조회 계층은 밖에서 준다.** 여기서 만들어 버리면 한 실행 안에 조회
+        # 계층이 둘이 되고(부르는 쪽 하나, 파이프라인 하나) 서로 다른 답을
+        # 낸다 — 스케줄러가 찾은 미검을 파이프라인이 못 찾는 식이다.
+        # 이동현의 실구현(`lookup/factory.py`)을 끼우는 자리도 여기다.
+        self.lookup = lookup or MockLookup(
             threshold=threshold,
             catalog=factory.catalog,
             banks=factory.bank_versions(),
@@ -1283,6 +1298,7 @@ def run_pipeline(
     adapters: tuple[ModelAdapter, ModelAdapter] | None = None,
     threshold: float = 2.20,
     context: dict[str, Any] | None = None,
+    lookup: Any = None,
 ) -> RunOutcome:
     """이슈 한 건을 접수부터 승인 요청까지 돌린다.
 
@@ -1297,13 +1313,18 @@ def run_pipeline(
         나타나고, 사람이 "모델이 뽑은 것"으로 오해한다. 아무것도 없고 모델도
         없으면 인테이크가 되묻는다 — 그것이 옳은 동작이다.
 
+    lookup
+        조회 계층. 비우면 목을 만든다. **부르는 쪽이 이미 조회 계층을 들고
+        있으면 반드시 그것을 넘겨야 한다** — 안 넘기면 파이프라인이 자기
+        것을 새로 만들어, 두 계층이 서로 다른 이미지·임계값을 본다.
+
     언어 모델이 붙어 있으면 모델이 도구 순서를 정하고, 없으면 같은 도구들을
     고정 순서로 재생한다. 어느 쪽이었는지는 outcome.driver 에 남는다.
     """
     llm, vlm = adapters or build_adapters()
     session = _DemoSession(
         factory, issue_text, dict(context or {}),
-        patch_override, (llm, vlm), threshold,
+        patch_override, (llm, vlm), threshold, lookup,
     )
     registry = session.registry()
 
