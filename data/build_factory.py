@@ -35,8 +35,19 @@ MES_PATH = BASE_DIR / "mes.csv"
 SUMMARY_PATH = BASE_DIR / "factory_summary.txt"
 
 FULL_FREE_SPACE_THRESHOLD_GB = 10
-NORMAL_IMAGES_PER_LOT = 900
-ANOMALY_IMAGES_PER_LOT = 100
+#: 로트 하나에 담는 이미지. 결함 10%.
+#:
+#: **VisA 원본이 카테고리당 결함 100장뿐이라 이 값이 재사용 배수를 정한다.**
+#: 전에는 로트당 1,000장(정상 900·결함 100)이었고, 라인당 9일이면 결함
+#: 900장이 필요해 **원본 하나가 평균 9번 재사용**됐다. 홀드아웃에서 같은
+#: 이미지를 두 번 세면 게이트 점수가 부풀려진다.
+#:
+#: 100장으로 줄이면 라인당 결함 필요량이 100장 안쪽이라 **재사용이 없다.**
+#: 로트가 작아 현장 규모와는 다르지만, 우리 제약은 현실성이 아니라 원본
+#: 다양성이다. 로트 하나를 다 보는 화면도 없다 — MES 조회가 50장 상한이고
+#: 뱅크는 150장만 쓴다.
+NORMAL_IMAGES_PER_LOT = 90
+ANOMALY_IMAGES_PER_LOT = 10
 MAX_WORKERS = 8
 
 VALID_LINES = {
@@ -263,7 +274,7 @@ def determine_lot_code(target_date: date) -> str:
 HOLDOUT_TAIL_RATIO = 0.3
 
 
-def build_split_calendar(bank_lots, scenario_lots) -> Dict[Tuple[str, str], str]:
+def build_split_calendar(bank_lots, scenario_lots, pending_lots=()) -> Dict[Tuple[str, str], str]:
     """(라인, 일자) → 어느 구간인가.
 
     **이길준 수정 (2026-08-15): 이미지 단위 해시에서 일자 구간으로 바꿨다.**
@@ -282,6 +293,8 @@ def build_split_calendar(bank_lots, scenario_lots) -> Dict[Tuple[str, str], str]
     calendar: Dict[Tuple[str, str], str] = {}
     for line, date_str, _lot_id in bank_lots:
         calendar[(line, date_str)] = "bank"
+    for line, date_str, _lot_id in pending_lots:
+        calendar[(line, date_str)] = "pending"
 
     dates_by_line: Dict[str, Set[str]] = defaultdict(set)
     for line, date_str, _lot_id in scenario_lots:
@@ -441,6 +454,20 @@ BANK_WINDOW_DAYS = 3
 #: 초기 뱅크 구성 일자를 시나리오 첫날로부터 며칠 앞에 둘 것인가.
 BANK_WINDOW_GAP_DAYS = 7
 
+#: 시나리오 뒤에 둘 "아직 검사 안 된" 일수.
+#:
+#: **예약 스케줄러와 섀도 평가가 이 구간을 쓴다.** 밤새 쌓인 것이 없으면
+#: 스케줄러가 할 일이 없고, 섀도는 정답이 없는 양산 데이터에 신·구 뱅크를
+#: 나란히 돌려 판정이 갈리는 것만 뽑는 방식이라 이 구간이 그 모집단이다.
+#:
+#: 1일이면 로트 하나다. 더 쌓아 두면 "왜 그동안 안 돌렸나"가 되어 오히려
+#: 이야기가 어색해지고, 섀도에서 사람이 확인할 건수만 는다 — **"불일치
+#: 건만 보면 된다"가 논거인데 그 건수가 커지면 논거가 약해진다.**
+PENDING_WINDOW_DAYS = 1
+
+#: pending 일자를 시나리오 마지막 날로부터 며칠 뒤에 둘 것인가.
+PENDING_WINDOW_GAP_DAYS = 1
+
 
 def bank_window_lots(selected_scenarios: List[ScenarioInfo]) -> List[Tuple[str, str, str]]:
     """라인마다 시나리오 이전에 둘 초기 뱅크 구성 로트."""
@@ -458,9 +485,35 @@ def bank_window_lots(selected_scenarios: List[ScenarioInfo]) -> List[Tuple[str, 
     return lots
 
 
+def pending_window_lots(selected_scenarios: List[ScenarioInfo]) -> List[Tuple[str, str, str]]:
+    """라인마다 시나리오 **뒤에** 둘, 아직 검사 안 된 로트.
+
+    설비가 찍어 서버에 쌓아 뒀는데 아직 처리하지 않은 생산분이다. 예약
+    스케줄러가 지정 시각에 이것을 집어 돌리고, 섀도 평가가 신·구 뱅크를
+    나란히 적용해 판정이 갈리는 것만 뽑는다.
+
+    **정상·결함이 섞여 있다.** 아직 검사 안 한 생산분이므로 실제 불량률을
+    따라야 한다. 다른 구간과 같은 10% 다.
+    """
+    latest: Dict[str, date] = {}
+    for line, date_str, _lot_id in collect_target_lots(selected_scenarios):
+        day = date.fromisoformat(date_str)
+        if line not in latest or day > latest[line]:
+            latest[line] = day
+
+    lots: List[Tuple[str, str, str]] = []
+    for line, last_day in sorted(latest.items()):
+        for offset in range(1, PENDING_WINDOW_DAYS + 1):
+            day = last_day + timedelta(days=PENDING_WINDOW_GAP_DAYS + offset - 1)
+            lots.append((line, day.isoformat(), f"LOT-PEND-{line.split('_')[-1]}-{offset}"))
+    return lots
+
+
 def plan_lot_generation(selected_scenarios: List[ScenarioInfo]) -> Dict[Tuple[str, str, str], Set[int]]:
     lot_image_indexes = {}
-    keys = list(bank_window_lots(selected_scenarios)) + list(collect_target_lots(selected_scenarios))
+    keys = (list(bank_window_lots(selected_scenarios))
+            + list(collect_target_lots(selected_scenarios))
+            + list(pending_window_lots(selected_scenarios)))
     for line, date_str, lot_id in keys:
         indexes = set()
         rng = random.Random(make_seed(line, date_str, lot_id, "base-lot-population"))
@@ -501,7 +554,8 @@ def build_base_factory(normal_pool: Dict[str, List[SourceSample]], anomaly_pool:
     FACTORY_ROOT.mkdir(parents=True, exist_ok=True)
     lot_image_indexes = plan_lot_generation(selected_scenarios)
     split_calendar = build_split_calendar(
-        bank_window_lots(selected_scenarios), collect_target_lots(selected_scenarios)
+        bank_window_lots(selected_scenarios), collect_target_lots(selected_scenarios),
+        pending_window_lots(selected_scenarios),
     )
     manifest_rows = []
     copy_tasks = []
@@ -557,7 +611,8 @@ def build_base_factory(normal_pool: Dict[str, List[SourceSample]], anomaly_pool:
 
 def apply_scenarios_to_factory(manifest_rows: List[ManifestRow], anomaly_pool: Dict[str, List[SourceSample]], selected_scenarios: List[ScenarioInfo]) -> List[ManifestRow]:
     split_calendar = build_split_calendar(
-        bank_window_lots(selected_scenarios), collect_target_lots(selected_scenarios)
+        bank_window_lots(selected_scenarios), collect_target_lots(selected_scenarios),
+        pending_window_lots(selected_scenarios),
     )
     manifest_by_path = {row.image_path: row for row in manifest_rows}
     copy_tasks = []

@@ -33,7 +33,9 @@ def calendar(bf):
     """(라인, 일자) → 구간. 시나리오에서 실제로 만들어지는 것과 같다."""
     scenarios, _, _, _ = bf.load_scenarios(REPO_ROOT / "data" / "scenarios.yaml")
     return bf.build_split_calendar(
-        bf.bank_window_lots(scenarios), bf.collect_target_lots(scenarios)
+        bf.bank_window_lots(scenarios),
+        bf.collect_target_lots(scenarios),
+        bf.pending_window_lots(scenarios),
     )
 
 
@@ -246,3 +248,57 @@ def test_the_lot_counts_are_totals_not_running_numbers(bf):
     assert len(mes) == 10
     assert {r["inspected_count"] for r in mes} == {"10"}
     assert {r["defect_count"] for r in mes} == {"3"}
+
+
+# ── pending — 아직 검사 안 된 생산분 ────────────────────────────────────
+
+
+def test_pending_comes_after_everything_else(bf, calendar):
+    """pending 은 시나리오보다 뒤에 온다.
+
+    "아직 검사 안 됐다"는 것은 **가장 최근 생산분**이라는 뜻이다. 앞에
+    두면 "왜 그동안 안 돌렸나"가 되어 이야기가 어긋난다.
+    """
+    from collections import defaultdict
+
+    days = defaultdict(lambda: defaultdict(list))
+    for (line, date_str), window in calendar.items():
+        days[line][window].append(date_str)
+
+    for line, by_window in sorted(days.items()):
+        assert by_window["pending"], f"{line}: pending 이 없다"
+        others = [d for w, ds in by_window.items() if w != "pending" for d in ds]
+        assert min(by_window["pending"]) > max(others), (
+            f"{line}: pending 이 다른 구간보다 앞에 있다"
+        )
+
+
+def test_the_defect_pool_is_not_reused(bf, calendar):
+    """결함 원본을 재사용하지 않는다.
+
+    VisA 는 카테고리당 결함이 **100장뿐**이다. 라인당 필요량이 그것을 넘으면
+    같은 이미지가 여러 번 나오고, **홀드아웃에서 중복되면 게이트 점수가
+    부풀려진다.**
+
+    로트 크기가 이 값을 정한다. 전에는 로트 1,000장이라 라인당 900장이
+    필요해 9배 재사용됐다.
+    """
+    from collections import Counter
+
+    VISA_DEFECTS_PER_CATEGORY = 100
+    per_line = Counter(
+        line for (line, _date), window in calendar.items() if window != "bank"
+    )
+    for line, days in sorted(per_line.items()):
+        need = days * bf.ANOMALY_IMAGES_PER_LOT
+        assert need <= VISA_DEFECTS_PER_CATEGORY, (
+            f"{line}: 결함 {need}장이 필요한데 원본은 "
+            f"{VISA_DEFECTS_PER_CATEGORY}장뿐이다 — 재사용이 생긴다. "
+            f"ANOMALY_IMAGES_PER_LOT 을 줄이거나 일수를 줄여야 한다"
+        )
+
+
+def test_the_lot_is_ten_percent_defective(bf):
+    """로트 구성이 결함 10% 다. pending 도 같다 — 아직 안 본 생산분이므로."""
+    total = bf.NORMAL_IMAGES_PER_LOT + bf.ANOMALY_IMAGES_PER_LOT
+    assert bf.ANOMALY_IMAGES_PER_LOT / total == 0.10

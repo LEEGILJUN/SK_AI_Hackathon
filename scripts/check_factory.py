@@ -35,7 +35,9 @@ MES_COLUMNS = [
     "lot_id", "line", "object", "date", "started_at",
     "equipment_id", "inspected_count", "defect_count", "operator_shift",
 ]
-VALID_SPLIT = {"bank", "operation", "holdout"}
+#: pending 은 "아직 검사 안 된 생산분"이다. 예약 스케줄러와 섀도 평가가
+#: 이 구간을 쓴다 — 밤새 쌓인 것이 없으면 스케줄러가 할 일이 없다.
+VALID_SPLIT = {"bank", "operation", "holdout", "pending"}
 VALID_LABEL = {"normal", "defect"}
 
 OK = "  ✓"
