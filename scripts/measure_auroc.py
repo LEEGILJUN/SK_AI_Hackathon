@@ -60,7 +60,7 @@ pcb1 정상으로 뱅크를 세우고 pcb2 의 정상 이미지를 재서 점수
 읽기만 한다. 저장소 파일을 고치지 않는다.
 
     python scripts/measure_auroc.py --categories pcb1 pcb2 pcb3 pcb4
-    python scripts/measure_auroc.py --categories pcb1 --resize 768 --crop 672
+    python scripts/measure_auroc.py --categories pcb1 --crop 448
     python scripts/measure_auroc.py --cross pcb1:pcb2
 """
 
@@ -86,7 +86,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--bank-normal", type=int, default=150)
     p.add_argument("--holdout-normal", type=int, default=25)
     p.add_argument("--holdout-defect", type=int, default=25)
-    p.add_argument("--crop", type=int, default=None, help="비우면 FeatureConfig 기본(448)")
+    p.add_argument("--crop", type=int, default=None,
+                   help="입력 정사각 크기. 비우면 FeatureConfig 기본(512)")
     p.add_argument("--coreset-ratio", type=float, default=0.01)
     p.add_argument("--seed", type=int, default=0)
     return p.parse_args()
