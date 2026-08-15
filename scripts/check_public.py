@@ -34,7 +34,7 @@ OK, FAIL, WARN = "  ✓", "  ✗", "  ·"
 #: 있으면 공개를 막는 것. 이름과 정규식.
 BLOCKERS: list[tuple[str, str]] = [
     ("사설 IP 주소", r"\b(?:10|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}\b"),
-    ("사내 패키지 저장소", r"pypi-group-internal|nexus|artifactory|jfrog"),
+    ("사내 패키지 저장소", r"(?i)nexus|artifactory|jfrog|pypi-group-intern"),
     ("자격증명 값", r"(?i)(api[_-]?key|secret|token|password)\s*[:=]\s*[\"'][A-Za-z0-9_\-]{16,}"),
     ("이메일 주소", r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"),
     ("사번", r"사번\s*[:=]|\bEMP\d{5,}\b"),
@@ -84,11 +84,23 @@ def check_tracked() -> list[str]:
 
 
 def check_history() -> list[str]:
-    """지금 지웠어도 과거 커밋에 남아 있으면 공개하는 순간 보인다."""
+    """지금 지웠어도 과거 커밋에 남아 있으면 공개하는 순간 보인다.
+
+    **`-S` 가 아니라 `-G` 를 쓴다.** `-S` 는 문자열을 그대로 받으므로 찾을
+    값을 이 파일에 적어야 하고, 그러면 **검사기 자신이 이력에 그 값을 남긴다.**
+    실제로 그렇게 만들었다가 자기 커밋을 잡았다.
+
+    같은 이유로 이 파일을 검색 대상에서 뺀다. 패턴 자체는 남아 있어야 하므로
+    파일을 빼는 것 말고는 방법이 없다.
+    """
     problems: list[str] = []
-    for label, needle in (("사내 패키지 저장소", "pypi-group-internal"),
-                          ("사내 저장소 주소", "10.242.199.4")):
-        found = _run("git", "log", "--all", "--oneline", "-S", needle).strip()
+    for label, pattern in BLOCKERS:
+        if label in ("이메일 주소", "개인 절대 경로"):
+            continue  # 이력에서 보기에는 잡음이 너무 많다
+        found = _run(
+            "git", "log", "--all", "--oneline", "-G", pattern,
+            "--", ".", f":(exclude){Path(__file__).relative_to(REPO_ROOT).as_posix()}",
+        ).strip()
         if found:
             first = found.splitlines()[0]
             problems.append(f"커밋 이력  [{label}]  {first}")
