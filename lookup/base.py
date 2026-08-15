@@ -247,6 +247,12 @@ class ImageRecord:
     captured_at: date | None = None
     verdict: str | None = None          # 설비 판정 defect | pass
     ground_truth: str | None = None     # 사람 확인 defect | pass. 없으면 미확인
+    #: 이 이미지가 어느 구간의 것인가. bank | operation | holdout | pending.
+    #:
+    #: **`pending` 은 아직 검사하지 않은 생산분이다.** 예약 스케줄러가 지정
+    #: 시각에 이것만 집어 돌리고, 섀도 평가가 신·구 뱅크를 나란히 적용한다.
+    #: 모르면 None 이다 — 구간 개념이 없는 조회 구현도 있을 수 있다.
+    split: str | None = None
     equipment: str | None = None
 
     @property

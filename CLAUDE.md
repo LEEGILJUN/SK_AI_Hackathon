@@ -105,7 +105,7 @@ MES 데이터와 이미지 메타데이터는 **벡터화하지 않습니다.** 
 
 ## 지금 어디까지 구현됐는가
 
-2026-08-14 기준. 본선(8/21) 전 사전 작업 구간. 테스트 274건 통과.
+2026-08-14 기준. 본선(8/21) 전 사전 작업 구간. 테스트 285건 통과.
 
 ```
 이슈 접수 → 인테이크 → MES조회 → 추론 → 판별 7항목 → 진단 → 큐레이션 → 재구성 → 게이트 → 섀도 → 승인요청
@@ -214,6 +214,7 @@ LLM 과 VLM 에 같은 이름을 넣는다 — 모델 하나, 스왑 없음. 등
 | `agents/release.py` | 배포 패키지와 승인 요청. **배포 함수 없음** | 이길준 |
 | `lookup/base.py` | 조회 계층 **인터페이스**. 판별 2·3·6·7번 + MES 조회 3종 | 이동현·이길준 |
 | `lookup/mock.py` | 임시 대체물. 실구현이 오면 뺀다 | — |
+| `scheduler/` | 예약 실행. 지정 시각에 pending 을 처리. **배포 함수 없음** | 이길준 |
 | `app/` | 이슈 접수 웹 화면 | 이길준 |
 | `data/*.yaml` | 시나리오 정답, 판정 기준, 화질 기준 분포 | 장영진 |
 | `examples/` | 담당 파일을 채우기 전에 볼 작성 예시 | — |
@@ -245,6 +246,7 @@ LLM 과 VLM 에 같은 이름을 넣는다 — 모델 하나, 스왑 없음. 등
 .venv/bin/python scripts/check_all.py           # 위 검사들을 한 번에
 .venv/bin/python scripts/check_docs.py          # 문서가 코드와 어긋나지 않는지
 .venv/bin/python scripts/scan_bank_history.py banks/   # 뱅크 구성 이력 복원
+.venv/bin/python scripts/run_scheduler.py --now  # 야간 누적분 자동 점검
 .venv/bin/python scripts/demo_diagnose.py       # 접수부터 진단까지
 .venv/bin/python -m uvicorn app.main:app --port 8000   # 웹 화면
 ```

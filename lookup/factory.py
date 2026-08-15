@@ -422,6 +422,7 @@ class FactoryLookup:
             verdict=None,
             ground_truth=label,
             equipment=_text(row.get("equipment_id")),
+            split=_text(row.get("split")),
         )
 
     def find_images(
