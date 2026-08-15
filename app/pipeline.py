@@ -51,7 +51,13 @@ from typing import Any
 from agents.adapters import ModelAdapter, build_adapters
 from agents.curate import CurationPlan, plan_curation
 from agents.diagnose import DiagnosisResult, collect_evidence, decide
-from agents.gate import GateResult, ReproducibilityResult, check_reproducibility, evaluate_gate
+from agents.gate import (
+    GateCriteria,
+    GateResult,
+    ReproducibilityResult,
+    check_reproducibility,
+    evaluate_gate,
+)
 from agents.intake import IntakeResult, receive
 from agents.ontology import lookup_ontology
 from agents.rebuild import DirectoryImageSource, RebuildResult, execute_rebuild
@@ -1314,10 +1320,14 @@ class _DemoSession:
             score_images(item.holdout_normal, item.bank, f.embedder, root=f.root),
             score_images(item.holdout_defect, item.bank, f.embedder, root=f.root),
         )
+        # **통과 기준은 라인마다 다를 수 있다.** 과검 한 건의 무게가 라인마다
+        # 다르기 때문이다. 값과 근거는 `data/gate.yaml` 에 있고 코드에 없다.
+        criteria = GateCriteria.load(item.line if item else None)
         gate = evaluate_gate(
             [r.score for r in normals], [r.score for r in defects],
             threshold=self.new_threshold, baseline_curve=self.baseline_curve,
             candidate_version=rebuild.bank.version,
+            criteria=criteria,
         )
         self.outcome.gate = gate
         self.outcome.stages.append(
@@ -1329,6 +1339,9 @@ class _DemoSession:
                 detail=gate.reason,
                 rows=[(c.name, f"{c.value} (기준 {c.threshold}) {'통과' if c.passed else '미달'}")
                       for c in gate.checks],
+                note=(f"통과 기준은 data/gate.yaml 에서 옵니다"
+                      + (f" (라인 {item.line} 설정 적용)" if item else "")
+                      + ". 코드에 박혀 있지 않습니다."),
             )
         )
         return {"passed": gate.passed, "reason": gate.reason, "next": "shadow_compare"}

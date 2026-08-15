@@ -296,3 +296,88 @@ def test_failed_gate_is_surfaced_not_hidden(embedder, tmp_path):
     assert "**미통과**" in text
     assert "게이트를 통과하지 못했습니다" in text
     assert package.blocking_reasons, "승인을 막는 사유가 남아야 한다"
+
+
+# ── 통과 기준은 파일에서 온다 ──────────────────────────────────────────
+
+
+def test_the_criteria_come_from_the_file_not_the_code(tmp_path):
+    """**기준값을 코드에 박지 않는다.**
+
+    상황에 따라 바뀌는 값이라 코드에 있으면 바꿀 때마다 커밋이 필요하고,
+    나중에 왜 그 값인지 아무도 답하지 못한다.
+    """
+    path = tmp_path / "gate.yaml"
+    path.write_text(
+        "defaults:\n"
+        "  min_detection_rate: 0.7\n"
+        "  max_newly_missed: 2\n",
+        encoding="utf-8",
+    )
+
+    loaded = GateCriteria.load(path=path)
+    assert loaded.min_detection_rate == 0.7
+    assert loaded.max_newly_missed == 2
+    assert loaded.min_auroc == GateCriteria().min_auroc, "안 적은 항목은 기본값이다"
+
+
+def test_a_line_can_tighten_one_value_without_repeating_the_rest(tmp_path):
+    """라인마다 과검 한 건의 무게가 다르다. 적은 항목만 덮어쓴다."""
+    path = tmp_path / "gate.yaml"
+    path.write_text(
+        "defaults:\n"
+        "  max_false_positive_rate: 0.05\n"
+        "  min_auroc: 0.85\n"
+        "lines:\n"
+        "  line_01:\n"
+        "    max_false_positive_rate: 0.03\n",
+        encoding="utf-8",
+    )
+
+    tight = GateCriteria.load("line_01", path=path)
+    loose = GateCriteria.load("line_02", path=path)
+
+    assert tight.max_false_positive_rate == 0.03
+    assert loose.max_false_positive_rate == 0.05
+    assert tight.min_auroc == 0.85, "덮어쓰지 않은 항목은 기본값을 그대로 쓴다"
+
+
+def test_a_broken_file_falls_back_instead_of_stopping_the_gate(tmp_path):
+    """**파일이 깨져도 게이트는 선다.**
+
+    게이트가 못 서는 것보다 기본값으로라도 도는 편이 낫다. 시연 중에는
+    오타 하나를 고칠 시간이 없다.
+    """
+    broken = tmp_path / "gate.yaml"
+    broken.write_text("defaults: [이건 표가 아니다\n", encoding="utf-8")
+
+    assert GateCriteria.load(path=broken) == GateCriteria()
+    assert GateCriteria.load(path=tmp_path / "없는파일.yaml") == GateCriteria()
+
+
+def test_an_unknown_key_is_dropped_rather_than_crashing(tmp_path):
+    """오타 하나로 게이트가 안 서면 시연 중에 고칠 수 없다."""
+    path = tmp_path / "gate.yaml"
+    path.write_text(
+        "defaults:\n"
+        "  min_detection_rate: 0.8\n"
+        "  min_detecion_rate: 0.1\n",   # 오타
+        encoding="utf-8",
+    )
+
+    assert GateCriteria.load(path=path).min_detection_rate == 0.8
+
+
+def test_the_shipped_file_parses_and_carries_reasons():
+    """저장소에 든 파일이 실제로 읽히는지. 근거 없는 숫자는 못 지킨다."""
+    from agents.gate import CRITERIA_PATH
+
+    assert CRITERIA_PATH.exists(), f"{CRITERIA_PATH} 가 없다"
+    loaded = GateCriteria.load()
+    assert loaded.max_newly_missed == 0, "새로 놓치는 것은 한 건도 감수하지 않는다"
+
+    text = CRITERIA_PATH.read_text(encoding="utf-8")
+    for name in ("min_detection_rate", "max_false_positive_rate",
+                 "min_auroc", "max_newly_missed"):
+        assert name in text
+    assert "근거" in text or "이유" in text or "때문" in text, "값만 있고 근거가 없다"

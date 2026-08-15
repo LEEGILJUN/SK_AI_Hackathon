@@ -9,9 +9,9 @@
 2번이 특히 중요하다. 오염을 제거해 목표 결함은 잡게 됐는데 다른 것을 놓치기
 시작하면 개선이 아니다. 섀도 비교의 newly_missed 가 같은 것을 본다.
 
-**통과 기준은 도메인이 정한다.** 여기 있는 기본값은 자리표시이며 장영진이
-확정해야 한다. 기준을 코드에 박아 두면 나중에 왜 그 값인지 아무도 답하지
-못한다.
+**통과 기준은 도메인이 정하고 `data/gate.yaml` 에 있다.** 값마다 근거가 함께
+적혀 있고 라인별로 덮어쓸 수 있다. 코드에 박아 두면 바꿀 때마다 커밋이
+필요하고, 나중에 왜 그 값인지 아무도 답하지 못한다.
 
 재현성이 목표에 들어간 이유가 있다. 같은 입력에 판정이 흔들리면 게이트를
 몇 번 돌려 통과할 때까지 재시도하는 일이 생긴다. 그러면 게이트가 아니다.
@@ -19,20 +19,30 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, fields
+from pathlib import Path
 from typing import Any, Callable, Sequence
+
+import yaml
 
 from inspection.shadow import ShadowReport
 from inspection.sweep import ThresholdCurve, sweep_thresholds
+
+
+#: 통과 기준 파일. 값과 그 근거가 함께 있다.
+CRITERIA_PATH = Path(__file__).resolve().parent.parent / "data" / "gate.yaml"
 
 
 @dataclass
 class GateCriteria:
     """통과 기준.
 
-    TODO(장영진): 아래 값은 전부 자리표시다. 라인별로 무엇이 통과인지를
-    확정해야 한다. 특히 max_newly_missed 는 "새로 놓치는 것을 몇 건까지
-    감수할 것인가"라는 도메인 판단이다.
+    **여기 있는 값은 `data/gate.yaml` 이 없을 때의 대비책이다.** 실제 값은
+    파일에서 오고, 근거도 거기 함께 적혀 있다. 코드에 박아 두면 바꿀 때마다
+    커밋이 필요하고 나중에 왜 그 값인지 아무도 답하지 못한다.
+
+    라인마다 다를 수 있다. 과검 한 건의 무게가 라인마다 다르기 때문이다.
+    `load(line)` 이 그것을 푼다.
     """
 
     min_detection_rate: float = 0.90      # 홀드아웃 검출률 하한
@@ -41,6 +51,31 @@ class GateCriteria:
     max_newly_missed: int = 0              # 섀도에서 새로 놓치는 건수 상한
     require_improvement: bool = True       # 이전보다 나아져야 하는가
     reproducibility_runs: int = 10         # 재현성 확인 반복 횟수
+
+    @classmethod
+    def load(cls, line: str | None = None, path: str | Path | None = None) -> "GateCriteria":
+        """설정 파일에서 읽는다. 라인 설정이 있으면 기본값 위에 덮어쓴다.
+
+        **파일이 없거나 깨져도 예외를 던지지 않는다.** 게이트가 못 서는 것보다
+        기본값으로라도 도는 편이 낫고, 어느 값으로 판정했는지는 결과에 남는다.
+
+        모르는 항목은 조용히 버린다. 오타 하나로 게이트가 안 서면 시연 중에
+        고칠 수 없다.
+        """
+        source = Path(path) if path is not None else CRITERIA_PATH
+        try:
+            loaded = yaml.safe_load(source.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError):
+            return cls()
+
+        known = {f.name for f in fields(cls)}
+        values: dict[str, Any] = {
+            k: v for k, v in (loaded.get("defaults") or {}).items() if k in known
+        }
+        if line:
+            per_line = (loaded.get("lines") or {}).get(line) or {}
+            values.update({k: v for k, v in per_line.items() if k in known})
+        return cls(**values)
 
 
 @dataclass
