@@ -29,7 +29,7 @@
 말고 따로 켤 것은 없다.
 
 두 경로는 특징 추출 설정이 다르다. 합성은 128px 체커보드라 `DEMO_CONFIG`
-(resnet18 · 64/64)로 충분하고, VisA 는 `VISA_CONFIG`(기본값 · 512/448)여야
+(resnet18 · 64)로 충분하고, VisA 는 `VISA_CONFIG`(기본값 · 512)여야
 한다. 같은 설정을 양쪽에 쓰면 한쪽이 조용히 무의미해진다.
 
 어느 쪽으로 섰는지는 `DemoFactory.on_visa` 에 남고 화면이 그대로 표시한다.
@@ -313,7 +313,7 @@ VISA_ROOT = Path(os.environ.get("SHVO_VISA_ROOT") or REPO_ROOT / "VisA_20220922"
 #: 숫자만 무의미해지므로 "돌아간다"와 "맞다"가 갈리지 않습니다.
 VISA_CONFIG = FeatureConfig()
 
-#: VisA 로 돌 때 품목당 이미지 수. 실측에서 512/448 · 정상 150장이
+#: VisA 로 돌 때 품목당 이미지 수. 실측에서 정상 150장이
 #: AUROC 0.998 이었습니다(홀드아웃 정상 25 / 결함 25).
 VISA_NORMAL_COUNT = 150
 VISA_DEFECT_COUNT = 12
@@ -955,13 +955,13 @@ class _DemoSession:
         # 전에는 격자에서 켜진 칸 수 × 칸 면적으로 냈다. 세 가지가 틀렸다.
         #
         #   · **합성 전용 `DEMO_CONFIG.crop`(64)을 VisA 경로에도 썼다.**
-        #     VisA 는 448 이라 칸 면적이 49배 작게 나왔고, 기준 150px² 를
+        #     VisA 는 512 라 칸 면적이 64배 작게 나왔고, 기준 150px² 를
         #     절대 못 넘어 **실데이터에서는 무조건 양품**이 됐다
         #   · 흩어진 칸을 다 더했다. 기준 파일은 `largest_blob` 을 요구한다
         #   · 기준 파일의 `binarize_threshold` 를 안 읽고 따로 정한 값을 썼다
         #
         # 이제 이상맵을 이미지 해상도로 올려 연결 성분으로 잰다.
-        # 추론에 쓴 설정을 그대로 쓴다 — 합성이면 64, VisA 면 448.
+        # 추론에 쓴 설정을 그대로 쓴다 — 합성이면 64, VisA 면 512.
         criteria = self.lookup.get_criteria(
             line, obj,
             # **"dent" 를 기본값으로 쓰지 않는다.** pcb 결함 어휘에 없는

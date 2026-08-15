@@ -252,7 +252,7 @@ def test_a_wide_image_is_not_clipped():
 
     wide = Image.fromarray((np.random.rand(1000, 1500, 3) * 255).astype("uint8"))
     embedder = PatchEmbedder(FeatureConfig())
-    assert tuple(embedder.transform(wide).shape) == (3, 448, 448)
+    assert tuple(embedder.transform(wide).shape) == (3, 512, 512)
 
 
 def test_there_is_only_one_size_to_configure():

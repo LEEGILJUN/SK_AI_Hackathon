@@ -621,7 +621,7 @@ def test_visa_never_runs_at_the_synthetic_resolution():
     """
     from app.pipeline import DEMO_CONFIG, VISA_CONFIG
 
-    assert VISA_CONFIG.crop == 448
+    assert VISA_CONFIG.crop == 512
     assert VISA_CONFIG.backbone == "wide_resnet50_2"
     assert DEMO_CONFIG.crop != VISA_CONFIG.crop
 
