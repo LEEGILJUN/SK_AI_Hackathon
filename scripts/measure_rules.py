@@ -69,11 +69,25 @@ def main() -> None:
 
     seen: set[str] = set()
     rows = []
+    skipped_example = 0
     for s in scenarios:
         sid = s.get("id", "?")
         if sid in seen:
-            continue  # 파일 끝의 예시 템플릿. 앞의 실제 시나리오를 남긴다
+            continue  # 같은 id 가 두 번. 앞의 것을 남긴다
         seen.add(sid)
+        # ── 파일 끝의 스키마 예시는 채점 대상이 아니다 ──────────────────
+        #
+        # 장영진이 "예시 1건 — 아래 형식을 그대로 복제해 나머지를 채웁니다"
+        # 라고 적어 둔 골격이다. 대상 라인·품목이 공장 구성에 없어
+        # `data/build_factory.py` 도 걸러 낸다.
+        #
+        # **전에는 실제 시나리오와 id 가 겹쳐서 위 중복 검사에 걸렸다.**
+        # 겹친 id 를 떼어 내자 거름망이 풀려 채점 대상이 24 → 25 로 늘었고,
+        # 정확도가 19/24(79%)에서 20/25(80%)로 **좋아진 것처럼 보였다.**
+        # 목표가 80% 라 그대로 두면 "달성" 으로 읽힌다.
+        if sid.startswith("SC-TEMPLATE"):
+            skipped_example += 1
+            continue
 
         gt = s.get("ground_truth") or {}
         ev = gt.get("evidence") or {}
@@ -116,6 +130,9 @@ def main() -> None:
     field = [r for r in rows if not r["assumed"]]
     field_ok = sum(1 for r in field if r["cause_ok"])
 
+    if skipped_example:
+        print(f"\n스키마 예시 {skipped_example}건은 채점에서 뺐습니다 "
+              f"(장영진이 형식 견본으로 둔 골격).")
     print(f"\n원인 일치        {ok}/{total}")
     print(f"  현장 근거      {field_ok}/{len(field)}")
     print(f"  기술적 가정(*) {ok - field_ok}/{total - len(field)}")
