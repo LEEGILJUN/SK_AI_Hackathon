@@ -526,7 +526,7 @@ table.cfg td:nth-child(2){font-family:var(--mono);font-weight:650;color:var(--in
 .src.derived{color:var(--skip);background:var(--skip-bg)}
 
 /* ── 실행 중 덮개 ──────────────────────────────────────────────────── */
-/* 열 단계가 한 덩어리로 돌고 끝나야 화면이 뜬다. 4090 실모델 실측 151초 동안
+/* 열 단계가 한 덩어리로 돌고 끝나야 화면이 뜬다. 실모델에서는 몇 분 동안
    흰 화면이라 고장으로 읽힌다. **진행률을 지어내지 않는다** — 어디까지
    갔는지는 파이프라인만 알고, 화면이 아는 것은 경과 시간뿐이다. */
 .veil{position:fixed;inset:0;z-index:99;background:var(--bg);
@@ -1341,7 +1341,7 @@ def _simulator_html(outcome: RunOutcome) -> str:
     """
 
 
-def _settings_html(outcome: RunOutcome) -> str:
+def _settings_html(outcome: RunOutcome, on_visa: bool = False) -> str:
     """이 판정이 어떤 숫자 위에 서 있는가 — 값과 **출처와 소유자**.
 
     지적을 받았다. *"사용자가 설정할 수 있는 임계값들을 어디에서 보여주고
@@ -1385,6 +1385,23 @@ def _settings_html(outcome: RunOutcome) -> str:
 
     if not rows:
         return ""
+
+    # ── 아직 안 잰 것을 단정하지 않는다 ────────────────────────────────
+    #
+    # "임계값을 바꿔도 원인은 그대로입니다" 라고 단정해 두었는데, **그 확인을
+    # 합성 데이터에서만 했다.** 이 저장소에서 합성이 실데이터에 세 번
+    # 반증됐다(coreset 증폭 · 임계값 스윕 · 결함 크기). 그런데 이 칸은
+    # 심사위원이 직접 만져 보라고 열어 둔 자리라, 실데이터에서 원인이 흔들리면
+    # **그 자리에서 반증을 보게 된다.** 잰 조건을 함께 적는다.
+    stability = (
+        "합성 데이터에서는 임계값 1.2~3.0 에서 원인 판정이 바뀌지 않았습니다"
+        " — VisA 실데이터 확인은 진행 중입니다. 직접 바꿔 보시고 원인이"
+        " 그대로인지 확인해 주세요."
+        if not on_visa else
+        "합성 데이터에서는 임계값 1.2~3.0 에서 원인 판정이 바뀌지 않았습니다."
+        " 지금은 VisA 실데이터로 돌고 있으니, 직접 바꿔 보시면 실데이터에서도"
+        " 그런지 여기서 확인됩니다."
+    )
     return f"""
     <div class="evidence" id="block-settings">
       <div class="ev-head">
@@ -1398,10 +1415,10 @@ def _settings_html(outcome: RunOutcome) -> str:
         있습니다 — 화면에서 즉석으로 바꾸면 근거 없는 숫자가 됩니다.
       </p>
       <p class="note">
-        임계값을 내리면 미검은 줄지만 <strong>과검이 늘고, 원인은 그대로입니다.</strong>
-        뱅크에 결함이 섞여 들어간 것은 임계값을 아무리 옮겨도 뱅크에 섞인 채입니다 —
-        <strong>임계값 조절로 풀리는 문제가 아니라는 것이 이 서비스가 있는 이유</strong>입니다.
-        직접 바꿔 보시면 원인 판정이 그대로인 것을 확인할 수 있습니다.
+        임계값을 내리면 미검은 줄고 <strong>과검이 늘어납니다.</strong> 그런데
+        뱅크에 결함이 섞여 들어간 것은 임계값을 어디로 옮겨도 섞인 채입니다 —
+        <strong>임계값 조절로 풀리는 문제가 아니라는 것이 이 서비스가 있는
+        이유</strong>입니다. {escape(stability)}
       </p>
     </div>
     """
@@ -1443,8 +1460,11 @@ def _veil_html(on_visa: bool) -> str:
 
     지적을 받았다. *"고장나서 멈춘 것이 아니라 진행 중이라는 것을 보여주고,
     진행 경과도 표현되면 오해가 없겠다."* 지금은 단추를 누르면 흰 화면이고,
-    4090 실모델 실측이 151초다. 2분 반 동안 아무 반응이 없으면 고장으로
-    읽는 것이 당연하다.
+    실모델에서는 몇 분이 걸린다. 그동안 아무 반응이 없으면 고장으로 읽는 것이
+    당연하다.
+
+    **걸리는 시간을 실측 숫자로 박지 않는다.** `scripts/check_docs.py` 는
+    문서만 보고 `.py` 안의 수치는 안 봐서, 재측정하면 그 줄이 오류 없이 낡는다.
 
     **진행률을 지어내지 않는다.** 지금 몇 번째 단계인지는 `run_pipeline` 이
     끝나야 알 수 있고, 그것을 실시간으로 받으려면 `app/pipeline.py` 를 고쳐야
@@ -1460,10 +1480,12 @@ def _veil_html(on_visa: bool) -> str:
         f'<span class="nm">{escape(short)}</span></a></li>'
         for number, (_key, short, _tool) in enumerate(PIPELINE_STEPS, start=1)
     )
-    # 걸리는 시간은 데이터에 따라 다르다. **실측한 것만 적는다.**
+    # 걸리는 시간은 **어림으로 적는다.** 전에는 "실측 151초" 를 그대로 박아
+    # 두었는데, `scripts/check_docs.py` 는 문서만 보고 `.py` 안의 수치는 안 봐서
+    # 재측정하면 이 줄이 오류 없이 낡는다. 실제로 `마스크로 자르면 9/10` 을
+    # 여섯 문서가 근거로 쓰다가 같은 조건으로 다시 재니 5/10 이었던 일이 있다.
     took = (
-        "VisA 실데이터입니다. 4090 에서 실모델로 <strong>약 2분 30초</strong> "
-        "걸렸습니다(실측 151초)."
+        "VisA 실데이터입니다. 실모델이 붙어 있으면 보통 <strong>몇 분</strong> 걸립니다."
         if on_visa else
         "합성 이미지입니다. 보통 <strong>수 초</strong> 안에 끝납니다."
     )
@@ -1634,7 +1656,7 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
                 # 설정값도 여기 놓는다. **게이트 뒤가 아니다** — 재구성이 답이
                 # 아닌 원인은 게이트까지 가지 않는데, 그런 실행에서도 판정
                 # 임계값은 이미 쓰였고 그 값이 화면에 있어야 한다.
-                add_block(_settings_html(outcome), "block-settings", "설정값")
+                add_block(_settings_html(outcome, on_visa), "block-settings", "설정값")
             # 그래프는 인테이크 바로 뒤. "이미 답이 나온 일인가"를 묻는 자리다.
             if key == "intake":
                 add_block(_ontology_html(outcome), "block-ontology", "이력 그래프")
@@ -1671,7 +1693,7 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
     # 다시 타이핑해야 한다. 그래서 실행된 값이 없으면 적어 낸 값을 남긴다.
     threshold_value = (f"{outcome.threshold:g}"
                        if outcome and outcome.threshold else threshold.strip())
-    run_cost = ("4090 실모델 실측 약 2분 30초입니다."
+    run_cost = ("실데이터에 실모델이면 보통 몇 분 걸립니다."
                 if on_visa else "합성 이미지라 보통 수 초입니다.")
 
     return f"""<!doctype html>
@@ -1711,8 +1733,8 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
                value="{escape(threshold_value)}"
                placeholder="비우면 기본값 {DEFAULT_THRESHOLD}">
         <span class="hint">
-          이 값을 넘으면 불량입니다. <strong>내리면 미검은 줄고 과검이 늘지만,
-          원인 판정은 바뀌지 않습니다.</strong>
+          이 값을 넘으면 불량입니다. <strong>내리면 미검은 줄고 과검이 늡니다.</strong>
+          원인 판정까지 따라 바뀌는지는 아래 설정값 표에 적어 두었습니다.
         </span>
       </div>
     </div>
