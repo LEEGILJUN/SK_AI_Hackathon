@@ -341,3 +341,37 @@ def test_the_switch_script_runs(tmp_path):
 
     missing = run("--to", "v9_20260101-0000_abcdef")
     assert missing.returncode == 1, "없는 판을 가리키면 실패해야 한다"
+
+
+def test_the_candidate_is_stored_but_not_switched_to(tmp_path):
+    """**승인 요청까지 간 후보만 저장소에 올라가고, CURRENT 는 안 바뀐다.**
+
+    후보가 메모리에만 있으면 승인이 나도 전환할 대상이 없다. 승인은 며칠
+    걸릴 수 있고 그 사이 프로세스가 죽는다.
+
+    재구성 직후가 아니라 승인 요청 시점에 저장하는 이유는 **게이트와 섀도를
+    지난 것만 남기려는 것**이다.
+    """
+    from app.pipeline import run_pipeline
+
+    factory = _factory(tmp_path)
+    item_key = bank_item_key("line_01", "pcb1")
+    before = current_bank(item_key, root=tmp_path)
+
+    outcome = run_pipeline(
+        factory, patch_override="defect",
+        context={"line": "line_01", "object_name": "pcb1",
+                 "defect_type": "scratch", "product_id": factory.reported_product},
+    )
+    if outcome.package is None:
+        pytest.skip("이 실행에서 승인 요청까지 가지 않았다")
+
+    assert outcome.candidate_path is not None, "후보가 저장소에 안 올라갔다"
+    assert outcome.candidate_path.is_dir()
+
+    versions = {b.version for b in list_banks(item_key, root=tmp_path)}
+    assert len(versions) >= 2, f"후보가 새 판으로 안 쌓였다: {versions}"
+
+    after = current_bank(item_key, root=tmp_path)
+    assert after is not None and before is not None
+    assert after.path == before.path, "승인 전인데 CURRENT 가 바뀌었다"

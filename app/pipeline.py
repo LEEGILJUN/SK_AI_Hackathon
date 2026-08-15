@@ -241,6 +241,9 @@ class RunOutcome:
     reproducibility: ReproducibilityResult | None = None
     package: ReleasePackage | None = None
     approval_markdown: str = ""
+    #: 저장소에 올린 후보 뱅크 자리. **`CURRENT` 는 아직 v1 을 가리킨다** —
+    #: 승인한 사람이 `scripts/switch_bank.py` 로 전환한다.
+    candidate_path: Path | None = None
     patch_override: str | None = None
     #: 도구 순서를 누가 정했는가. "model" 이면 언어 모델, "fallback" 이면 고정 순서.
     driver: str = "fallback"
@@ -1399,6 +1402,22 @@ class _DemoSession:
         )
         o.package = package
         o.approval_markdown = package.approval_document.read_text(encoding="utf-8")
+
+        # ── 후보를 저장소에 올린다. **전환하지는 않는다** ──────────────
+        #
+        # 여기서 저장하는 이유는 **게이트와 섀도를 지난 것만 남기려는 것**이다.
+        # 재구성 직후에 저장하면 검증에 떨어진 판까지 쌓인다.
+        #
+        # 승인은 며칠 걸릴 수 있고 그 사이 프로세스가 죽는다. 후보가 메모리에만
+        # 있으면 승인이 나도 전환할 대상이 없다. 그래서 디스크에 남긴다.
+        #
+        # `CURRENT` 는 건드리지 않는다 — 저장과 전환은 다른 일이고, 전환은
+        # `scripts/switch_bank.py` 로 사람이 한다. 승인 문서에 그 명령이 적힌다.
+        store_root = self.factory.store_root
+        if store_root is not None and item is not None:
+            saved = save_bank(o.rebuild.bank, bank_item_key(item.line, item.object_name),
+                              root=store_root, config=self.factory.embedder.config)
+            o.candidate_path = saved
         o.stages.append(
             Stage(
                 key="release",
@@ -1409,6 +1428,12 @@ class _DemoSession:
                        f"{'일치' if reproducibility.identical else '불일치'}.",
                 rows=[("배포 승인", "아니오 (사람이 결정)"),
                       ("결함 분포", o.distribution.describe() if o.distribution else "—")]
+                     + ([("후보 저장 자리", o.candidate_path.name),
+                         ("승인 후 전환 명령",
+                          f"python scripts/switch_bank.py --item "
+                          f"{bank_item_key(item.line, item.object_name)} "
+                          f"--to {o.candidate_path.name}")]
+                        if o.candidate_path is not None and item is not None else [])
                      + [("승인 보류 사유", r) for r in package.blocking_reasons],
                 note="릴리즈 에이전트는 배포 패키지와 승인 요청까지만 만듭니다.",
             )

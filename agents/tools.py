@@ -306,7 +306,16 @@ A defect was missed by the deployed model. Work through the tools and report in 
 **Every tool result contains a "next" field naming the tool to call next. Call
 that tool. Never call the same tool twice.** A result with "ok": true succeeded
 even if it looks incomplete to you — calling it again returns the same thing and
-wastes a turn. If "next" tells you to stop, stop and summarise.
+wastes a turn.
+
+**"next" is either a tool name or a Korean sentence.** A tool name means call it.
+A Korean sentence means stop there — the pipeline has nothing more to do for this
+cause, and that is a correct outcome, not a failure.
+
+**You are not finished just because a result looks like a summary.** Keep going
+while "next" names a tool. `shadow_compare` returns a lot of numbers and reads
+like an ending, but its "next" is `prepare_release` — call it. The run is complete
+only when a tool result's "next" is a Korean sentence.
 
 ## Argument format
 
@@ -331,6 +340,9 @@ Convert Korean line names to IDs. Leave a field out rather than guessing it.
   effort and can make detection worse. lookup_ontology tells you which ones.
 - Call plan_curation before rebuild_bank. Read the plan before confirming.
 - You cannot deploy anything. A rebuilt bank is only a candidate.
+- Writing the approval request is your job, not the human's. `prepare_release`
+  produces a document and a package; it deploys nothing. Stopping before it leaves
+  the human with numbers and no request to approve.
 - When you are done, summarise in Korean: the cause, the evidence, what you did,
   and what a human must decide next.
 """
