@@ -334,12 +334,13 @@ def test_the_switch_script_runs(tmp_path):
     assert listed.returncode == 0, listed.stderr[-500:]
     assert "pcb1-01-v2_20260815-1000" in listed.stdout
 
-    switched = run("--to", "pcb1-01-v2_20260815-1000_" + config_id(CONFIG))
+    switched = run("--to", "pcb1-01-v2_20260815-1000_" + config_id(CONFIG),
+                   "--by", "이길준", "--reason", "시험")
     assert switched.returncode == 0, switched.stderr[-500:]
     assert current_bank("pcb1-01", root=tmp_path).version == "pcb1-01-v2"
     assert "되돌리려면" in switched.stdout, "원복 명령을 함께 찍어야 한다"
 
-    missing = run("--to", "v9_20260101-0000_abcdef")
+    missing = run("--to", "v9_20260101-0000_abcdef", "--by", "이길준", "--reason", "시험")
     assert missing.returncode == 1, "없는 판을 가리키면 실패해야 한다"
 
 
@@ -375,3 +376,97 @@ def test_the_candidate_is_stored_but_not_switched_to(tmp_path):
     after = current_bank(item_key, root=tmp_path)
     assert after is not None and before is not None
     assert after.path == before.path, "승인 전인데 CURRENT 가 바뀌었다"
+
+
+# ── 승인·되돌리기 기록 ─────────────────────────────────────────────────
+
+
+def test_switching_without_who_and_why_is_refused(tmp_path):
+    """**누가·왜가 없으면 승인이 아니라 형식이다.**
+
+    이 명령이 운영에 쓰이는 뱅크를 바꾼다. "배포는 사람이 승인한다"가 이
+    과제의 경계인데, 누가 무엇을 근거로 정했는지가 안 남으면 그 경계는
+    말뿐이다.
+    """
+    import subprocess
+    import sys
+
+    saved = save_bank(make_bank("pcb1-01-v1"), "pcb1-01", root=tmp_path,
+                      config=CONFIG, built_at=datetime(2026, 8, 16, 9, 0))
+    done = subprocess.run(
+        [sys.executable, "scripts/switch_bank.py", "--item", "pcb1-01",
+         "--root", str(tmp_path), "--to", saved.name],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        timeout=60, cwd=REPO_ROOT,
+    )
+    assert done.returncode == 1
+    assert "--by" in done.stdout and "--reason" in done.stdout
+    assert current_bank("pcb1-01", root=tmp_path) is None, "거부했는데 바뀌었다"
+
+
+def test_a_rollback_is_recorded_as_one(tmp_path):
+    """**되돌렸다는 사실 자체가 가장 중요한 기록이다.**
+
+    `CURRENT` 는 덮어써지므로 되돌린 것이 사라진다. 같은 품목을 자주
+    되돌린다면 게이트 기준이 느슨하다는 신호인데, 기록이 없으면 못 읽는다.
+    """
+    from inspection.store import read_decisions, record_decision
+
+    v1 = "pcb1-01-v1_20260816-0900_" + config_id(CONFIG)
+    v2 = "pcb1-01-v2_20260816-1000_" + config_id(CONFIG)
+
+    record_decision("pcb1-01", v2, by="이길준", reason="뱅크 오염 조치",
+                    root=tmp_path, previous=v1, at=datetime(2026, 8, 16, 10, 30))
+    back = record_decision("pcb1-01", v1, by="이길준", reason="과검 증가",
+                           root=tmp_path, previous=v2, at=datetime(2026, 8, 16, 15, 0))
+
+    assert back.rollback is True, "판 번호가 낮아졌으면 되돌린 것이다"
+
+    history = read_decisions("pcb1-01", root=tmp_path)
+    assert [d.rollback for d in history] == [False, True], "오래된 것이 앞이어야 한다"
+    assert history[0].by == "이길준" and history[0].reason == "뱅크 오염 조치"
+
+
+def test_the_log_only_grows(tmp_path):
+    """덧붙이기만 하고 고치지 않는다. 지워진 줄이 없어야 이력이 이력이다."""
+    from inspection.store import DECISIONS_FILE, read_decisions, record_decision
+
+    for i in range(3):
+        record_decision("pcb1-01", f"pcb1-01-v{i + 1}_20260816-0900_abcdef",
+                        by="사람", reason=f"{i}번째", root=tmp_path,
+                        at=datetime(2026, 8, 16, 9 + i, 0))
+
+    lines = (tmp_path / "pcb1-01" / DECISIONS_FILE).read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 3
+    assert len(read_decisions("pcb1-01", root=tmp_path)) == 3
+
+
+def test_a_broken_line_does_not_hide_the_rest(tmp_path):
+    """**한 줄이 망가졌다고 이력 전체를 못 읽으면 안 된다.**
+
+    손으로 편집하다 그럴 수 있고, 그때 필요한 것이 나머지 줄이다.
+    """
+    from inspection.store import DECISIONS_FILE, read_decisions, record_decision
+
+    record_decision("pcb1-01", "pcb1-01-v1_20260816-0900_abcdef", by="사람",
+                    reason="첫 건", root=tmp_path, at=datetime(2026, 8, 16, 9, 0))
+    path = tmp_path / "pcb1-01" / DECISIONS_FILE
+    with path.open("a", encoding="utf-8") as fp:
+        fp.write("{망가진 줄\n\n")
+    record_decision("pcb1-01", "pcb1-01-v2_20260816-1000_abcdef", by="사람",
+                    reason="셋째 건", root=tmp_path, at=datetime(2026, 8, 16, 10, 0))
+
+    found = read_decisions("pcb1-01", root=tmp_path)
+    assert [d.reason for d in found] == ["첫 건", "셋째 건"]
+
+
+def test_agents_never_record_a_decision():
+    """**결정 기록도 사람만 남긴다.**
+
+    에이전트가 남기면 "사람이 승인했다"는 기록이 자동으로 생긴다. 전환을
+    막아 둔 것과 같은 이유로 여기도 막는다.
+    """
+    for package in ("agents", "scheduler"):
+        assert "record_decision" not in _referenced_names(package), (
+            f"{package}/ 가 결정 기록을 남기고 있다"
+        )

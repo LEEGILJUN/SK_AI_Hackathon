@@ -270,3 +270,92 @@ def load_current(
         return stored.load(config)
     except (FileNotFoundError, ValueError):
         return None
+
+
+#: 승인·되돌리기 기록. 덧붙이기만 하고 고치지 않는다.
+DECISIONS_FILE = "DECISIONS.jsonl"
+
+
+@dataclass(frozen=True)
+class Decision:
+    """운영 판을 바꾼 한 번의 결정.
+
+    **`CURRENT` 파일만으로는 부족하다.** 거기에는 지금 무엇을 쓰는지만 있고
+    누가 언제 무엇을 근거로 그렇게 정했는지가 없다. 되돌린 경우는 더 나쁘다 —
+    덮어써지므로 되돌렸다는 사실 자체가 사라진다.
+
+    되돌리기를 세는 것이 중요하다. **같은 품목을 자주 되돌린다면 게이트
+    기준이 느슨하다는 신호**인데, 기록이 없으면 그 신호를 못 읽는다.
+    """
+
+    at: str
+    by: str
+    reason: str
+    to: str
+    previous: str | None = None
+    rollback: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "at": self.at, "by": self.by, "reason": self.reason,
+            "to": self.to, "previous": self.previous, "rollback": self.rollback,
+        }
+
+
+def _version_number(folder: str) -> int:
+    match = _VERSION_NUMBER.search(folder.split("_")[0])
+    return int(match.group(1)) if match else 0
+
+
+def record_decision(
+    item_key: str,
+    to: str,
+    by: str,
+    reason: str,
+    root: str | Path = DEFAULT_STORE_ROOT,
+    previous: str | None = None,
+    at: datetime | None = None,
+) -> Decision:
+    """결정을 한 줄 덧붙인다. **고치거나 지우지 않는다.**
+
+    되돌리기인지는 판 번호로 판단한다. 낮은 번호로 가면 되돌린 것이다.
+    """
+    stamp = (at or datetime.now()).isoformat(timespec="seconds")
+    rollback = previous is not None and _version_number(to) < _version_number(previous)
+    decision = Decision(at=stamp, by=by, reason=reason, to=to,
+                        previous=previous, rollback=rollback)
+
+    directory = _item_dir(root, item_key)
+    directory.mkdir(parents=True, exist_ok=True)
+    with (directory / DECISIONS_FILE).open("a", encoding="utf-8") as fp:
+        fp.write(json.dumps(decision.to_dict(), ensure_ascii=False) + "\n")
+    return decision
+
+
+def read_decisions(
+    item_key: str, root: str | Path = DEFAULT_STORE_ROOT
+) -> list[Decision]:
+    """이 품목의 결정 이력. 오래된 것이 앞이다.
+
+    **깨진 줄은 건너뛴다.** 한 줄이 망가졌다고 이력 전체를 못 읽으면
+    안 된다 — 손으로 편집하다 그럴 수 있고, 그때 필요한 것이 나머지 줄이다.
+    """
+    path = _item_dir(root, item_key) / DECISIONS_FILE
+    if not path.is_file():
+        return []
+
+    found: list[Decision] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            raw = json.loads(line)
+            found.append(Decision(
+                at=str(raw["at"]), by=str(raw.get("by", "")),
+                reason=str(raw.get("reason", "")), to=str(raw["to"]),
+                previous=raw.get("previous"), rollback=bool(raw.get("rollback")),
+            ))
+        except (json.JSONDecodeError, KeyError, TypeError):
+            continue
+    return found
