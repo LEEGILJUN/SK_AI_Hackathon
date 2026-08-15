@@ -191,7 +191,7 @@ def test_contaminated_bank_misses_defect_and_traces_to_contaminant(embedder, ima
 
     # 2. 오염된 뱅크에서 점수가 떨어진다 = 놓치기 시작한다
     assert dirty_result.score < clean_result.score, (
-        f"오염이 점수를 낮추지 못했다. clean={clean_result.score:.4f} "
+        f"뱅크 오염이 점수를 낮추지 못했다. clean={clean_result.score:.4f} "
         f"contaminated={dirty_result.score:.4f}"
     )
 
@@ -200,8 +200,8 @@ def test_contaminated_bank_misses_defect_and_traces_to_contaminant(embedder, ima
     assert top is not None
     contaminant_names = {p.relative_to(images["root"]).as_posix() for p in contaminants}
     assert top.bank.source_image in contaminant_names, (
-        f"역추적이 오염원을 지목하지 못했다. 지목={top.bank.source_image} "
-        f"오염원={contaminant_names}"
+        f"역추적이 혼입 이미지를 지목하지 못했다. 지목={top.bank.source_image} "
+        f"혼입 이미지={contaminant_names}"
     )
 
     # 되짚은 좌표가 실제 격자 안에 있어야 한다
@@ -230,7 +230,7 @@ def test_bank_contribution_ranks_the_contaminant(embedder, images):
     assert ranking, "최근접 출처 집계가 비었다"
     contaminant_names = {p.relative_to(images["root"]).as_posix() for p in contaminants}
     top_source = next(iter(ranking))
-    assert top_source in contaminant_names, f"가장 많이 지목된 출처가 오염원이 아니다: {ranking}"
+    assert top_source in contaminant_names, f"가장 많이 지목된 출처가 혼입 이미지가 아니다: {ranking}"
 
 
 # ── 정사각 리사이즈 ─────────────────────────────────────────────────────

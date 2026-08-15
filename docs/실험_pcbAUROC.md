@@ -26,7 +26,7 @@
 해상도    512/448 (FeatureConfig 기본값)
 백본      wide_resnet50_2 · layers ['layer2','layer3']
 coreset   0.01  (seed 0)
-오염      0장 (깨끗한 뱅크)
+뱅크 오염      0장 (깨끗한 뱅크)
 
 뱅크 정상    150장  = sorted(Normal/*.JPG)[0:150]
 홀드아웃     정상 25장 = sorted(Normal/*.JPG)[150:175]   ← 뱅크와 겹치지 않음

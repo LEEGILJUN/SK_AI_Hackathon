@@ -223,7 +223,7 @@ def judge_bank_patch(
         inspection.crop.crop_with_context 로 만든다.
 
     판정이 갈리는 지점
-        defect         → 뱅크 오염. 오염 샘플 제거 후 재구성
+        defect         → 뱅크 오염. 혼입 이미지 제거 후 재구성
         genuine_normal → 정상 분포 중첩. 재구성은 효과가 없다
     """
     prompt = (

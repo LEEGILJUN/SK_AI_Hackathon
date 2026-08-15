@@ -1,13 +1,13 @@
 """고립도 선별 검증.
 
-이 기능은 "오염이다"를 말하지 않고 "여기부터 보라"를 말한다. 그래서
+이 기능은 "뱅크 오염이다"를 말하지 않고 "여기부터 보라"를 말한다. 그래서
 검증도 두 갈래다.
 
-  1. 오염원을 실제로 상위로 올리는가
+  1. 혼입 이미지를 실제로 상위로 올리는가
   2. **한계를 알고 있는가** — 기여 패치가 적은 이미지를 순위에서 빼는가,
      후보가 없으면 없다고 답하는가
 
-2번이 없으면 이 신호는 위험해진다. 무엇이든 상위 몇 개를 뽑아 오염으로
+2번이 없으면 이 신호는 위험해진다. 무엇이든 상위 몇 개를 뽑아 뱅크 오염으로
 지목하면, 드물지만 진짜인 정상 이미지를 뱅크에서 빼게 되고 그건 커버리지
 부족을 스스로 만드는 짓이다.
 """
@@ -39,9 +39,9 @@ def embedder() -> PatchEmbedder:
 
 @pytest.fixture(scope="module")
 def contaminated(embedder, tmp_path_factory):
-    """정상 14장 + 오염 2장으로 만든 뱅크.
+    """정상 14장 + 혼입 2장으로 만든 뱅크.
 
-    오염 이미지는 정상과 같은 생성 규칙(같은 시드 범위)으로 만들어 얼룩
+    혼입 이미지는 정상과 같은 생성 규칙(같은 시드 범위)으로 만들어 얼룩
     하나만 다르게 한다. 조명이 통째로 다르면 얼룩이 아니라 조명 차이를
     재게 되어 검증이 무의미해진다.
     """
@@ -68,16 +68,16 @@ def contaminated(embedder, tmp_path_factory):
     return bank, names
 
 
-# ── 신호가 실제로 오염원을 올리는가 ────────────────────────────────────
+# ── 신호가 실제로 혼입 이미지를 올리는가 ────────────────────────────────────
 
 
 def test_contaminants_rank_at_the_top(contaminated):
-    """오염 이미지 2장이 고립도 순위 상위 2위를 차지해야 한다."""
+    """혼입 이미지 2장이 고립도 순위 상위 2위를 차지해야 한다."""
     bank, contaminant_names = contaminated
     ranking = [s for s in image_isolation(bank, k=8) if s.ranked]
 
     top_two = {s.image for s in ranking[:2]}
-    assert top_two == contaminant_names, f"상위 2장이 오염원이 아니다: {[s.image for s in ranking[:4]]}"
+    assert top_two == contaminant_names, f"상위 2장이 혼입 이미지가 아니다: {[s.image for s in ranking[:4]]}"
 
 
 def test_gap_between_contaminant_and_normal_is_visible(contaminated):
@@ -116,8 +116,8 @@ def test_tiny_bank_is_rejected(embedder, tmp_path):
 def test_low_contribution_images_are_excluded_from_ranking(contaminated):
     """패치 한두 개만 남은 이미지는 평균이 우연에 좌우되므로 순위에서 뺀다.
 
-    실측에서 그런 정상 이미지가 오염원보다 높은 순위를 차지하는 경우를
-    확인했다. 빼지 않으면 엉뚱한 이미지를 오염으로 지목하게 된다.
+    실측에서 그런 정상 이미지가 혼입 이미지보다 높은 순위를 차지하는 경우를
+    확인했다. 빼지 않으면 엉뚱한 이미지를 뱅크 오염으로 지목하게 된다.
     """
     bank, _ = contaminated
     scores = image_isolation(bank, k=8, min_patches=5)
@@ -154,8 +154,8 @@ def test_top_n_caps_vlm_call_count(contaminated):
 def test_coreset_amplifies_outlier_images(contaminated):
     """coreset 은 튀는 이미지를 과대 대표한다. 그 사실이 드러나야 한다.
 
-    합성 데이터에서 원본의 12.5% 였던 오염원이 뱅크의 절반을 차지했다.
-    오염이 섞였을 때 피해가 그만큼 커지므로 뱅크를 만든 뒤 확인할 값이다.
+    합성 데이터에서 원본의 12.5% 였던 혼입 이미지가 뱅크의 절반을 차지했다.
+    결함이 섞였을 때 피해가 그만큼 커지므로 뱅크를 만든 뒤 확인할 값이다.
     """
     bank, contaminant_names = contaminated
     report = contamination_amplification(bank)

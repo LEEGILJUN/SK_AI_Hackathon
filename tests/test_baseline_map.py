@@ -117,7 +117,7 @@ def test_the_baseline_uses_the_median_not_the_mean():
     같은 자리의 결함을 영영 못 잡는다.
     """
     maps = [[[1.0, 1.0], [1.0, 1.0]] for _ in range(9)]
-    maps.append([[99.0, 1.0], [1.0, 1.0]])          # 섞여 든 오염 한 장
+    maps.append([[99.0, 1.0], [1.0, 1.0]])          # 섞여 든 뱅크 오염 한 장
     baseline = build_baseline(maps)
 
     assert baseline["median"][0][0] == pytest.approx(1.0), "평균이면 10.8 이 된다"

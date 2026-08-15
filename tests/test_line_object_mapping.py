@@ -138,15 +138,15 @@ def test_the_scenario_count_is_what_scoring_sees():
 
 
 def test_the_contaminated_item_is_a_real_item(factory_lines):
-    """오염을 넣는 자리가 실제 품목이고, 오염 시나리오와 같은 자리다."""
+    """혼입 이미지를 넣는 자리가 실제 품목이고, 뱅크 오염 시나리오와 같은 자리다."""
     from app.pipeline import CONTAMINATED_ITEM, DEMO_ITEMS
 
     line, object_name = CONTAMINATED_ITEM
     assert factory_lines.get(line) == object_name, (
-        f"오염 품목 {line}/{object_name} 이 공장 구성에 없다"
+        f"뱅크 오염 품목 {line}/{object_name} 이 공장 구성에 없다"
     )
     assert (line, object_name) in {(l, o) for l, o, _ in DEMO_ITEMS}, (
-        "오염을 넣는 품목이 데모에 없으면 화면에서 그 결과를 볼 수 없다"
+        "혼입 이미지를 넣는 품목이 데모에 없으면 화면에서 그 결과를 볼 수 없다"
     )
 
     payload = yaml.safe_load((REPO_ROOT / "data" / "scenarios.yaml").read_text(encoding="utf-8"))
@@ -157,7 +157,7 @@ def test_the_contaminated_item_is_a_real_item(factory_lines):
         and (s.get("target") or {}).get("line")
     }
     assert CONTAMINATED_ITEM in contaminated, (
-        f"오염 품목 {CONTAMINATED_ITEM} 을 정답으로 거는 시나리오가 없다. "
+        f"뱅크 오염 품목 {CONTAMINATED_ITEM} 을 정답으로 거는 시나리오가 없다. "
         f"있는 것: {sorted(contaminated)}"
     )
 

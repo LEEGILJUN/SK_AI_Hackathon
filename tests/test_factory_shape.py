@@ -56,7 +56,7 @@ def test_the_catalog_is_the_size_the_document_says(shaped_catalog):
 
 
 def test_the_bank_window_has_no_defects(shaped_catalog):
-    """뱅크 구간은 초기 수집이라 결함이 없다. 오염은 시나리오가 넣는다."""
+    """뱅크 구간은 초기 수집이라 결함이 없다. 뱅크 오염은 시나리오가 넣는다."""
     bank = [r for r in shaped_catalog if r.split == "bank"]
     assert bank and not [r for r in bank if r.ground_truth == "defect"]
 

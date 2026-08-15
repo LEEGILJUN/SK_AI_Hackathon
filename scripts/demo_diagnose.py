@@ -56,7 +56,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="이슈 접수 → 진단 엔드투엔드")
     parser.add_argument(
         "--patch-judgment",
-        choices=["defect", "normal", "unknown"],
+        choices=["defect", "genuine_normal", "unknown"],
         help="판별 5번을 손으로 지정한다. 시각 언어 모델이 없을 때 판정 갈림을 확인하는 용도",
     )
     parser.add_argument(

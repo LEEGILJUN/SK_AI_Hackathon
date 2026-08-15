@@ -55,7 +55,7 @@ NORMAL_PER_LOT = 90
 DEFECT_PER_LOT = 10
 LOT_SIZE = NORMAL_PER_LOT + DEFECT_PER_LOT
 
-#: 뱅크 구간은 초기 수집이라 결함이 섞이지 않는다. 오염은 시나리오가 넣는다.
+#: 뱅크 구간은 초기 수집이라 결함이 섞이지 않는다. 뱅크 오염은 시나리오가 넣는다.
 NO_DEFECTS_IN = {"bank"}
 
 START = date(2026, 6, 1)

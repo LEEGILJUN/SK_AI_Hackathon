@@ -3,7 +3,7 @@
 진단이 갈리는 자리다. 결함이면 뱅크 오염, 진짜 정상품이면 정상 분포 중첩이고
 **조치가 정반대다.** 이 판정이 틀리면 진단 전체가 틀린다.
 
-양방향을 다 본다. 전부 normal 이라 답하면 오염을 영영 못 찾고, 전부 defect 라
+양방향을 다 본다. 전부 normal 이라 답하면 뱅크 오염을 영영 못 찾고, 전부 defect 라
 답하면 멀쩡한 정상 이미지를 뱅크에서 빼게 된다. 한쪽만 재면 그것을 놓친다.
 
 ── 실측 결과 (2026-08-14 · RTX 4090 Laptop · qwen3vl-8b) ──────────────────
@@ -30,7 +30,7 @@ judge_bank_patch() 는 "이 패치는 정상으로 등록된 것"이라는 전�
 "registered as normal is not evidence that it is normal" 을 넣어 두었는데,
 그것이 실제로 작동하는지는 확인된 적이 없었다.
 
-    A · 오염 패치 6건    두 프롬프트 전부 일치.  4건을 defect 로 찾아냄
+    A · 뱅크 오염 패치 6건    두 프롬프트 전부 일치.  4건을 defect 로 찾아냄
     B · 정상 패치 15건   6건 갈림 — 전제 없는 쪽이 unknown 3 · **defect 3**
 
 **유도는 없었고, 오히려 반대쪽이 위험했다.** 전제 없이 "결함이 보이는가"라고만
@@ -44,13 +44,13 @@ judge_bank_patch() 는 "이 패치는 정상으로 등록된 것"이라는 전�
 대부분은 그 이미지의 멀쩡한 표면이고, 그것을 defect 정답으로 놓으면 모델이
 맞게 답해도 틀린 것으로 세게 된다. 그래서 VisA 정답 마스크로 한 번 더 가른다.
 
-    A  오염원 출신 + 패치 자리가 마스크와 겹침   → 정답 defect   (채점)
+    A  혼입 이미지 출신 + 패치 자리가 마스크와 겹침   → 정답 defect   (채점)
     B  진짜 정상 이미지 출신                     → 정답 normal   (채점)
-    C  오염원 출신 + 마스크와 안 겹침            → 정답 애매      (세기만 함)
+    C  혼입 이미지 출신 + 마스크와 안 겹침            → 정답 애매      (세기만 함)
 
 C 를 채점에서 빼는 이유는 그것이 실제로는 정상 표면이기 때문이다. 다만 몇 개나
-되는지는 보고한다 — 오염 이미지를 통째로 빼는 조치가 얼마나 과한지 보여준다.
-실측에서 C 는 398개였다(오염 이미지가 남긴 404개 중 98.5%).
+되는지는 보고한다 — 혼입 이미지를 통째로 빼는 조치가 얼마나 과한지 보여준다.
+실측에서 C 는 398개였다(혼입 이미지가 남긴 404개 중 98.5%).
 
 패치 자리 판정은 여유 없이(margin=0) 격자 한 칸으로 하고, 모델에게 보여줄 때만
 맥락을 붙인다. 판정 기준과 제시 방식을 섞지 않기 위해서다.
@@ -116,6 +116,20 @@ def cell_hits_mask(ref, grid, image_size, config, mask: np.ndarray) -> bool:
     return bool(window.any())
 
 
+def _saw_defect(verdict: str) -> bool | None:
+    """두 판별의 판정을 **공통 축**으로 옮긴다 — 결함을 봤는가.
+
+    판별 1번은 `visible`/`not_visible`, 5번은 `defect`/`genuine_normal` 이라
+    어휘가 다르다. 어느 쪽이든 "결함을 봤다/못 봤다/모르겠다" 셋으로 줄면
+    견줄 수 있다. 모르겠다는 None 이고, 두 판별이 모두 None 이면 같다고 본다.
+    """
+    if verdict in ("defect", "visible"):
+        return True
+    if verdict in ("genuine_normal", "not_visible"):
+        return False
+    return None
+
+
 def main() -> int:
     args = parse_args()
     base = REPO_ROOT / args.visa_root / args.category / "Data"
@@ -158,9 +172,9 @@ def main() -> int:
             sizes[p.name] = im.size
 
     # ── 뱅크 행을 세 무리로 가른다 ──────────────────────────────────────
-    group_a: list[int] = []  # 오염원 출신 + 결함 위 → defect
+    group_a: list[int] = []  # 혼입 이미지 출신 + 결함 위 → defect
     group_b: list[int] = []  # 정상 출신           → normal
-    group_c: list[int] = []  # 오염원 출신 + 정상부 → 애매
+    group_c: list[int] = []  # 혼입 이미지 출신 + 정상부 → 애매
 
     for i in range(total_rows):
         ref = bank.origin_of(i)
@@ -174,17 +188,17 @@ def main() -> int:
             group_b.append(i)
 
     print("뱅크 구성 내역")
-    print(f"  A 오염원 출신 · 결함 위    {len(group_a):>5,}개   ← 정답 defect")
+    print(f"  A 혼입 이미지 출신 · 결함 위    {len(group_a):>5,}개   ← 정답 defect")
     print(f"  B 정상 이미지 출신         {len(group_b):>5,}개   ← 정답 normal")
-    print(f"  C 오염원 출신 · 정상 부위  {len(group_c):>5,}개   ← 채점 제외")
+    print(f"  C 혼입 이미지 출신 · 정상 부위  {len(group_c):>5,}개   ← 채점 제외")
     if not group_a:
-        print("\n오염 패치가 뱅크에 한 개도 안 남았다. contaminants 를 늘리거나 "
+        print("\n뱅크 오염 패치가 뱅크에 한 개도 안 남았다. contaminants 를 늘리거나 "
               "coreset-ratio 를 조정해야 한다.")
         return 1
     amp = len(group_a) / total_rows
     src = len(contaminants) / (len(normals) + len(contaminants))
     from_dirty = (len(group_a) + len(group_c)) / total_rows
-    print(f"\n  오염 이미지가 원본의 {src:.1%} 인데 그 출신 패치가 뱅크의 {from_dirty:.1%} 다 "
+    print(f"\n  혼입 이미지가 원본의 {src:.1%} 인데 그 출신 패치가 뱅크의 {from_dirty:.1%} 다 "
           f"({from_dirty / src:.1f}배).")
     print(f"  그런데 실제 결함 위 패치는 뱅크의 {amp:.1%} 뿐이다. "
           f"coreset 이 끌어올린 것은 '결함이 있는 이미지'이지 '결함 그 자체'가 아니다.")
@@ -208,7 +222,7 @@ def main() -> int:
     disagree = 0
     invented: list[str] = []   # 전제 없는 쪽이 정상 표면에서 결함을 지어낸 건
 
-    for label, picks, truth in (("A", pick_a, "defect"), ("B", pick_b, "normal")):
+    for label, picks, truth in (("A", pick_a, "defect"), ("B", pick_b, "genuine_normal")):
         for i in picks:
             ref = bank.origin_of(int(i))
             patch = crop_patch(ref.source_image, ref, grid, embedder.config,
@@ -226,10 +240,14 @@ def main() -> int:
             else:
                 s["wrong"] += 1
 
-            same = bank_j.verdict == plain_j.verdict
+            # **두 판별은 어휘가 다르다.** 5번은 defect/genuine_normal,
+            # 1번은 visible/not_visible 이라 직접 견주면 절대 같을 수
+            # 없다. 실제로 그렇게 두어 '갈린 건 30/30' 이 나온 적이 있다.
+            # 공통 축(결함을 봤는가)으로 옮겨 견준다.
+            same = _saw_defect(bank_j.verdict) == _saw_defect(plain_j.verdict)
             if not same:
                 disagree += 1
-            if label == "B" and plain_j.verdict == "defect":
+            if label == "B" and plain_j.verdict == "visible":
                 invented.append(Path(ref.source_image).name)
 
             print(f"{label:<4} {Path(ref.source_image).name:<11} "
@@ -237,7 +255,7 @@ def main() -> int:
                   f"{bank_j.verdict:<9} {plain_j.verdict:<9} {'=' if same else 'X':<5}")
 
     print()
-    for label, truth in (("A", "defect"), ("B", "normal")):
+    for label, truth in (("A", "defect"), ("B", "genuine_normal")):
         s = stats[label]
         if not s["n"]:
             continue
@@ -257,7 +275,7 @@ def main() -> int:
 
     # ── 고립도와 겹치는가 ───────────────────────────────────────────────
     print("\n" + "=" * 60)
-    print("고립도가 뽑은 오염 후보와 대조")
+    print("고립도가 뽑은 뱅크 오염 후보와 대조")
     print("=" * 60)
     scores = suspect_images(bank, top_n=len(contaminants) * 2)
     hit = 0
@@ -265,11 +283,11 @@ def main() -> int:
         name = Path(s.image).name
         is_cont = name in contaminant_names
         hit += int(is_cont)
-        mark = "오염원" if is_cont else "정상"
+        mark = "혼입 이미지" if is_cont else "정상"
         print(f"  {name:<12} z_mean {s.z_mean:>6.2f} · 패치 {s.patch_count:>4}개  [{mark}]")
-    print(f"\n  후보 {len(scores)}개 중 실제 오염원 {hit}개")
+    print(f"\n  후보 {len(scores)}개 중 실제 혼입 이미지 {hit}개")
     if hit == 0:
-        print("  고립도가 오염원을 못 짚었다. 이미지 단위 z_mean 이 정상부 패치에 "
+        print("  고립도가 혼입 이미지를 못 짚었다. 이미지 단위 z_mean 이 정상부 패치에 "
               "희석된 것이다 — 실측에서 확인된 한계이고, 그래서 큐레이션은 고립도를 "
               "단독 근거로 쓰지 않는다(agents/curate.py).")
     else:

@@ -160,17 +160,17 @@ def main() -> None:
             contaminant_names.add(Path(path).as_posix())
 
     print(
-        "  → 오염원 지목" if top.bank.source_image in contaminant_names
+        "  → 혼입 이미지 지목" if top.bank.source_image in contaminant_names
         else "  → 원래 정상 이미지를 지목"
     )
 
     # ── 여러 건을 모아 본다 ──────────────────────────────────────────
-    # 한 건만 보면 우연에 좌우된다. 오염률이 낮을수록 특정 미검출 이미지
-    # 하나의 최근접 패치가 오염원일 확률이 떨어지기 때문이다. 실제로
-    # 정상 225장에 오염 3장(1.3%) 조건에서 위 한 건이 오염을 못 짚었다.
+    # 한 건만 보면 우연에 좌우된다. 혼입률이 낮을수록 특정 미검출 이미지
+    # 하나의 최근접 패치가 혼입 이미지일 확률이 떨어지기 때문이다. 실제로
+    # 정상 225장에 혼입 3장(1.3%) 조건에서 위 한 건이 뱅크 오염을 못 짚었다.
     #
     # 운영 코드는 원래 여러 건을 모아 본다 — agents/curate.py 가
-    # bank_contribution() 의 반복 지목을 오염 후보의 근거로 쓴다.
+    # bank_contribution() 의 반복 지목을 뱅크 오염 후보의 근거로 쓴다.
     # "한 장의 우연이 아니라 반복이 근거"다. 시연도 같은 방식이어야 한다.
     missed = [p for p in defect if p not in set(contaminants)]
     if len(missed) >= 2:
@@ -181,25 +181,25 @@ def main() -> None:
         print(f"  {'뱅크 이미지':<52} {'지목':>4}  실제")
         print(f"  {'-' * 52} {'-' * 4}  {'-' * 6}")
         for name, hits in list(ranking.items())[:6]:
-            mark = "오염원" if name in contaminant_names else ""
+            mark = "혼입 이미지" if name in contaminant_names else ""
             print(f"  {name:<52} {hits:>4}  {mark}")
 
         top_source = next(iter(ranking), None)
         hit_total = sum(n for s, n in ranking.items() if s in contaminant_names)
         print(
-            f"\n  오염원을 지목한 건수 {hit_total}/{len(results)}"
-            f"   (뱅크 {len(dirty.images)}장 중 오염 {len(contaminants)}장 = "
+            f"\n  혼입 이미지를 지목한 건수 {hit_total}/{len(results)}"
+            f"   (뱅크 {len(dirty.images)}장 중 뱅크 오염 {len(contaminants)}장 = "
             f"{len(contaminants) / len(dirty.images):.1%})"
         )
         if top_source in contaminant_names:
             print("  → 가장 많이 지목된 것이 섞여 들어간 결함 이미지다. 원인은 뱅크 오염.")
             print("     다음 단계: 이 패치가 결함인지 진짜 정상품인지 판독(판별 항목 5번).")
-            print("     결함이면 오염 제거 후 재구성, 진짜 정상품이면 정상 분포 중첩이라")
+            print("     결함이면 혼입 이미지 제거 후 재구성, 진짜 정상품이면 정상 분포 중첩이라")
             print("     재구성은 답이 아니다.")
         elif hit_total:
-            print("  → 오염원이 지목되긴 했으나 1위는 아니다. 근거가 약하므로 사람 확인이 필요하다.")
+            print("  → 혼입 이미지가 지목되긴 했으나 1위는 아니다. 근거가 약하므로 사람 확인이 필요하다.")
         else:
-            print("  → 오염원을 한 번도 지목하지 못했다. 오염률이 낮으면 역추적만으로는")
+            print("  → 혼입 이미지를 한 번도 지목하지 못했다. 혼입률이 낮으면 역추적만으로는")
             print("     부족하다는 뜻이며, 고립도(inspection/isolation.py)를 함께 봐야 한다.")
 
     # ── 임계값 스윕 ──────────────────────────────────────────────────
@@ -249,7 +249,7 @@ def main() -> None:
         print(
             "  스윕은 오염된 뱅크를 '임계값 조정으로 해결 불가'로 판정했다.\n"
             "  여기까지는 맞다. 문제는 **정상 분포 중첩에서도 똑같이 '해결 불가'가\n"
-            "  나온다**는 것이다. 두 원인은 조치가 정반대다 — 오염은 제거 후\n"
+            "  나온다**는 것이다. 두 원인은 조치가 정반대다 — 뱅크 오염은 제거 후\n"
             "  재구성, 중첩은 재구성 금지."
         )
     else:

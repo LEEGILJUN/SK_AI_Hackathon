@@ -140,9 +140,10 @@ def check_vision(adapter: ModelAdapter) -> bool:
         print(f"{SKIP} 이미지 판독 — 스텁이라 의미 없음")
         return True
 
+    # 판별 1번(`judge_defect_visible`)의 어휘다 — visible / not_visible.
     cases = [
-        ("결함 이미지", make_defect(7), "defect", "normal"),
-        ("정상 이미지", make_normal(7), "normal", "defect"),
+        ("결함 이미지", make_defect(7), "visible", "not_visible"),
+        ("정상 이미지", make_normal(7), "not_visible", "visible"),
     ]
 
     wrong: list[str] = []

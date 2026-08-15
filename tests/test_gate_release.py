@@ -214,7 +214,7 @@ def _fixtures(embedder, tmp_path):
     plan = CurationPlan(
         touches_bank=True, cause="bank_contamination",
         remove=[RemovalCandidate("d/defect_000.png", "역추적이 지목", traced_hits=3)],
-        reason="오염 1장 제거",
+        reason="혼입 1장 제거",
     )
     record = RebuildRecord(
         from_version="v3", to_version="v4", cause="bank_contamination",

@@ -126,12 +126,12 @@ CAUSES: dict[str, CauseNode] = {
         decided_by=(4, 5),
         confused_with={
             "normal_overlap": (
-                "**갈림의 전부가 판별 5번이다.** 되짚은 패치가 잘못 섞인 결함이면 오염, "
+                "**갈림의 전부가 판별 5번이다.** 되짚은 패치가 잘못 섞인 결함이면 뱅크 오염, "
                 "진짜 정상품이면 중첩이다. 조치가 정반대라 5번을 얻지 못하면 찍지 않고 "
                 "사람에게 넘긴다."
             ),
         },
-        rebuild_note="오염 샘플을 빼고 다시 만드는 것이 답이다. 여섯 중 재구성이 답인 둘 가운데 하나다.",
+        rebuild_note="혼입 이미지를 빼고 다시 만드는 것이 답이다. 여섯 중 재구성이 답인 둘 가운데 하나다.",
     ),
     "coverage_gap": CauseNode(
         cause="coverage_gap",
@@ -142,7 +142,7 @@ CAUSES: dict[str, CauseNode] = {
         decided_by=(5, 6),
         confused_with={
             "bank_contamination": (
-                "판별 5번이 먼저다. 되짚은 패치가 결함이면 오염이고, 진짜 정상품인데 "
+                "판별 5번이 먼저다. 되짚은 패치가 결함이면 뱅크 오염이고, 진짜 정상품인데 "
                 "현재 조건이 뱅크 구성에 없으면 커버리지 부족이다."
             ),
         },
@@ -163,7 +163,7 @@ CAUSES: dict[str, CauseNode] = {
             "threshold": (
                 "임계값 스윕이 가른다. 어떤 값으로도 전건 검출이 안 되면 중첩이다. "
                 "**주의 — 오염된 뱅크에서도 스윕은 같은 '해결 불가'를 낸다.** "
-                "스윕만으로는 오염과 중첩을 못 가르고, 역추적이 가른다."
+                "스윕만으로는 뱅크 오염과 중첩을 못 가르고, 역추적이 가른다."
             ),
         },
         rebuild_note=(
@@ -174,7 +174,7 @@ CAUSES: dict[str, CauseNode] = {
     "equipment_optics": CauseNode(
         cause="equipment_optics",
         definition=(
-            "화질 지표가 기준 분포를 벗어났다. 조명 열화·초점 이탈·오염 등 설비 쪽 문제이며 "
+            "화질 지표가 기준 분포를 벗어났다. 조명 열화·초점 이탈·뱅크 오염 등 설비 쪽 문제이며 "
             "모델 문제가 아니다."
         ),
         decided_by=(2,),
@@ -227,7 +227,7 @@ CHECKS: tuple[CheckItem, ...] = (
 ACTION_LABEL_KO: dict[str, str] = {
     "adjust_threshold": "임계값 재조정",
     "lower_threshold": "임계값 낮추기",
-    "remove_contaminated_samples": "오염 샘플 제거",
+    "remove_contaminated_samples": "혼입 이미지 제거",
     "rebuild_bank": "뱅크 재구성",
     "add_normal_images_for_condition": "빠진 조건의 정상 이미지 보충",
     "redefine_criteria": "판정 기준 재정의 요청",

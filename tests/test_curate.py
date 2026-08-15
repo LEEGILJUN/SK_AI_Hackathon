@@ -4,7 +4,7 @@
 뱅크 재구성이 답이 아니고, 그 넷에서 재구성이 실행되면 정량 목표
 "재구성이 답이 아닌 케이스 전건 차단"이 깨진다.
 
-두 번째는 **근거가 겹치는지 보는가**다. 오염 후보를 지목할 때 역추적과
+두 번째는 **근거가 겹치는지 보는가**다. 뱅크 오염 후보를 지목할 때 역추적과
 고립도가 함께 가리키면 확신이 올라가고, 한 갈래뿐이면 사람 확인이 붙어야
 한다. 정상 이미지를 잘못 빼면 커버리지 부족을 스스로 만드는 셈이다.
 """
@@ -152,7 +152,7 @@ def test_single_source_evidence_requires_human():
 
 
 def test_contamination_without_candidates_stops():
-    """오염으로 진단됐어도 뺄 대상을 못 찾으면 실행하지 않는다."""
+    """뱅크 오염으로 진단됐어도 뺄 대상을 못 찾으면 실행하지 않는다."""
     plan = plan_curation(diagnosis("bank_contamination"), missed_results=[])
 
     assert plan.touches_bank is False
@@ -163,7 +163,7 @@ def test_contamination_without_candidates_stops():
 def test_isolation_alone_never_removes_an_image(embedder, tmp_path):
     """고립도만 높은 이미지를 역추적 없이 빼면 안 된다.
 
-    VisA 실측에서 suspect_images() 가 낸 후보 1개 중 오염원은 0개였다. 오염은
+    VisA 실측에서 suspect_images() 가 낸 후보 1개 중 혼입 이미지는 0개였다. 뱅크 오염은
     패치 단위로 일어나는데 고립도는 이미지 단위 평균이라 정상부 패치에
     희석된다. 이 경로를 열어 두면 멀쩡한 정상품을 버린다.
     """
@@ -185,7 +185,7 @@ def test_isolation_alone_never_removes_an_image(embedder, tmp_path):
 def test_removal_plan_reports_what_it_costs(embedder, tmp_path):
     """빼는 계획은 뱅크에서 무엇이 함께 빠지는지 숫자로 남겨야 한다.
 
-    오염 이미지를 통째로 빼면 그 이미지의 멀쩡한 정상 패치도 같이 빠진다.
+    혼입 이미지를 통째로 빼면 그 이미지의 멀쩡한 정상 패치도 같이 빠진다.
     실측에서 그 비율이 98.5% 였다. 막지는 않되 보이게 한다.
     """
     normal = write_set(tmp_path / "normal", 8, "normal", 0)

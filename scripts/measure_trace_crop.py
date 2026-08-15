@@ -195,8 +195,10 @@ def main() -> int:
         enlarge(img.crop(mbox)).save(mp_out)
         mj = judge_defect_visible(vlm, mp_out, reported_defect="표면 결함")
 
-        trace_ok += int(tj.verdict == "defect")
-        mask_ok += int(mj.verdict == "defect")
+        # **판별 1번 어휘다.** 전에 여기서 5번 어휘("defect")와 견주어
+        # 판독이 항상 0/10 으로 나올 뻔했다.
+        trace_ok += int(tj.verdict == "visible")
+        mask_ok += int(mj.verdict == "visible")
         counted += 1
 
         size = f"{box[2]-box[0]}x{box[3]-box[1]}"

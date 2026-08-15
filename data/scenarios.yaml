@@ -578,7 +578,7 @@ scenarios:
       date_range: [2026-06-18, 2026-06-20]
  
     input:
-      issue_text: "line_02 이물 오염 결함만 계속 미검됨. 스크래치는 잘 잡히는데 이물만 반복"
+      issue_text: "line_02 이물 뱅크 오염 결함만 계속 미검됨. 스크래치는 잘 잡히는데 이물만 반복"
       attachments:
         - line_02/2026-06-19/LOT-AAS/img_0037.png
       reporter_role: 공정엔지니어
@@ -1487,7 +1487,7 @@ scenarios:
         - rebuild_bank
         - shadow_compare
       forbidden_actions:
-        - lower_threshold                        # 오염을 임계값으로 덮는 오답 조치
+        - lower_threshold                        # 뱅크 오염을 임계값으로 덮는 오답 조치
 
     # ── 채점 ────────────────────────────────────────────────────────
     scoring:

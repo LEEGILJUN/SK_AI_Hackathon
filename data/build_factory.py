@@ -100,7 +100,7 @@ ERROR_CODE_BY_DEFECT_NAME = {
 }
 
 # 이길준 수정 (2026-08-14): 이물·표면을 없는 결함(dirt)에 물려 두어 두 낱말이
-# 조용히 무시되고 있었다. pcb 어휘 안으로 옮긴다. "오염"은 대응할 결함이
+# 조용히 무시되고 있었다. pcb 어휘 안으로 옮긴다. "뱅크 오염"은 대응할 결함이
 # 정말 없어서 뺐다 — 억지로 물리면 엉뚱한 이미지가 붙는다.
 ISSUE_KEYWORD_TO_DEFECT = {
     "크랙": "damage",
@@ -645,8 +645,8 @@ def apply_scenarios_to_factory(manifest_rows: List[ManifestRow], anomaly_pool: D
     return [manifest_by_path[path] for path in sorted(manifest_by_path)]
 
 
-#: 오염 이미지가 쓰는 인덱스 대역. 기본 로트는 1~9999 를 쓴다.
-#: 대역을 갈라 두면 manifest 만 보고도 "이건 일부러 넣은 오염"임이 드러난다.
+#: 혼입 이미지가 쓰는 인덱스 대역. 기본 로트는 1~9999 를 쓴다.
+#: 대역을 갈라 두면 manifest 만 보고도 "이건 일부러 넣은 뱅크 오염"임이 드러난다.
 CONTAMINANT_INDEX_BASE = 10000
 
 #: **뱅크는 `split="bank"` 전부로 세우지 않는다. 여기서 이만큼만 뽑아 쓴다.**
@@ -662,9 +662,9 @@ CONTAMINANT_INDEX_BASE = 10000
 #:      그 수치를 더 이상 근거로 쓸 수 없다
 BANK_BUILD_SIZE = 150
 
-#: 이 아래 오염률이면 경고를 남긴다. VisA 실측에서 오염 이미지가 3.2% 일 때
+#: 이 아래 혼입률이면 경고를 남긴다. VisA 실측에서 혼입 이미지가 3.2% 일 때
 #: 결함 **위** 패치는 뱅크의 0.1%(6/4,861)뿐이었다. coreset 이 끌어올리는 것은
-#: "결함이 있는 이미지"이지 "결함 그 자체"가 아니라서, 오염률이 낮으면 결함
+#: "결함이 있는 이미지"이지 "결함 그 자체"가 아니라서, 혼입률이 낮으면 결함
 #: 패치가 한 장도 안 남는다. 그러면 역추적이 짚을 것이 없다.
 MIN_DETECTABLE_CONTAMINATION_PCT = 1.0
 
@@ -695,7 +695,7 @@ def apply_bank_contamination(
     채운다. **정답 파일은 읽기만 한다** — 이 값이 채점 기준이므로 여기서
     바꾸면 측정이 무의미해진다.
     """
-    notes = ["[뱅크 오염 주입]"]
+    notes = ["[뱅크 혼입 주입]"]
     contaminated = [s for s in selected_scenarios if s.injection_method == "bank_contamination"]
     if not contaminated:
         notes.append("- 이번 실행 시나리오에 bank_contamination 이 없습니다.")
@@ -706,7 +706,7 @@ def apply_bank_contamination(
     for scenario in contaminated:
         pool = sorted(anomaly_pool.get(scenario.object_name, []), key=lambda s: s.image_rel)
         if not pool:
-            raise ValueError(f"오염에 쓸 결함 샘플이 없습니다: {scenario.object_name}")
+            raise ValueError(f"뱅크 오염에 쓸 결함 샘플이 없습니다: {scenario.object_name}")
         by_rel = {s.image_rel: s for s in pool}
 
         chosen: List[SourceSample] = []
@@ -728,7 +728,7 @@ def apply_bank_contamination(
 
         if len(chosen) < scenario.contaminated_count:
             raise ValueError(
-                f"{scenario.scenario_id}: 오염 {scenario.contaminated_count}장을 채우지 "
+                f"{scenario.scenario_id}: 뱅크 오염 {scenario.contaminated_count}장을 채우지 "
                 f"못했습니다 ({scenario.object_name} 결함 {len(pool)}장)"
             )
 
@@ -736,7 +736,7 @@ def apply_bank_contamination(
         # 넣든 같은 뱅크로 들어가지만, 자리를 정해 두어야 재현된다.
         target_lots = collect_target_lots([scenario])
         if not target_lots:
-            raise ValueError(f"{scenario.scenario_id}: 오염을 넣을 로트를 찾지 못했습니다.")
+            raise ValueError(f"{scenario.scenario_id}: 혼입 이미지를 넣을 로트를 찾지 못했습니다.")
         line, date_str, lot_id = target_lots[0]
 
         for offset, sample in enumerate(chosen):
@@ -772,7 +772,7 @@ def apply_bank_contamination(
 
         notes.append(
             f"- {scenario.scenario_id} | {line}/{scenario.object_name} | "
-            f"오염 {len(chosen)}장 (지정 {len(scenario.contaminated_images)} + "
+            f"뱅크 오염 {len(chosen)}장 (지정 {len(scenario.contaminated_images)} + "
             f"채움 {len(chosen) - len(scenario.contaminated_images)}) → {lot_id}"
         )
 
@@ -781,14 +781,14 @@ def apply_bank_contamination(
     for row in added:
         merged[row.image_path] = row
 
-    # 라인별로 뱅크 오염률을 적어 둔다. 실측과 나란히 놓을 수 있어야 한다.
+    # 라인별로 뱅크 혼입률을 적어 둔다. 실측과 나란히 놓을 수 있어야 한다.
     bank_stats: Dict[str, Dict[str, int]] = defaultdict(lambda: {"normal": 0, "defect": 0})
     for row in merged.values():
         if row.split == "bank":
             bank_stats[row.line]["normal"] += 1
     for row in added:
         bank_stats[row.line]["defect"] += 1
-    # 오염률은 **뱅크를 몇 장으로 세우느냐**로 갈린다. split="bank" 후보
+    # 혼입률은 **뱅크를 몇 장으로 세우느냐**로 갈린다. split="bank" 후보
     # 전부(라인당 수천 장)를 분모로 잡으면 안 된다 — 뱅크는 거기서
     # BANK_BUILD_SIZE 장만 뽑아 세운다.
     notes.append(f"- 라인별 뱅크 구성 (뱅크 구성 시 정상 {BANK_BUILD_SIZE}장 사용):")
@@ -803,7 +803,7 @@ def apply_bank_contamination(
             warned = True
         notes.append(
             f"  - {line}: 후보 {candidates:,}장 중 정상 {BANK_BUILD_SIZE} + "
-            f"오염 {stat['defect']} → 오염률 {effective:.2f}%{flag}"
+            f"뱅크 오염 {stat['defect']} → 혼입률 {effective:.2f}%{flag}"
         )
     notes.append(
         "  (후보 전부를 뱅크로 세우지 않는다. greedy coreset 이 O(k·N) 이고, "
@@ -811,9 +811,9 @@ def apply_bank_contamination(
     )
     if warned:
         notes.append(
-            "- 주의: VisA 실측에서 오염 3.2% 일 때 결함 위 패치는 뱅크의 0.1% 였다"
-            f"(6/4,861). 오염률이 {MIN_DETECTABLE_CONTAMINATION_PCT}% 아래면 coreset 을"
-            " 거친 뒤 결함 패치가 한 장도 안 남을 수 있고, 그러면 역추적이 오염원을"
+            "- 주의: VisA 실측에서 혼입률 3.2% 일 때 결함 위 패치는 뱅크의 0.1% 였다"
+            f"(6/4,861). 혼입률이 {MIN_DETECTABLE_CONTAMINATION_PCT}% 아래면 coreset 을"
+            " 거친 뒤 결함 패치가 한 장도 안 남을 수 있고, 그러면 역추적이 혼입 이미지를"
             " 짚지 못해 bank_contamination 시나리오가 재현되지 않는다."
         )
         notes.append(

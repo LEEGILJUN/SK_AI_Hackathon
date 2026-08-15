@@ -24,6 +24,10 @@ from agents.adapters import (
     parse_json_object,
 )
 from agents.vision import cause_from_patch_judgment, judge_bank_patch, judge_defect_visible
+
+from pathlib import Path as _Path
+
+SCRIPTS_ROOT = _Path(__file__).resolve().parent.parent
 from tests.synthetic import make_defect, make_normal
 
 
@@ -356,3 +360,36 @@ def test_the_prompts_ask_for_the_words_the_code_accepts():
 
     assert "genuine_normal" not in visibility, "판별 1번이 5번 어휘를 쓴다"
     assert "not_visible" not in patch, "판별 5번이 1번 어휘를 쓴다"
+
+
+def test_no_script_compares_a_vision_verdict_to_the_old_words():
+    """**어휘를 바꿀 때 스크립트가 빠졌다.**
+
+    `c5ddf1f` 가 `agents/`·`app/`·시험은 고쳤는데 `scripts/` 넷을 빠뜨렸다.
+    4090 이 그 상태로 측정을 돌려 이런 값이 나왔다.
+
+        "B (정답 normal) 15건 — 맞음 0 · 틀림 15"    실제는 맞음 13
+        "두 프롬프트가 갈린 건 30/30건"              두 어휘를 직접 견줌
+
+    `measure_trace_crop.py` 는 판별 1번 판독을 **항상 0/10** 으로 만들 뻔했다.
+    오류가 안 나고 숫자만 틀리므로 눈으로는 못 잡는다.
+    """
+    import re
+
+    from agents.vision import PATCH_VERDICTS, VISIBILITY_VERDICTS
+
+    live = (VISIBILITY_VERDICTS | PATCH_VERDICTS) - {"unknown"}
+    offenders: list[str] = []
+
+    for path in (SCRIPTS_ROOT / "scripts").glob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        # `<무엇>.verdict == "..."` 또는 `verdict == "..."` 형태만 본다.
+        for match in re.finditer(r'verdict\s*==\s*"([a-z_]+)"', text):
+            word = match.group(1)
+            if word not in live and word != "unknown":
+                offenders.append(f"{path.name}: verdict == \"{word}\"")
+
+    assert not offenders, (
+        "판정 어휘에 없는 값과 견주고 있다 — 항상 거짓이 되어 수치가 조용히 "
+        f"틀린다:\n  " + "\n  ".join(offenders)
+    )

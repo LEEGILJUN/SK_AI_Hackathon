@@ -663,7 +663,7 @@ def test_quality_is_judged_over_the_lot_not_one_image(factory):
 
 
 def test_the_contaminated_demo_diagnoses_bank_contamination(factory):
-    """오염을 넣은 품목에서 뱅크 오염이 나온다.
+    """혼입 이미지를 넣은 품목에서 뱅크 오염이 나온다.
 
     시연의 주 시나리오다. 다른 원인이 나오면 **원인 하나가 다른 것을 가리고
     있다**는 뜻이고, 재구성·게이트·섀도·승인까지 뒷단이 통째로 안 돈다.
@@ -672,7 +672,7 @@ def test_the_contaminated_demo_diagnoses_bank_contamination(factory):
 
     assert outcome.diagnosis is not None
     assert outcome.diagnosis.cause == "bank_contamination", (
-        f"오염 품목인데 {outcome.diagnosis.cause} 로 나왔다"
+        f"뱅크 오염 품목인데 {outcome.diagnosis.cause} 로 나왔다"
     )
     assert outcome.diagnosis.requires_bank_rebuild
     assert outcome.finished, "재구성이 답인 원인이면 승인 요청까지 가야 한다"

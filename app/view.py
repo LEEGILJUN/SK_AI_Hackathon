@@ -457,7 +457,7 @@ def _ontology_html(outcome: RunOutcome) -> str:
         if blocked else
         "<strong>중복이 아니라 진행합니다.</strong> 유사도가 높은 건도 "
         "<em>라인이 다릅니다</em> — 라인마다 뱅크가 따로이므로 1라인 뱅크가 "
-        "오염됐다고 2라인도 그렇다는 뜻이 아닙니다. 관련 사례로만 넘깁니다."
+        "뱅크 오염됐다고 2라인도 그렇다는 뜻이 아닙니다. 관련 사례로만 넘깁니다."
     )
     return f"""
     <div class="evidence" id="block-ontology">

@@ -249,7 +249,7 @@ def test_it_does_not_pre_decide_check_five(demo_factory, demo_lookup):
 
     **최근접 패치가 결함인가 진짜 정상품인가가 뱅크 오염과 정상 분포 중첩을
     가르는 유일한 자리다.** `run_pipeline` 의 기본값이 "defect" 이므로 그냥
-    부르면 자동 접수 건이 전부 오염으로 기운다. 모델이 없으면 보류가 옳다.
+    부르면 자동 접수 건이 전부 뱅크 오염으로 기운다. 모델이 없으면 보류가 옳다.
     """
     report = _run(demo_factory, demo_lookup)
     assert all(i.outcome.patch_override is None for i in report.issues)

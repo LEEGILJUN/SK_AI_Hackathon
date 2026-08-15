@@ -44,12 +44,12 @@ ISSUE_GRAPH: list[dict] = [
     #
     # **ISS-0042 만 예외다.** pcb1 이 예전에 line_02 에서도 검사되던 때의
     # 이력이다. 라인 재배치는 현장에서 흔하고, **바로 이것 때문에 중복 차단이
-    # 라인을 봐야 한다** — "line_02 pcb1 오염 이력이 있으니 이번 것도 중복"은
+    # 라인을 봐야 한다** — "line_02 pcb1 뱅크 오염 이력이 있으니 이번 것도 중복"은
     # 틀린 추론이다. 라인마다 뱅크가 따로이기 때문이다.
     {
         "issue_id": "ISS-0042", "line": "line_02", "object_name": "pcb1",
         "defect_type": "scratch", "cause": "bank_contamination",
-        "action": "오염 샘플 2장 제거 후 뱅크 재구성", "resolved": True,
+        "action": "혼입 이미지 2장 제거 후 뱅크 재구성", "resolved": True,
         "summary": "정상 학습셋에 불량이 섞여 같은 유형을 정상으로 끌어당기고 있었다.",
     },
     {
@@ -370,7 +370,7 @@ def resolved_duplicate(
         line=line,
         object_name="pcb1",
         cause=cause,
-        action="오염 샘플 제거 후 뱅크 재구성",
+        action="혼입 이미지 제거 후 뱅크 재구성",
         resolved=True,
         similarity=similarity,
         summary="타 라인에서 동일 증상이 접수되어 뱅크 오염으로 규명, 조치 완료됨.",

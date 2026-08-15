@@ -132,7 +132,7 @@ def test_an_unknown_defect_never_gets_the_normal_code(bf):
 def test_every_issue_keyword_maps_to_a_defect_that_exists(bf):
     """이슈 키워드가 없는 결함을 가리키지 않는다.
 
-    고치기 전에는 이물·오염·표면이 `dirt` 로 갔는데 pcb1~4 어디에도 없는
+    고치기 전에는 이물·뱅크 오염·표면이 `dirt` 로 갔는데 pcb1~4 어디에도 없는
     이름이라 조용히 무시되고 최빈 결함으로 떨어졌다. "이물이 보입니다" 라고
     쓴 시나리오가 엉뚱한 결함 이미지를 받았다는 뜻이다.
     """
@@ -164,7 +164,7 @@ def test_the_shifts_are_named_the_usual_way(bf):
 def test_the_scenario_injection_is_read(bf):
     """`injection` 절을 읽는다.
 
-    장영진이 뱅크에 넣을 오염 이미지를 정확히 지정해 뒀는데 생성기가 읽지
+    장영진이 뱅크에 넣을 혼입 이미지를 정확히 지정해 뒀는데 생성기가 읽지
     않고 있었다. 대신 해시가 아무 결함이나 뱅크에 넣었다.
     """
     scenarios, _, _, _ = bf.load_scenarios(REPO_ROOT / "data" / "scenarios.yaml")
@@ -178,7 +178,7 @@ def test_the_scenario_injection_is_read(bf):
 def test_named_contaminants_exist_in_visa(bf):
     """`contaminated_images` 가 가리키는 원본이 실제로 있다.
 
-    없으면 오염이 조용히 다른 이미지로 채워지고, 채점 기준이 가리키는 것과
+    없으면 뱅크 오염이 조용히 다른 이미지로 채워지고, 채점 기준이 가리키는 것과
     뱅크에 들어간 것이 달라진다.
     """
     if not bf.SOURCE_ROOT.exists():
@@ -196,7 +196,7 @@ def test_the_bank_size_rule_is_not_two_different_numbers(bf):
 
     이 규칙이 `app/pipeline.py` 안에만 있어서 공장 생성기 쪽에서는 알 길이
     없었다. 생성기는 이미지의 70% 를 `split="bank"` 로 찍는데(라인당 3,750장),
-    뱅크는 거기서 150장만 뽑아 세운다. 이 차이를 모르면 오염률이 40배로
+    뱅크는 거기서 150장만 뽑아 세운다. 이 차이를 모르면 혼입률이 40배로
     희석돼 보인다 — 실제로 그렇게 잘못 읽었다.
 
     두 벌이 된 이상 한쪽만 고쳐지는 것을 막아야 한다.
@@ -207,11 +207,11 @@ def test_the_bank_size_rule_is_not_two_different_numbers(bf):
 
 
 def test_the_scenario_contamination_lands_near_what_we_measured(bf):
-    """시나리오가 지정한 오염 장수가 실측 범위 안에 든다.
+    """시나리오가 지정한 뱅크 오염 장수가 실측 범위 안에 든다.
 
-    VisA 실측에서 오염 3.2% 일 때 결함 위 패치가 뱅크의 0.1% 였다. 그보다
+    VisA 실측에서 혼입률 3.2% 일 때 결함 위 패치가 뱅크의 0.1% 였다. 그보다
     훨씬 옅으면 coreset 을 거친 뒤 결함 패치가 한 장도 안 남아 역추적이
-    오염원을 짚지 못하고, 그러면 정답을 걸어 둔 시나리오가 재현되지 않는다.
+    혼입 이미지를 짚지 못하고, 그러면 정답을 걸어 둔 시나리오가 재현되지 않는다.
 
     **정답 파일을 고치지 않는다.** 이 시험은 어긋나면 알려 줄 뿐이다.
     """
@@ -221,7 +221,7 @@ def test_the_scenario_contamination_lands_near_what_we_measured(bf):
     for scenario in contaminated:
         rate = scenario.contaminated_count / (bf.BANK_BUILD_SIZE + scenario.contaminated_count) * 100
         assert rate >= bf.MIN_DETECTABLE_CONTAMINATION_PCT, (
-            f"{scenario.scenario_id}: 오염 {scenario.contaminated_count}장이면 "
+            f"{scenario.scenario_id}: 뱅크 오염 {scenario.contaminated_count}장이면 "
             f"뱅크 {bf.BANK_BUILD_SIZE}장 기준 {rate:.2f}% 다. 검출 한계 아래라 "
             f"역추적이 못 짚을 수 있다 — 장영진 확인 필요"
         )

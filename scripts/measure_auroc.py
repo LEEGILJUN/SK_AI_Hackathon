@@ -16,7 +16,7 @@ demo_trace.py 로는 이 표를 못 만든다. 그쪽은 holdout_size = len(norm
     holdout_defect  = sorted(Anomaly/*.JPG)[0 : D]   기본 D=25
 
 파일명 정렬 순서를 그대로 쓴다. 무작위로 뽑지 않는 이유는 같은 명령이 같은
-수치를 내야 하기 때문이다. 오염은 넣지 않는다(깨끗한 뱅크).
+수치를 내야 하기 때문이다. 뱅크 오염은 넣지 않는다(깨끗한 뱅크).
 
 ── 교차 측정 ─────────────────────────────────────────────────────────────
 
@@ -97,12 +97,14 @@ def make_config(args: argparse.Namespace) -> FeatureConfig:
     base = FeatureConfig()
     if args.crop is None:
         return base
+    # `resize` 는 중앙 크롭을 빼면서 없앤 설정이다. 여기서 참조하고 있어서
+    # **`--crop` 을 주면 AttributeError 로 죽었다.** 기본 경로는 위에서 일찍
+    # 돌아가므로 아무도 못 봤다.
     return FeatureConfig(
         backbone=base.backbone,
         layers=base.layers,
         weights=base.weights,
-        resize=args.resize or base.resize,
-        crop=args.crop or base.crop,
+        crop=args.crop,
         neighborhood=base.neighborhood,
     )
 
@@ -139,7 +141,7 @@ def main() -> int:
     print(f"  홀드아웃     정상 {args.holdout_normal}장 = normals[{args.bank_normal}:"
           f"{args.bank_normal + args.holdout_normal}]  (뱅크와 겹치지 않음)")
     print(f"               결함 {args.holdout_defect}장 = anomalies[0:{args.holdout_defect}]")
-    print(f"  오염         0장 (깨끗한 뱅크)")
+    print(f"  뱅크 오염         0장 (깨끗한 뱅크)")
     print(f"  장치         {embedder.device}")
     print()
 

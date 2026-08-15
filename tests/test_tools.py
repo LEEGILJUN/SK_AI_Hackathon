@@ -50,7 +50,7 @@ class ScriptedAdapter(StubAdapter):
 
 
 def _missed(bank_image: str) -> InferenceResult:
-    """오염 후보를 만들기 위한 미검출 추론 결과."""
+    """뱅크 오염 후보를 만들기 위한 미검출 추론 결과."""
     match = NearestMatch(
         query=PatchRef("q.png", 1, 1, 9),
         bank=PatchRef(bank_image, 2, 2, 18),
@@ -81,7 +81,7 @@ def make_registry(record: dict) -> ToolRegistry:
         diagnosis = record.get("diagnosis")
         if diagnosis is None:
             raise RuntimeError("진단을 먼저 실행해야 한다")
-        # 오염이면 역추적이 지목한 건이 있다고 가정한다. 실제 차단 로직을
+        # 뱅크 오염이면 역추적이 지목한 건이 있다고 가정한다. 실제 차단 로직을
         # 그대로 태우기 위해 계획을 손으로 만들지 않는다.
         plan = plan_curation(diagnosis, missed_results=[_missed("d0.png")] * 2)
         record["plan"] = plan
