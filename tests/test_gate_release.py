@@ -381,3 +381,27 @@ def test_the_shipped_file_parses_and_carries_reasons():
                  "min_auroc", "max_newly_missed"):
         assert name in text
     assert "근거" in text or "이유" in text or "때문" in text, "값만 있고 근거가 없다"
+
+
+def test_every_line_appears_in_the_file_even_when_it_uses_defaults():
+    """**라인이 파일에 보여야 고칠 자리를 안다.**
+
+    비어 있으면 "라인마다 다를 수 있다"고 적어 두고 실제로는 하나입니다.
+    값은 복사하지 않습니다 — 복사하면 defaults 를 고칠 때 네 곳을 함께
+    고쳐야 하고 한 곳을 빠뜨리면 조용히 갈립니다.
+    """
+    import yaml
+
+    from agents.gate import CRITERIA_PATH
+    from data.build_factory import VALID_LINES
+
+    loaded = yaml.safe_load(CRITERIA_PATH.read_text(encoding="utf-8"))
+    listed = set((loaded.get("lines") or {}).keys())
+
+    assert listed == set(VALID_LINES), (
+        f"파일에 적힌 라인과 공장 라인이 다르다: {sorted(listed)} 대 {sorted(VALID_LINES)}"
+    )
+    for line in listed:
+        assert GateCriteria.load(line) == GateCriteria.load(), (
+            f"{line} 이 기본값과 다른데 파일에 근거가 없다"
+        )
