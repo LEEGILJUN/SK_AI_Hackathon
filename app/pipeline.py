@@ -819,33 +819,60 @@ class _DemoSession:
             elif record.ground_truth == "pass" and verdict == "defect":
                 overkill.append((record, inferred))
 
-        #: 이상 점수가 이보다 낮으면 그 이미지 자신이 뱅크에 들어 있다는 뜻이다.
-        #: 자기 패치와의 거리라 0 에 가깝게 나온다. 오염의 가장 뚜렷한 흔적이다.
-        in_bank_score = 0.05
+        def in_bank(inferred) -> bool:
+            """이 이미지 자신이 뱅크 구성에 쓰였는가.
+
+            **역추적으로 안다.** 최근접 정상 패치의 출처가 자기 자신이면 그
+            이미지는 검사 대상이 아니라 뱅크를 세운 재료다.
+
+            전에는 이상 점수가 0.05 아래인지로 봤다. 자기 패치와의 거리라
+            0 에 가깝게 나올 것이라 여겼는데 **실측에서 안 그렇다.** coreset
+            이 0.25 라 자기 패치가 다 남지 않아, VisA 오염원 두 장이 1.583 ·
+            1.569 로 정상 범위(1.417~1.635) 한가운데에 있었다. 점수로는
+            영영 못 잡는다.
+
+            오염원 목록을 직접 보지 않는 것이 중요하다. 무엇이 오염으로
+            들어갔는지는 운영에서 알 수 없고, 그것을 찾는 것이 진단이다.
+            여기서 정답을 미리 보면 진단이 성립하지 않는다.
+            """
+            top = inferred.top_match
+            return top is not None and top.bank.source_image == inferred.image
 
         shown = 8
         for record, inferred in (missed + overkill)[:shown]:
             kind = "미검" if record.ground_truth == "defect" else "과검"
-            mark = "  ← 이 이미지가 뱅크 안에 있다" if inferred.score < in_bank_score else ""
+            mark = "  ← 이 이미지가 뱅크 안에 있다" if in_bank(inferred) else ""
             rows.append((f"{kind} · {record.product_id}",
                          f"점수 {inferred.score:.3f} (임계값 {self.threshold}) · "
                          f"로트 {record.lot}{mark}"))
 
-        self_matched = [r for r, i in missed if i.score < in_bank_score]
+        self_matched = [r for r, i in missed if in_bank(i)]
 
         # 진단은 미검 한 건을 대표로 본다. 없으면 볼 것이 없다.
         # **접수된 제품을 먼저 진단한다.** 이슈가 그 제품으로 왔기 때문이다.
         #
         # 전에는 `missed[0]` 을 그냥 썼다. 로트로 확장하면 순서가 바뀌고,
-        # 뱅크에 섞인 오염원은 자기 자신과 거리가 0 이라 미검 목록 맨 앞에
-        # 온다. 그래서 **접수한 제품이 아니라 오염원을 진단하고 있었다** —
-        # 화면의 히트맵도 역추적 크롭도 이슈와 다른 이미지였다.
+        # 뱅크에 섞인 오염원이 미검 목록 맨 앞에 온다. 그래서 **접수한 제품이
+        # 아니라 오염원을 진단하고 있었다** — 화면의 히트맵도 역추적 크롭도
+        # 이슈와 다른 이미지였다.
         #
         # 접수 제품이 미검이 아니면(정상 판정이면) 남은 미검 중 첫 번째를
         # 본다. 그때는 "그 제품은 잡혔는데 같은 로트의 다른 것이 빠졌다"가
         # 답이고, 화면이 어느 제품을 보고 있는지 표시한다.
+        #
+        # **그 "첫 번째"에서 뱅크에 든 이미지를 뒤로 민다.** 접수 제품 우선만
+        # 으로는 모자랐다. 입력을 512 로 올려 접수 제품이 검출되자 대표가
+        # 오염원으로 넘어갔고, 판별 1번(접수 이미지)과 5번(뱅크 이미지)이
+        # 같은 이미지를 보게 됐다. 그러면 두 판별이 갈리지 않아 진단의 핵심이
+        # 무너진다(`tests/test_app_pipeline.py` 의 크롭 대상 시험이 잡는다).
+        #
+        # 뱅크에 든 이미지는 그날 검사된 제품이 아니라 뱅크를 세운 재료다.
+        # 미검 목록에는 남긴다 — 오염의 근거이기 때문이고, 대표로만 안 뽑는다.
         reported = intake.report.product_id if intake else None
-        ordered = sorted(missed, key=lambda pair: pair[0].product_id != reported)
+        ordered = sorted(
+            missed,
+            key=lambda pair: (pair[0].product_id != reported, in_bank(pair[1])),
+        )
 
         self.query = f.resolve(ordered[0][0].path) if ordered else None
         self.inference = ordered[0][1] if ordered else None
@@ -884,9 +911,10 @@ class _DemoSession:
                 rows=_sampled(rows, len(missed) + len(overkill), shown)
                 or [("갈린 건", "없음")],
                 note=(
-                    (f"미검 {len(self_matched)}건은 이상 점수가 0 에 가깝습니다 — "
-                     f"그 이미지 자신이 뱅크에 들어 있다는 뜻이고, 뱅크 오염의 "
-                     f"가장 뚜렷한 흔적입니다. ") if self_matched else ""
+                    (f"미검 {len(self_matched)}건은 최근접 정상 패치의 출처가 "
+                     f"자기 자신입니다 — 그 이미지가 뱅크 구성에 쓰였다는 뜻이고, "
+                     f"뱅크 오염의 가장 뚜렷한 흔적입니다. 진단 대표로는 뽑지 "
+                     f"않습니다. ") if self_matched else ""
                 ) + "사람이 개입하지 않습니다. 처리 과정을 보는 화면입니다.",
             )
         )
