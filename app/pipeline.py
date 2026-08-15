@@ -92,7 +92,8 @@ from inspection import (
     sweep_from_results,
 )
 from inspection.crop import crop_patch, crop_with_context
-from inspection.mask import LARGEST_BLOB, blob_count, defect_area
+from inspection.area import DEFAULT_ROBUST_CUTOFF, attach_baseline, measured_area
+from inspection.mask import LARGEST_BLOB, blob_count
 from inspection.quality import assess_quality, compute_baseline
 from inspection.shadow import ShadowReport
 from inspection.store import (
@@ -335,6 +336,18 @@ VISA_CONFIG = FeatureConfig()
 VISA_NORMAL_COUNT = 150
 VISA_DEFECT_COUNT = 12
 
+#: 판별 7번의 자리별 기준선을 만들 정상 이미지 수. **뱅크에 안 들어간다.**
+#:
+#: 중앙값과 중앙절대편차를 만드는 표본이라 너무 적으면 그 몇 장의 우연을
+#: 기준으로 삼게 된다. `measure_baseline_map.py` 가 50장을 쓰는데, 여기서는
+#: 시연 예열 시간과 맞바꿔 30장으로 둔다 — 뱅크 구성 뒤 그만큼을 더 추론한다.
+BASELINE_COUNT = 30
+
+#: 합성으로 설 때의 기준선 장수. **0 이면 안 된다** — 맥에서 이 경로가
+#: 한 번도 안 밟히면 기준선이 깨져도 시험이 못 잡는다. 합성 이미지는
+#: 64px 라 열 장을 더 추론해도 1초가 안 걸린다.
+DEMO_BASELINE_COUNT = 10
+
 
 def visa_category_dir(category: str, root: Path | None = None) -> Path:
     return (root or VISA_ROOT) / category / "Data"
@@ -402,7 +415,7 @@ class DemoFactory:
         else:
             self.root = Path(tempfile.mkdtemp(prefix="shvo_demo_"))
             self.embedder = PatchEmbedder(DEMO_CONFIG)
-            normal_count = normal_count or 16
+            normal_count = normal_count or 28
             defect_count = defect_count or 6
 
         #: 뱅크 저장소. **VisA 로 돌 때만 저절로 켜진다.**
@@ -443,9 +456,22 @@ class DemoFactory:
 
             dirty = (line, object_name) == CONTAMINATED_ITEM
             mixed_in = list(defect[:contaminants]) if dirty else []
-            bank_normal = normal[:-4]
 
-            bank = self._bank_for(line, object_name, list(bank_normal) + mixed_in)
+            # **뒤쪽 정상 이미지는 뱅크에 안 넣는다.**
+            #
+            #   holdout    게이트와 섀도가 성능을 재는 데 쓴다
+            #   baseline   판별 7번의 자리별 기준선을 만드는 데 쓴다
+            #
+            # 기준선을 뱅크에 든 이미지로 만들면 안 된다. 그 이미지는 자기
+            # 패치가 뱅크에 있어 거리가 낮게 나오고, 낮은 값을 기준으로
+            # 삼으면 잔차가 부풀어 면적이 다시 커진다.
+            baseline_count = BASELINE_COUNT if self.on_visa else DEMO_BASELINE_COUNT
+            reserved = baseline_count + 4
+            bank_normal = normal[:-reserved] if len(normal) > reserved else normal[:-4]
+            baseline_normal = list(normal[-reserved:-4]) if len(normal) > reserved else []
+
+            bank = self._bank_for(line, object_name, list(bank_normal) + mixed_in,
+                                  baseline_normal)
             self.items[(line, object_name)] = ItemLine(
                 line=line, object_name=object_name, bank=bank,
                 bank_normal=list(bank_normal),
@@ -461,7 +487,8 @@ class DemoFactory:
             CONTAMINATED_ITEM[0], CONTAMINATED_ITEM[1], contaminated.holdout_defect[0]
         )
 
-    def _bank_for(self, line: str, object_name: str, images: list[Path]) -> MemoryBank:
+    def _bank_for(self, line: str, object_name: str, images: list[Path],
+                  baseline_normal: list[Path] | None = None) -> MemoryBank:
         """저장소에 쓸 만한 판이 있으면 불러오고, 없으면 세워서 넣는다.
 
         **VisA 로 서면 뱅크 셋 세우는 데 4090 실측 108초**가 든다. 프로세스마다
@@ -493,10 +520,16 @@ class DemoFactory:
             coreset_ratio=0.25,
             seed=42,
             # 이름 규칙은 `lookup.base.bank_version_for` 하나뿐이다.
-            # 조회 계층과 갈리면 get_bank_profile 이 None 을 돌려준다.
+            # 조회 계층과 어긋나면 get_bank_profile 이 None 을 돌려준다.
             bank_version=version,
             root=self.root,
         )
+
+        # **자리별 기준선을 뱅크와 함께 만든다.** 판별 7번의 면적이 이것으로
+        # 재진다. 뱅크에 안 들어간 정상 이미지로 만들어야 하고, 모자라면
+        # 붙이지 않는다 — 엉성한 기준선은 그럴듯한 숫자를 내면서 틀린다.
+        if baseline_normal:
+            attach_baseline(bank, baseline_normal, self.embedder, root=self.root)
 
         if self.store_root is not None:
             saved = save_bank(bank, item_key, root=self.store_root,
@@ -668,6 +701,8 @@ class _DemoSession:
         self.evidence: list[Any] | None = None
         self.inference = None
         self.new_threshold: float | None = None
+        #: 면적을 무엇으로 쟀는가 — robust(기준선) 또는 raw(예전 방식).
+        self.area_basis: str = "raw"
         self.baseline_curve = None
         #: MES 조회로 특정된 것들. 여기가 비면 뒤 단계가 돌지 않는다.
         self.item: ItemLine | None = None
@@ -1076,13 +1111,23 @@ class _DemoSession:
         )
         crop = self.factory.embedder.config.crop
         measurement = (criteria.measurement if criteria else None) or {}
-        area = defect_area(
+
+        # **면적은 뱅크마다 다른 기준으로 잰다.** 전역 컷오프는 정상부 거리가
+        # 0 근처라는 가정인데 실측이 그렇지 않다 — pcb1 정상 중앙 1.708,
+        # capsules 2.251 이다. 그래서 4090 에서 면적이 화면의 99.9% 로 나왔다.
+        #
+        # 기준선이 없으면 예전 방식으로 떨어지고 `basis` 에 그 사실이 남는다.
+        # 어느 기준으로 잰 값인지 모르면 그 숫자로 판정을 논할 수 없다.
+        area, area_basis = measured_area(
             result.patch_distances,
             crop=crop,
             threshold=self.threshold,
+            baseline=item.bank.meta.get("baseline"),
+            robust_cutoff=float(measurement.get("robust_cutoff", DEFAULT_ROBUST_CUTOFF)),
             binarize_threshold=float(measurement.get("binarize_threshold", 0.5)),
             aggregate=str(measurement.get("aggregate", LARGEST_BLOB)),
         )
+        self.area_basis = area_basis
         blobs = blob_count(
             result.patch_distances, crop=crop, threshold=self.threshold,
             binarize_threshold=float(measurement.get("binarize_threshold", 0.5)),
@@ -1117,7 +1162,14 @@ class _DemoSession:
                     (f"{e.item_no}. {e.name}", f"{'○' if e.usable else '×'}  {_evidence_value(e.value)}")
                     for e in self.evidence
                 ],
-                note="시각 언어 모델을 쓰는 것은 1번과 5번뿐입니다. 나머지는 조회와 계산입니다.",
+                note=(
+                    "시각 언어 모델을 쓰는 것은 1번과 5번뿐입니다. 나머지는 조회와 계산입니다. "
+                    + ("7번 면적은 이 뱅크의 자리별 정상 기준선 대비로 쟀습니다 "
+                       "(단위: 자리별 변동 폭의 배수)."
+                       if self.area_basis != "raw" else
+                       "**7번 면적에 기준선이 없어 예전 방식으로 쟀습니다** — 품목마다 "
+                       "뜻이 달라 판정 기준과 대조할 수 없는 값입니다.")
+                ),
             )
         )
         return {
