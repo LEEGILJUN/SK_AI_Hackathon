@@ -62,7 +62,15 @@ DEFAULT_STORE_ROOT = Path("banks")
 #: 어느 판이 운영에 쓰이는가. 한 줄짜리 텍스트다.
 CURRENT_FILE = "CURRENT"
 
-_FOLDER = re.compile(r"^(v\d+)_(\d{8}-\d{4})_([0-9a-f]{6})$")
+#: 폴더 이름 = 뱅크 버전 · 만든 시각 · 설정 지문. 밑줄로 나눈다.
+#:
+#: 버전에 밑줄이 없어야 한다. 실제 값은 `pcb1-01-v1` 처럼 품목이 앞에 붙고
+#: 붙임표를 쓴다 — `lookup.base.bank_version_for` 가 그렇게 만든다.
+_FOLDER = re.compile(r"^([^_]+)_(\d{8}-\d{4})_([0-9a-f]{6})$")
+
+#: 버전 문자열 끝의 판 번호. `pcb1-01-v12` → 12
+_VERSION_NUMBER = re.compile(r"v(\d+)$")
+
 _TIME_FORMAT = "%Y%m%d-%H%M"
 
 
@@ -99,7 +107,9 @@ class StoredBank:
 
     @property
     def version_number(self) -> int:
-        return int(self.version[1:])
+        """판 번호. 규칙에 안 맞는 이름이면 0 — 정렬에서 맨 뒤로 간다."""
+        match = _VERSION_NUMBER.search(self.version)
+        return int(match.group(1)) if match else 0
 
     def matches(self, config: FeatureConfig) -> bool:
         """지금 설정으로 쓸 수 있는 판인가 — 이름만 보고 판단한다."""

@@ -62,7 +62,7 @@ def _check_script(target: str, arguments: str) -> tuple[bool, str]:
     try:
         helped = subprocess.run(
             [sys.executable, str(path), "--help"],
-            capture_output=True, text=True, timeout=60, cwd=REPO_ROOT,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, cwd=REPO_ROOT,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
         return True, f"있음 (인자 확인 못 함: {exc})"
@@ -79,7 +79,7 @@ def _check_hashes(text: str) -> list[tuple[bool, str]]:
         try:
             remote = subprocess.run(
                 ["git", "branch", "-r", "--contains", raw],
-                capture_output=True, text=True, timeout=30, cwd=REPO_ROOT,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, cwd=REPO_ROOT,
             )
         except (subprocess.TimeoutExpired, OSError):
             continue

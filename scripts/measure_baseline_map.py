@@ -48,6 +48,8 @@ from app.pipeline import visa_category_dir  # noqa: E402
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="역추적 위치 정확도")
     parser.add_argument("--category", default="pcb1")
+    parser.add_argument("--visa-root", default=None,
+                        help="비우면 SHVO_VISA_ROOT 또는 저장소 아래 기본 자리")
     parser.add_argument("--bank-normals", type=int, default=150, help="뱅크 구성 장수")
     parser.add_argument("--baseline-normals", type=int, default=50,
                         help="자리별 기준선을 만들 정상 장수. 뱅크와 겹치지 않게 뒤에서 집는다")
@@ -59,7 +61,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    base = visa_category_dir(args.category, REPO_ROOT)
+    # **저장소 뿌리가 아니라 VisA 뿌리다.** `visa_category_dir(cat, root)` 는
+    # 받은 값을 그대로 쓰므로, `REPO_ROOT` 를 넘기면 `<저장소>/pcb1/Data` 를
+    # 찾고 `SHVO_VISA_ROOT` 도 무시된다. 비워 두면 환경 변수와 기본 자리를
+    # 본다 — `measure_auroc.py` 와 같은 규약이다.
+    base = visa_category_dir(args.category, Path(args.visa_root) if args.visa_root else None)
     normal_dir, defect_dir, mask_dir = (base / "Images" / "Normal",
                                         base / "Images" / "Anomaly",
                                         base / "Masks" / "Anomaly")

@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Protocol, Sequence, runtime_checkable
@@ -88,9 +89,20 @@ class RebuildResult:
 
 
 def _next_version(current: str) -> str:
-    """v3 → v4. 규칙에 안 맞으면 뒤에 -rebuilt 를 붙인다."""
-    if current.startswith("v") and current[1:].isdigit():
-        return f"v{int(current[1:]) + 1}"
+    """판 번호를 하나 올린다. `pcb1-01-v1` → `pcb1-01-v2`, `v3` → `v4`.
+
+    **끝의 `v<숫자>` 를 본다.** 전에는 이름 전체가 `v3` 형태라고 보고
+    `startswith("v")` 로 걸렀는데, 실제 값은 `lookup.base.bank_version_for`
+    가 만드는 `pcb1-01-v1` 이라 한 번도 걸린 적이 없다. 그래서 재구성할 때마다
+    `-rebuilt` 가 뒤에 붙어 `pcb1-01-v1-rebuilt-rebuilt` 가 됐고, **판 번호로
+    앞뒤를 가릴 수 없어 원복 대상이 정해지지 않았다.**
+
+    규칙에 안 맞는 이름이면 그대로 `-rebuilt` 를 붙인다. 사람이 손으로 지은
+    이름일 수 있고, 조용히 번호를 붙이면 남의 판을 덮는다.
+    """
+    match = re.search(r"v(\d+)$", current)
+    if match:
+        return f"{current[:match.start()]}v{int(match.group(1)) + 1}"
     return f"{current}-rebuilt"
 
 

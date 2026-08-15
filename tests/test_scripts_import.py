@@ -44,7 +44,7 @@ def test_a_script_imports(path):
          f"spec=importlib.util.spec_from_file_location('probe',{str(path)!r}); "
          f"mod=importlib.util.module_from_spec(spec); "
          f"spec.loader.exec_module(mod)"],
-        capture_output=True, text=True, timeout=180, cwd=REPO_ROOT,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180, cwd=REPO_ROOT,
     )
     assert done.returncode == 0, (
         f"{path.name} 이 임포트되지 않는다:\n{done.stderr[-1200:]}"

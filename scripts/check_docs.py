@@ -100,7 +100,7 @@ def actual_test_count() -> int | None:
     try:
         result = subprocess.run(
             [python, "-m", "pytest", "tests/", "--collect-only", "-q"],
-            cwd=REPO_ROOT, capture_output=True, text=True, timeout=900,
+            cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900,
         )
     except Exception:
         return None

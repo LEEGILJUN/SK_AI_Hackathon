@@ -89,11 +89,19 @@ from inspection.crop import crop_patch, crop_with_context
 from inspection.mask import LARGEST_BLOB, blob_count, defect_area
 from inspection.quality import assess_quality, compute_baseline
 from inspection.shadow import ShadowReport
+from inspection.store import (
+    DEFAULT_STORE_ROOT,
+    current_bank,
+    load_current,
+    save_bank,
+    write_current,
+)
 from lookup import MockLookup
 from lookup.base import (
     RETRIEVAL_KIND,
     DefectDistribution,
     ImageRecord,
+    bank_item_key,
     bank_version_for,
 )
 
@@ -370,7 +378,8 @@ class DemoFactory:
     """
 
     def __init__(self, normal_count: int | None = None, defect_count: int | None = None,
-                 contaminants: int = 2, visa_root: str | Path | None = None):
+                 contaminants: int = 2, visa_root: str | Path | None = None,
+                 store_root: str | Path | None = None):
         root = Path(visa_root) if visa_root else VISA_ROOT
         #: VisA 원본으로 도는가. 화면이 이 값을 그대로 표시해야 합니다 —
         #: 합성으로 떨어진 것을 모르고 보면 수치를 실측으로 오해합니다.
@@ -386,6 +395,24 @@ class DemoFactory:
             self.embedder = PatchEmbedder(DEMO_CONFIG)
             normal_count = normal_count or 16
             defect_count = defect_count or 6
+
+        #: 뱅크 저장소. **VisA 로 돌 때만 저절로 켜진다.**
+        #:
+        #: 합성으로 설 때 켜지면 시험이 저장소를 공유해 서로의 뱅크를 물게
+        #: 되고, 저장소 상태가 실행 사이에 남아 결과가 실행 순서를 탄다.
+        #: 합성 뱅크는 1초도 안 걸려서 아낄 것도 없다.
+        #:
+        #: **자리를 직접 주면 합성에서도 켜진다.** 저장소 경로가 실제로 도는지
+        #: 맥에서 확인하려면 그 길이 있어야 한다. 합성 이미지는 씨앗이 고정이고
+        #: 뱅크가 상대 경로를 들고 있어 다시 세워도 같은 자리를 가리킨다.
+        self.store_root = (
+            Path(store_root) if store_root is not None
+            else (DEFAULT_STORE_ROOT if self.on_visa else None)
+        )
+
+        #: 저장소에서 불러온 품목. 화면이 "새로 세웠는지 불러왔는지"를 말할 수
+        #: 있어야 한다 — 108초가 사라진 것을 보고 뭔가 건너뛴 줄 알면 안 된다.
+        self.loaded_from_store: list[str] = []
 
         self.items: dict[tuple[str, str], ItemLine] = {}
         self.catalog: list[ImageRecord] = []
@@ -409,16 +436,7 @@ class DemoFactory:
             mixed_in = list(defect[:contaminants]) if dirty else []
             bank_normal = normal[:-4]
 
-            bank = build_bank(
-                list(bank_normal) + mixed_in,
-                self.embedder,
-                coreset_ratio=0.25,
-                seed=42,
-                # 이름 규칙은 `lookup.base.bank_version_for` 하나뿐이다.
-                # 조회 계층과 갈리면 get_bank_profile 이 None 을 돌려준다.
-                bank_version=bank_version_for(line, object_name),
-                root=self.root,
-            )
+            bank = self._bank_for(line, object_name, list(bank_normal) + mixed_in)
             self.items[(line, object_name)] = ItemLine(
                 line=line, object_name=object_name, bank=bank,
                 bank_normal=list(bank_normal),
@@ -433,6 +451,52 @@ class DemoFactory:
         self.reported_product = self._product_id(
             CONTAMINATED_ITEM[0], CONTAMINATED_ITEM[1], contaminated.holdout_defect[0]
         )
+
+    def _bank_for(self, line: str, object_name: str, images: list[Path]) -> MemoryBank:
+        """저장소에 쓸 만한 판이 있으면 불러오고, 없으면 세워서 넣는다.
+
+        **VisA 로 서면 뱅크 셋 세우는 데 4090 실측 108초**가 든다. 프로세스마다
+        새로 세울 이유가 없다.
+
+        ── CURRENT 를 언제 쓰는가 ──────────────────────────────────────
+
+        가상 공장은 "이미 배포돼 돌고 있는 뱅크"를 흉내내는 자리다. 그 최초
+        구성을 여기서 하므로 `CURRENT` 를 쓰는 것이 맞다. **다만 v1 일 때만
+        쓴다.**
+
+        진단 뒤 재구성한 뱅크는 v2 부터다(`agents/rebuild.py` 의
+        `_next_version`). `CURRENT` 가 그것을 가리키고 있다면 사람이 승인해
+        넘긴 것이고, **가상 공장이 그것을 v1 로 되돌리면 승인을 무르는 셈**
+        이다. 그래서 v2 이상이 걸려 있으면 손대지 않고 새 뱅크만 저장한다.
+        """
+        item_key = bank_item_key(line, object_name)
+        version = bank_version_for(line, object_name)
+
+        if self.store_root is not None:
+            found = load_current(item_key, root=self.store_root, config=self.embedder.config)
+            if found is not None:
+                self.loaded_from_store.append(item_key)
+                return found
+
+        bank = build_bank(
+            images,
+            self.embedder,
+            coreset_ratio=0.25,
+            seed=42,
+            # 이름 규칙은 `lookup.base.bank_version_for` 하나뿐이다.
+            # 조회 계층과 갈리면 get_bank_profile 이 None 을 돌려준다.
+            bank_version=version,
+            root=self.root,
+        )
+
+        if self.store_root is not None:
+            saved = save_bank(bank, item_key, root=self.store_root,
+                              config=self.embedder.config)
+            in_use = current_bank(item_key, root=self.store_root)
+            if in_use is None or in_use.version_number <= 1:
+                write_current(item_key, saved.name, root=self.store_root)
+
+        return bank
 
     def _visa_set(self, category: str, normal_count: int,
                   defect_count: int) -> tuple[list[Path], list[Path]]:

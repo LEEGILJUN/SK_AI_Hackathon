@@ -60,7 +60,7 @@ def test_the_scoring_script_excludes_the_example():
     """
     done = subprocess.run(
         [sys.executable, "scripts/measure_rules.py"],
-        capture_output=True, text=True, timeout=180, cwd=REPO_ROOT,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180, cwd=REPO_ROOT,
     )
     assert done.returncode == 0, done.stderr[-800:]
     assert "원인 일치        19/24" in done.stdout or "/24" in done.stdout, (

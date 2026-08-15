@@ -209,3 +209,93 @@ def test_agents_never_switch_the_bank_in_use(package):
         f"{package}/ 에서 뱅크 전환을 부르고 있다. 저장(save_bank)은 자동이지만 "
         f"전환은 사람이 실행하는 스크립트에서만 한다."
     )
+
+
+# ── 가상 공장이 저장소를 쓴다 ──────────────────────────────────────────
+
+
+def _factory(store, **kwargs):
+    from app.pipeline import DemoFactory
+
+    return DemoFactory(visa_root="/tmp/_no_visa_here", store_root=store, **kwargs)
+
+
+def test_the_second_start_loads_instead_of_rebuilding(tmp_path):
+    """**같은 뱅크를 두 번 세우지 않는다.**
+
+    VisA 로 서면 뱅크 셋 구성에 4090 실측 108초가 든다. 프로세스마다 새로
+    세울 이유가 없다.
+    """
+    first = _factory(tmp_path)
+    assert first.loaded_from_store == [], "처음에는 저장소가 비어 있어야 한다"
+
+    second = _factory(tmp_path)
+
+    assert second.loaded_from_store, "두 번째는 저장소에서 불러와야 한다"
+    for key, item in first.items.items():
+        assert len(second.items[key].bank) == len(item.bank)
+
+
+def test_a_changed_setting_rebuilds_rather_than_loading_a_wrong_bank(tmp_path):
+    """설정이 다르면 불러오지 않고 다시 세운다.
+
+    거리 척도가 다른 뱅크를 쓰면 점수가 조용히 틀린다. 448 에서 512 로
+    바꿨을 때 옛 뱅크가 검사를 통과한 적이 있다.
+    """
+    from inspection.features import FeatureConfig as FC
+
+    _factory(tmp_path)
+    item_key = bank_item_key("line_01", "pcb1")
+
+    assert list_banks(item_key, root=tmp_path), "처음에 저장은 됐어야 한다"
+    assert load_current(item_key, root=tmp_path, config=FC(backbone="resnet18", crop=32)) is None, (
+        "설정이 다른데 불러오면 거리 척도가 다른 뱅크로 판정하게 된다"
+    )
+
+
+def test_the_factory_never_pulls_an_approved_rebuild_back_to_v1(tmp_path):
+    """**승인해 넘긴 판을 가상 공장이 무르지 않는다.**
+
+    진단 뒤 재구성한 뱅크는 v2 부터다. `CURRENT` 가 그것을 가리키고 있으면
+    사람이 승인해 넘긴 것이고, 공장이 v1 로 되돌리면 승인을 무르는 셈이다.
+    """
+    _factory(tmp_path)
+    item_key = bank_item_key("line_01", "pcb1")
+
+    approved = save_bank(make_bank("v2"), item_key, root=tmp_path,
+                         config=CONFIG, built_at=datetime(2026, 8, 16, 9, 0))
+    write_current(item_key, approved.name, root=tmp_path)
+
+    _factory(tmp_path)
+
+    assert current_bank(item_key, root=tmp_path).version == "v2", (
+        "가상 공장이 승인된 v2 를 v1 로 되돌렸다"
+    )
+
+
+def test_the_real_version_format_increments(tmp_path):
+    """**실제 버전 형식에서 판 번호가 올라간다.**
+
+    `_next_version` 이 이름 전체를 `v3` 형태로 보고 `startswith("v")` 로
+    걸렀는데, 실제 값은 `pcb1-01-v1` 이라 한 번도 안 걸렸다. 재구성할 때마다
+    `-rebuilt` 가 붙어 `pcb1-01-v1-rebuilt-rebuilt` 가 됐고, 판 번호로 앞뒤를
+    가릴 수 없어 **원복 대상이 정해지지 않았다.**
+    """
+    from agents.rebuild import _next_version
+
+    assert _next_version("pcb1-01-v1") == "pcb1-01-v2"
+    assert _next_version("pcb1-01-v9") == "pcb1-01-v10"
+    assert _next_version("v3") == "v4"
+    assert _next_version("사람이_지은_이름") == "사람이_지은_이름-rebuilt", (
+        "규칙에 안 맞으면 조용히 번호를 붙이지 않는다 — 남의 판을 덮는다"
+    )
+
+
+def test_the_store_sorts_the_real_version_format_by_number(tmp_path):
+    """`pcb1-01-v10` 이 `pcb1-01-v2` 보다 앞이어야 한다."""
+    for number, hour in ((1, 9), (2, 10), (10, 11)):
+        save_bank(make_bank(f"pcb1-01-v{number}"), "pcb1-01", root=tmp_path,
+                  built_at=datetime(2026, 8, 15, hour, 0))
+
+    found = [b.version for b in list_banks("pcb1-01", root=tmp_path)]
+    assert found == ["pcb1-01-v10", "pcb1-01-v2", "pcb1-01-v1"]
