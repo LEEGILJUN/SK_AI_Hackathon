@@ -34,6 +34,7 @@ PLANNED = {
     "data/build_factory.py",
     "data/manifest.csv",
     "data/mes.csv",
+    "data/factory_summary.txt",   # build_factory 산출물. 재현되므로 커밋 안 함
     "data/issue_history.jsonl",
     "data/factory/",
     "lookup/factory.py",
