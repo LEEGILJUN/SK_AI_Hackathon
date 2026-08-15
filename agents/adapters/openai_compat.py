@@ -17,8 +17,6 @@ health_check 만이 아니라 도구 호출까지 한 번 확인해야 한다
 
 from __future__ import annotations
 
-import os
-
 import json
 import uuid
 from typing import Any, Sequence
@@ -48,9 +46,6 @@ class OpenAICompatAdapter(ModelAdapter):
 
         self.model = model
         self.base_url = base_url
-        # 모델 템플릿이 system 역할을 안 읽으면 시스템 지시가 통째로 버려진다.
-        # 4090 의 gemma 가 그랬다. 그때는 사용자 메시지에 실어 보낸다.
-        self.carries_system = os.environ.get("SHVO_LLM_NO_SYSTEM", "") not in ("1", "true", "True")
         self.temperature = temperature
         self.max_tokens = max_tokens
         # 재현성 목표 때문에 기본값을 0으로 둔다. 서버가 무시할 수도 있다.
@@ -73,6 +68,29 @@ class OpenAICompatAdapter(ModelAdapter):
                 "role": "tool",
                 "tool_call_id": message.tool_call_id or "",
                 "content": message.content,
+            }
+
+        if message.tool_calls:
+            # **assistant 턴은 무엇을 불렀는지 함께 보내야 한다.** 안 보내면
+            # 뒤따르는 tool 메시지가 어느 호출에 대한 답인지 알 수 없어
+            # 대화가 깨지고, 모델이 처음부터 다시 부른다.
+            #
+            # arguments 는 dict 가 아니라 **JSON 문자열**이다. OpenAI 형식이고
+            # 서버가 그대로 파싱한다.
+            return {
+                "role": message.role,
+                "content": message.content,
+                "tool_calls": [
+                    {
+                        "id": call.id,
+                        "type": "function",
+                        "function": {
+                            "name": call.name,
+                            "arguments": json.dumps(call.arguments, ensure_ascii=False),
+                        },
+                    }
+                    for call in message.tool_calls
+                ],
             }
 
         if not message.images:

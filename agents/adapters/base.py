@@ -69,6 +69,19 @@ class ChatMessage:
     images: list[ImagePart] = field(default_factory=list)
     tool_call_id: str | None = None  # role="tool" 일 때 어느 호출에 대한 답인지
 
+    #: role="assistant" 일 때 **이 턴에 무엇을 불렀는가.**
+    #:
+    #: 이것이 없으면 대화가 깨진다. 모델이 도구만 부른 턴은 content 가 빈
+    #: 문자열이라, 서버가 보는 대화가 이렇게 된다.
+    #:
+    #:     assistant  ""                          ← 무엇을 불렀는지 없음
+    #:     tool       {"ok":true, ...}            ← 무엇에 대한 답인지 모름
+    #:
+    #: 모델 입장에서는 "아직 아무것도 안 불렀는데 결과가 왔다" 이므로 처음부터
+    #: 다시 첫 도구를 부른다. 4090 실측에서 `intake_issue` 를 세 번 부르고
+    #: 멈춘 원인이 이것이다.
+    tool_calls: list["ToolCall"] = field(default_factory=list)
+
     @classmethod
     def system(cls, content: str) -> "ChatMessage":
         return cls(role="system", content=content)
@@ -168,13 +181,6 @@ class ModelAdapter(ABC):
     #: 실제 모델이 아니라 대체 구현인가
     is_stub: bool = False
 
-    #: 이 모델이 system 역할 메시지를 실제로 읽는가.
-    #:
-    #: **False 면 시스템 지시가 사용자 메시지에 실려 나간다.** 4090 의
-    #: gemma 모델은 ollama 템플릿에 system 분기가 없어 시스템 프롬프트가
-    #: 통째로 버려졌다 — 프롬프트를 고쳐도 모델이 본 적이 없었다.
-    #: 환경변수 `SHVO_LLM_NO_SYSTEM=1` 로 켠다.
-    carries_system: bool = True
 
     @abstractmethod
     def chat(

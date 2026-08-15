@@ -445,91 +445,112 @@ def test_id_shaped_arguments_carry_an_example(demo_factory):
     assert not bare, f"형식 예시가 없는 ID 인자: {bare}"
 
 
-# ── 지시가 모델에 도달하는가 ────────────────────────────────────────────
+# ── 대화가 서버에 온전히 도착하는가 ─────────────────────────────────────
 #
-# **4090 실측에서 시스템 프롬프트가 통째로 버려지고 있었다.** gemma 모델의
-# ollama 템플릿에 `system` 분기가 아예 없어서, 역할이 user·assistant·tool
-# 셋만 처리되고 system 은 조용히 지나간다. 프롬프트를 고쳐도 모델이 본 적이
-# 없었다. 그 템플릿은 도구 목록을 대화 **맨 끝**에 붙이기까지 해서, 모델이 매
-# 턴 마지막으로 읽는 것이 "도구를 부르라"는 지시였다.
+# **4090 실측에서 대화가 깨진 채 나가고 있었다.** 모델이 도구만 부른 턴은
+# `content` 가 빈 문자열인데 `tool_calls` 를 안 실어 보내서, 서버가 보는
+# 대화가 이랬다.
+#
+#     assistant  ""                         ← 무엇을 불렀는지 없음
+#     tool       {"ok":true, ...}           ← 무엇에 대한 답인지 모름
+#
+# 모델은 "아직 아무것도 안 불렀는데 결과가 왔다"로 읽고 처음부터 다시 첫
+# 도구를 불렀다. `intake_issue` 를 세 번 부르고 멈춘 원인이다.
+#
+# **가짜 어댑터로는 안 잡힌다.** 가짜는 메시지를 되돌려 보내지 않으므로
+# 누락이 드러나지 않는다. 그래서 여기서는 어댑터가 만든 payload 를 직접 본다.
 
 
-def test_a_tool_result_tells_the_model_what_to_call_next():
-    """다음 단계 지시를 **도구 결과 안에** 싣는다.
+def test_the_assistant_turn_carries_what_it_called():
+    """어댑터가 만든 payload 에 `tool_calls` 가 실리는가."""
+    from agents.adapters.base import ChatMessage
+    from agents.adapters.openai_compat import OpenAICompatAdapter
 
-    시스템 프롬프트는 템플릿이 버릴 수 있지만 도구 결과(tool 역할)는 어느
-    템플릿이든 렌더링한다. 여기 실으면 반드시 도달한다.
+    message = ChatMessage(
+        role="assistant", content="",
+        tool_calls=[ToolCall("call_1", "lookup_mes", {"line": "line_01"})],
+    )
+    payload = OpenAICompatAdapter._to_payload(message)
+
+    assert payload["role"] == "assistant"
+    assert len(payload["tool_calls"]) == 1
+    call = payload["tool_calls"][0]
+    assert call["id"] == "call_1"
+    assert call["type"] == "function"
+    assert call["function"]["name"] == "lookup_mes"
+    assert call["function"]["arguments"] == '{"line": "line_01"}', (
+        "arguments 는 dict 가 아니라 JSON 문자열이어야 한다"
+    )
+
+
+def test_a_plain_message_gains_no_tool_calls_key():
+    """도구를 안 부른 턴에는 빈 `tool_calls` 를 붙이지 않는다.
+
+    빈 배열을 거부하는 서버가 있다.
     """
-    from agents.tools import ToolResult
+    from agents.adapters.base import ChatMessage
+    from agents.adapters.openai_compat import OpenAICompatAdapter
 
-    result = ToolResult(name="intake_issue", arguments={},
-                        output={"verdict": "proceed", "next": "lookup_mes"}, ok=True)
-    content = result.to_message("c1").content
-
-    assert "Call lookup_mes next" in content
-    assert "Do not call intake_issue again" in content
-    assert '"next": "lookup_mes"' in content, "원래 결과도 그대로 있어야 한다"
+    payload = OpenAICompatAdapter._to_payload(ChatMessage.user("이슈 원문"))
+    assert "tool_calls" not in payload
 
 
-def test_no_next_means_no_instruction():
-    """도구가 다음을 안 알려 주면 **지어내지 않는다.**"""
-    from agents.tools import ToolResult
+def test_the_loop_records_the_calls_on_the_assistant_turn():
+    """`run_agent` 가 응답의 `tool_calls` 를 대화에 담는가.
 
-    quiet = ToolResult(name="lookup_ontology", arguments={},
-                       output={"causes": 6}, ok=True)
-    assert "INSTRUCTION" not in quiet.to_message("c1").content
-
-    failed = ToolResult(name="lookup_mes", arguments={}, output=None,
-                        ok=False, error="뱅크가 없다")
-    assert "INSTRUCTION" not in failed.to_message("c2").content
-
-
-def test_a_stop_message_is_not_turned_into_a_tool_name():
-    """`next` 가 도구 이름이 아니라 안내문일 때가 있다.
-
-    "여기서 멈춘다. 재구성은 답이 아니다." 를 도구 이름처럼 부르라고 하면
-    모델이 없는 도구를 찾는다.
+    어댑터가 실을 준비가 돼 있어도 루프가 안 담으면 그대로 사라진다.
+    **여기가 실제로 비어 있었다.**
     """
-    from agents.tools import ToolResult
+    from agents.adapters.base import ChatMessage
 
-    result = ToolResult(name="plan_curation", arguments={},
-                        output={"next": "여기서 멈춘다. 재구성은 답이 아니다."}, ok=True)
-    content = result.to_message("c1").content
+    seen: list[list[ChatMessage]] = []
 
-    assert "Call 여기서" not in content
-    assert "여기서 멈춘다" in content
-    assert "Do not call plan_curation again" in content
+    registry = make_registry({"cause": "bank_contamination", "rebuild": True})
+    adapter = ScriptedAdapter(
+        scripted=[""] * 4,
+        tool_calls=[[ToolCall("c1", "diagnose_issue", {"line": "l", "object_name": "o"})],
+                    [ToolCall("c2", "lookup_ontology", {})]],
+    )
+    original = adapter.chat
 
+    def spy(messages, **kwargs):
+        seen.append(list(messages))
+        return original(messages, **kwargs)
 
-def test_the_system_prompt_survives_a_model_that_drops_it():
-    """`carries_system = False` 인 모델에는 지시를 사용자 메시지에 싣는다."""
-    from agents.tools import SYSTEM_PROMPT, _opening_messages
+    adapter.chat = spy
+    run_agent("돌려줘", adapter, registry, max_steps=2)
 
-    class Drops:
-        carries_system = False
-
-    class Keeps:
-        carries_system = True
-
-    kept = _opening_messages(SYSTEM_PROMPT, "이슈 원문", Keeps())
-    assert [m.role for m in kept] == ["system", "user"]
-
-    folded = _opening_messages(SYSTEM_PROMPT, "이슈 원문", Drops())
-    assert [m.role for m in folded] == ["user"], "system 역할로 보내면 버려진다"
-    assert "Follow the pipeline" in folded[0].content
-    assert "이슈 원문" in folded[0].content
+    assert len(seen) >= 2, "두 번째 턴까지 가야 대화를 볼 수 있다"
+    assistant = [m for m in seen[-1] if m.role == "assistant"]
+    assert assistant, "assistant 턴이 대화에 없다"
+    assert assistant[0].tool_calls, "무엇을 불렀는지가 빠진 채 나간다"
+    assert assistant[0].tool_calls[0].name == "diagnose_issue"
 
 
-def test_an_adapter_that_says_nothing_keeps_the_system_role():
-    """어댑터가 표시를 안 하면 지금까지대로 system 역할로 보낸다.
+def test_every_tool_message_answers_a_recorded_call():
+    """tool 메시지마다 그 앞에 같은 id 의 호출이 있어야 한다.
 
-    지시가 두 번 실리면 토큰을 그만큼 쓰고, 어떤 모델은 사용자 메시지의
-    지시를 시스템보다 약하게 본다. **되는 모델까지 바꾸지 않는다.**
+    짝이 안 맞으면 서버가 대화를 거부하거나, 모델이 결과를 붕 뜬 것으로 읽는다.
     """
-    from agents.tools import SYSTEM_PROMPT, _opening_messages
+    from agents.adapters.base import ChatMessage
 
-    class Silent:
-        pass
+    seen: list[list[ChatMessage]] = []
+    registry = make_registry({"cause": "bank_contamination", "rebuild": True})
+    adapter = ScriptedAdapter(
+        scripted=[""] * 4,
+        tool_calls=[[ToolCall("c1", "diagnose_issue", {"line": "l", "object_name": "o"})],
+                    [ToolCall("c2", "lookup_ontology", {})]],
+    )
+    original = adapter.chat
 
-    assert [m.role for m in _opening_messages(SYSTEM_PROMPT, "x", Silent())] == \
-        ["system", "user"]
+    def spy(messages, **kwargs):
+        seen.append(list(messages))
+        return original(messages, **kwargs)
+
+    adapter.chat = spy
+    run_agent("돌려줘", adapter, registry, max_steps=2)
+
+    conversation = seen[-1]
+    announced = {c.id for m in conversation for c in m.tool_calls}
+    answered = {m.tool_call_id for m in conversation if m.role == "tool"}
+    assert answered <= announced, f"답만 있고 호출이 없다: {answered - announced}"
