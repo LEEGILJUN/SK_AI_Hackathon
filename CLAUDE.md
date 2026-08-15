@@ -105,7 +105,7 @@ MES 데이터와 이미지 메타데이터는 **벡터화하지 않습니다.** 
 
 ## 지금 어디까지 구현됐는가
 
-2026-08-14 기준. 본선(8/21) 전 사전 작업 구간. 테스트 321건 통과.
+2026-08-14 기준. 본선(8/21) 전 사전 작업 구간. 테스트 331건 통과.
 
 ```
 이슈 접수 → 인테이크 → MES조회 → 추론 → 판별 7항목 → 진단 → 큐레이션 → 재구성 → 게이트 → 섀도 → 승인요청
@@ -250,6 +250,8 @@ LLM 과 VLM 에 같은 이름을 넣는다 — 모델 하나, 스왑 없음. 등
 .venv/bin/python scripts/scan_bank_history.py banks/   # 뱅크 구성 이력 복원
 .venv/bin/python scripts/run_scheduler.py --now  # 야간 누적분 자동 점검
 .venv/bin/python scripts/measure_mask.py       # 판별 7번 면적 — 기준 근거 측정
+.venv/bin/python scripts/run_demo.py           # 전 구간 한 번 (화면과 같은 경로)
+.venv/bin/python scripts/measure_baseline_map.py --category pcb1  # 역추적 위치 정확도
 .venv/bin/python scripts/demo_diagnose.py       # 접수부터 진단까지
 .venv/bin/python -m uvicorn app.main:app --port 8000   # 웹 화면
 ```

@@ -88,23 +88,28 @@ def main() -> int:
         print(f"  {label}  최소 {min(values):.3f} · 중앙 {np.median(values):.3f} "
               f"· 최대 {max(values):.3f}")
 
-    print("\n컷오프별 가장 큰 덩어리 면적 (px²) — 중앙값")
-    print(f"  {'컷오프':>7} {'정상':>12} {'결함':>12}   {'갈리는가':>8}")
+    # **최소·최대를 함께 찍는다.** 중앙값만 보면 갈리는 것처럼 보여도 꼬리에서
+    # 겹칠 수 있고, 어느 쪽 꼬리가 문제인지 알아야 손볼 자리가 정해진다.
+    print("\n컷오프별 가장 큰 덩어리 면적 (px²)")
+    print(f"  {'컷오프':>6} │ {'정상 최소':>10} {'중앙':>10} {'최대':>10} │ "
+          f"{'결함 최소':>10} {'중앙':>10} {'최대':>10} │ {'갈리는가':>8}")
     for cutoff in CUTOFFS:
         row = {}
         for label, results in scored.items():
-            areas = [
+            row[label] = [
                 defect_area(r.patch_distances, crop=crop, threshold=threshold,
                             binarize_threshold=cutoff)
                 for r in results
             ]
-            row[label] = areas
-        n_med, d_med = np.median(row["정상"]), np.median(row["결함"])
-        separates = "예" if max(row["정상"]) < min(row["결함"]) else "아니오"
-        print(f"  {cutoff:>7.2f} {n_med:>12,.0f} {d_med:>12,.0f}   {separates:>8}")
+        n, d = row["정상"], row["결함"]
+        separates = "예" if max(n) < min(d) else "아니오"
+        print(f"  {cutoff:>6.2f} │ {min(n):>10,.0f} {np.median(n):>10,.0f} {max(n):>10,.0f} │ "
+              f"{min(d):>10,.0f} {np.median(d):>10,.0f} {max(d):>10,.0f} │ {separates:>8}")
 
     print(
         "\n'갈리는가' 는 **정상 최대 < 결함 최소** 일 때만 예입니다.\n"
+        "중앙값끼리는 갈리는데 최대·최소가 겹치면, 겹치는 꼬리가 몇 장인지\n"
+        "보고 그 장들을 따로 봐야 합니다.\n"
         "전부 아니오면 컷오프로는 못 가릅니다 — 기준값을 바꿀 것이 아니라\n"
         "정규화 방식을 바꿔야 한다는 뜻입니다.\n"
         "\n이 표를 장영진에게 그대로 넘기면 됩니다. criteria.yaml 은 고치지 마세요."
