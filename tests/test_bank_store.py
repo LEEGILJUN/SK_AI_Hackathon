@@ -299,3 +299,45 @@ def test_the_store_sorts_the_real_version_format_by_number(tmp_path):
 
     found = [b.version for b in list_banks("pcb1-01", root=tmp_path)]
     assert found == ["pcb1-01-v10", "pcb1-01-v2", "pcb1-01-v1"]
+
+
+def test_the_switch_script_is_the_only_place_that_flips_the_pointer():
+    """**`write_current` 를 부르는 곳은 사람이 실행하는 스크립트 하나다.**
+
+    저장은 자동이고 전환은 아니다. 부르는 자리가 늘면 그 경계가 흐려진다.
+    """
+    callers = set()
+    for path in (REPO_ROOT / "scripts").glob("*.py"):
+        if "write_current" in path.read_text(encoding="utf-8"):
+            callers.add(path.name)
+    assert callers == {"switch_bank.py"}, f"전환을 부르는 곳이 늘었다: {sorted(callers)}"
+
+
+def test_the_switch_script_runs(tmp_path):
+    """목록·전환·원복·없는 판 거부가 실제로 돈다."""
+    import subprocess
+    import sys
+
+    for version, hour in (("pcb1-01-v1", 9), ("pcb1-01-v2", 10)):
+        save_bank(make_bank(version), "pcb1-01", root=tmp_path, config=CONFIG,
+                  built_at=datetime(2026, 8, 15, hour, 0))
+
+    def run(*extra):
+        return subprocess.run(
+            [sys.executable, "scripts/switch_bank.py", "--item", "pcb1-01",
+             "--root", str(tmp_path), *extra],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=60, cwd=REPO_ROOT,
+        )
+
+    listed = run()
+    assert listed.returncode == 0, listed.stderr[-500:]
+    assert "pcb1-01-v2_20260815-1000" in listed.stdout
+
+    switched = run("--to", "pcb1-01-v2_20260815-1000_" + config_id(CONFIG))
+    assert switched.returncode == 0, switched.stderr[-500:]
+    assert current_bank("pcb1-01", root=tmp_path).version == "pcb1-01-v2"
+    assert "되돌리려면" in switched.stdout, "원복 명령을 함께 찍어야 한다"
+
+    missing = run("--to", "v9_20260101-0000_abcdef")
+    assert missing.returncode == 1, "없는 판을 가리키면 실패해야 한다"
