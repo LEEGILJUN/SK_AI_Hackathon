@@ -28,7 +28,7 @@ def test_a_grid_cell_is_eight_pixels_wide():
     from inspection import FeatureConfig, PatchEmbedder, build_bank, score_image
 
     for crop in (64, 448):
-        embedder = PatchEmbedder(FeatureConfig(resize=crop, crop=crop))
+        embedder = PatchEmbedder(FeatureConfig(crop=crop))
         folder = tempfile.mkdtemp()
         paths = []
         for i in range(2):

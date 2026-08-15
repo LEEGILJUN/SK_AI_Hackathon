@@ -41,27 +41,33 @@ class FeatureConfig:
         torchvision 모델 이름. 기준은 wide_resnet50_2 이며 현행 검사 모델과
         맞추기 위한 선택이다. 가중치 내려받기가 막힌 환경에서는 resnet18 처럼
         이미 캐시된 백본으로 바꿔 끼울 수 있다.
-    resize / crop
-        짧은 변을 resize 로 맞춘 뒤 중앙을 crop 만큼 잘라 쓴다.
+    crop
+        **원본을 crop×crop 정사각으로 리사이즈해서 쓴다.** 비율은 깨지지만
+        잘리는 곳이 없고, 카테고리마다 다르게 맞출 것도 없다.
 
-        기본값 512/448 은 VisA 실측으로 정한 것이다. 흔히 쓰는 256/224 로는
-        결함을 거의 잡지 못했다.
+        전에는 짧은 변을 맞춘 뒤 중앙을 잘랐다(MVTec 관행). VisA 는 정사각이
+        아니라 가로가 길어서 **양옆이 잘려 나갔다.** 정답 마스크로 세니 pcb3
+        은 40건 중 12건이 일부 잘리고 capsules 는 1건이 통째로 사라졌다.
+        사라진 건 어떤 모델로도 검출할 수 없다.
 
-            256/224, 정상 60장   AUROC 0.526   ← 무작위 수준
-            512/448, 정상 60장   AUROC 0.931
-            256/224, 정상 150장  AUROC 0.502   ← 뱅크만 키워도 소용없다
-            512/448, 정상 150장  AUROC 0.998
+        anomalib 의 VisA 기본값도 이 형태다(`center_crop: null`).
+
+        448 은 VisA 실측으로 정했다. 흔히 쓰는 224 로는 결함을 거의 못 잡는다.
+
+            224, 정상 60장   AUROC 0.526   ← 무작위 수준
+            448, 정상 60장   AUROC 0.931
+            224, 정상 150장  AUROC 0.502   ← 뱅크만 키워도 소용없다
+            448, 정상 150장  AUROC 0.998
 
         이유는 결함 크기다. VisA capsules 의 결함은 원본(1500x1000)에서
         40x40px, 전체 면적의 0.1% 다. 224 입력이면 격자 한 칸이 원본 31px 라
         결함이 딱 한 칸이고, 아래 neighborhood 평균에 주변 정상 8칸과 섞여
-        희석된다. 448 이면 한 칸이 16px 이라 결함이 여러 칸에 걸친다.
+        희석된다. 448 이면 결함이 여러 칸에 걸친다.
 
         **뱅크 크기로는 해결되지 않는다.** 데이터를 더 넣어도 해상도가
         모자라면 신호 자체가 없다.
 
-        종횡비를 눌러 정사각으로 만들면(시야 49% 를 살리는 대신 왜곡) 오히려
-        떨어졌다(0.837). 중앙 크롭으로 시야를 버리는 편이 낫다.
+        위 표는 중앙 크롭으로 잰 값이다. 정사각 리사이즈로 다시 재야 한다.
     neighborhood
         각 격자 칸의 특징을 주변 이웃과 평균낼 때의 커널 크기. 논문의
         local neighborhood aggregation 이며, 미세한 위치 흔들림을 흡수한다.
@@ -71,7 +77,6 @@ class FeatureConfig:
     backbone: str = "wide_resnet50_2"
     layers: tuple[str, ...] = ("layer2", "layer3")
     weights: str | None = "IMAGENET1K_V1"
-    resize: int = 512
     crop: int = 448
     neighborhood: int = 3
 
@@ -118,10 +123,11 @@ class PatchEmbedder:
                 )
             module.register_forward_hook(self._make_hook(name))
 
+        # **정사각으로 리사이즈한다. 자르지 않는다.** 튜플을 주면
+        # 비율을 무시하고 정확히 그 크기로 맞춘다.
         self.transform = transforms.Compose(
             [
-                transforms.Resize(self.config.resize),
-                transforms.CenterCrop(self.config.crop),
+                transforms.Resize((self.config.crop, self.config.crop)),
                 transforms.ToTensor(),
                 transforms.Normalize(_IMAGENET_MEAN, _IMAGENET_STD),
             ]

@@ -26,7 +26,7 @@ from inspection.isolation import (
 )
 from tests.synthetic import make_defect, make_normal
 
-CONFIG = FeatureConfig(backbone="resnet18", resize=64, crop=64)
+CONFIG = FeatureConfig(backbone="resnet18", crop=64)
 
 
 @pytest.fixture(scope="module")

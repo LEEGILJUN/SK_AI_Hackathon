@@ -48,31 +48,22 @@ def patch_box(
     if not (0 <= ref.row < grid_h and 0 <= ref.col < grid_w):
         raise ValueError(f"격자 범위를 벗어난 좌표다: ({ref.row},{ref.col}) / 격자 {grid}")
 
-    # 1) 격자 → CenterCrop 된 정사각 이미지 안의 좌표
+    # 전처리가 **원본을 crop×crop 정사각으로 리사이즈**하므로 되짚기도
+    # 축마다 따로다. 가로와 세로의 배율이 다르다.
+    #
+    # 전에는 "짧은 변 맞춤 + 중앙 크롭" 기하로 되짚었다. 전처리를 바꾸면서
+    # 여기를 같이 안 고치면 **역추적이 엉뚱한 자리를 가리킨다** — 판별 1번과
+    # 5번이 그 좌표로 이미지를 자르므로 조용히 틀린 곳을 모델에 준다.
+    scale_x = config.crop / width
+    scale_y = config.crop / height
+
     cell_h = config.crop / grid_h
     cell_w = config.crop / grid_w
-    left_c = ref.col * cell_w
-    top_c = ref.row * cell_h
-    right_c = left_c + cell_w
-    bottom_c = top_c + cell_h
 
-    # 2) CenterCrop 되돌리기 → Resize 직후 이미지 안의 좌표
-    scale = config.resize / min(width, height)
-    resized_w = width * scale
-    resized_h = height * scale
-    offset_x = (resized_w - config.crop) / 2
-    offset_y = (resized_h - config.crop) / 2
-
-    left_r = left_c + offset_x
-    top_r = top_c + offset_y
-    right_r = right_c + offset_x
-    bottom_r = bottom_c + offset_y
-
-    # 3) Resize 되돌리기 → 원본 좌표
-    left = left_r / scale
-    top = top_r / scale
-    right = right_r / scale
-    bottom = bottom_r / scale
+    left = (ref.col * cell_w) / scale_x
+    top = (ref.row * cell_h) / scale_y
+    right = ((ref.col + 1) * cell_w) / scale_x
+    bottom = ((ref.row + 1) * cell_h) / scale_y
 
     # 여유 픽셀을 붙이고 원본 경계 안으로 자른다.
     left = max(0, int(round(left - margin)))

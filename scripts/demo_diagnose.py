@@ -80,7 +80,7 @@ def main() -> None:
     defect = write_set(root / "defect", 4, "defect", seed_offset=500)
     contaminants, query = defect[:2], defect[3]
 
-    embedder = PatchEmbedder(FeatureConfig(backbone="resnet18", resize=64, crop=64))
+    embedder = PatchEmbedder(FeatureConfig(backbone="resnet18", crop=64))
     bank = build_bank(
         list(normal) + list(contaminants),
         embedder,

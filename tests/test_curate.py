@@ -20,7 +20,7 @@ from inspection import FeatureConfig, PatchEmbedder, build_bank
 from inspection.types import InferenceResult, NearestMatch, PatchRef
 from tests.synthetic import write_set
 
-CONFIG = FeatureConfig(backbone="resnet18", resize=64, crop=64)
+CONFIG = FeatureConfig(backbone="resnet18", crop=64)
 
 
 # ── helper ─────────────────────────────────────────────────────────────

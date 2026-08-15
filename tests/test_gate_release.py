@@ -24,7 +24,7 @@ from inspection.shadow import Disagreement, ShadowReport, shadow_compare
 from inspection.sweep import sweep_thresholds
 from tests.synthetic import write_set
 
-CONFIG = FeatureConfig(backbone="resnet18", resize=64, crop=64)
+CONFIG = FeatureConfig(backbone="resnet18", crop=64)
 
 
 # ── 평가 게이트 ────────────────────────────────────────────────────────

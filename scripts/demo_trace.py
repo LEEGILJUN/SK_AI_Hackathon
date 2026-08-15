@@ -78,7 +78,7 @@ def main() -> None:
         root = Path(tempfile.mkdtemp(prefix="demo_factory_"))
         normal = write_set(root / "normal", 18, "normal", seed_offset=0)
         defect = write_set(root / "defect", 8, "defect", seed_offset=500)
-        config = FeatureConfig(backbone=args.backbone or "resnet18", resize=64, crop=64)
+        config = FeatureConfig(backbone=args.backbone or "resnet18", crop=64)
         print(f"합성 데이터 사용 (실데이터는 --normal-dir 로 지정)\n  위치: {root}")
     else:
         if args.defect_dir is None:

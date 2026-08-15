@@ -86,7 +86,6 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--bank-normal", type=int, default=150)
     p.add_argument("--holdout-normal", type=int, default=25)
     p.add_argument("--holdout-defect", type=int, default=25)
-    p.add_argument("--resize", type=int, default=None, help="비우면 FeatureConfig 기본(512)")
     p.add_argument("--crop", type=int, default=None, help="비우면 FeatureConfig 기본(448)")
     p.add_argument("--coreset-ratio", type=float, default=0.01)
     p.add_argument("--seed", type=int, default=0)
@@ -94,9 +93,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def make_config(args: argparse.Namespace) -> FeatureConfig:
-    if args.resize is None and args.crop is None:
-        return FeatureConfig()
     base = FeatureConfig()
+    if args.crop is None:
+        return base
     return FeatureConfig(
         backbone=base.backbone,
         layers=base.layers,
@@ -132,7 +131,7 @@ def main() -> int:
     embedder = PatchEmbedder(config)
 
     print("측정 조건")
-    print(f"  해상도       {config.resize}/{config.crop}")
+    print(f"  입력         {config.crop}x{config.crop} 정사각")
     print(f"  백본         {config.backbone} · layers {list(config.layers)}")
     print(f"  coreset      {args.coreset_ratio}  (seed {args.seed})")
     print(f"  뱅크 정상    {args.bank_normal}장  = normals[0:{args.bank_normal}]")

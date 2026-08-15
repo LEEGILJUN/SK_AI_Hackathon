@@ -142,7 +142,7 @@ def _widen_degenerate(stats: dict[str, dict[str, float]]) -> dict[str, dict[str,
 
 #: 합성 이미지 전용 설정. 128px 체커보드에 맞춘 값이라 **VisA 에 쓰면 안 된다**
 #: (그쪽은 VISA_CONFIG). 합성은 결함이 뚜렷해 이 크기로도 갈린다.
-DEMO_CONFIG = FeatureConfig(backbone="resnet18", resize=64, crop=64)
+DEMO_CONFIG = FeatureConfig(backbone="resnet18", crop=64)
 #: 시연 이슈 원문. **본문의 라인·품목이 `CONTAMINATED_ITEM` 과 같아야 한다.**
 #: 어긋나면 화면 첫 줄이 자기모순이 된다 — 전에 "2라인 캡슐" 이라고 적힌 채
 #: 제품은 `PCB1-01-...` 이 나갔다. `tests/test_line_object_mapping.py` 가 잡는다.

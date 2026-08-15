@@ -29,7 +29,6 @@ TEST_CONFIG = FeatureConfig(
     backbone="resnet18",
     layers=("layer2", "layer3"),
     weights="IMAGENET1K_V1",
-    resize=64,
     crop=64,
 )
 
@@ -122,7 +121,7 @@ def test_bank_save_load_roundtrip(clean_bank, tmp_path):
 def test_incompatible_config_is_rejected(clean_bank):
     """설정이 다르면 점수가 조용히 틀리므로 멈춰야 한다."""
     with pytest.raises(ValueError, match="뱅크와 추론 설정이 다르다"):
-        clean_bank.assert_compatible(FeatureConfig(backbone="resnet34", resize=64, crop=64))
+        clean_bank.assert_compatible(FeatureConfig(backbone="resnet34", crop=64))
 
 
 # ── 추론이 결함을 가려내는가 ───────────────────────────────────────────
@@ -232,3 +231,40 @@ def test_bank_contribution_ranks_the_contaminant(embedder, images):
     contaminant_names = {p.relative_to(images["root"]).as_posix() for p in contaminants}
     top_source = next(iter(ranking))
     assert top_source in contaminant_names, f"가장 많이 지목된 출처가 오염원이 아니다: {ranking}"
+
+
+# ── 정사각 리사이즈 ─────────────────────────────────────────────────────
+#
+# 중앙 크롭을 하면 VisA 는 가로가 길어 양옆이 잘린다. 정답 마스크로 세니
+# pcb3 40건 중 12건 일부 잘림, capsules 1건 완전 소실이었다. 사라진 건
+# 어떤 모델로도 검출할 수 없다.
+#
+# 카테고리마다 다르게 맞추지 않아도 되는 것이 더 중요하다. VisA 는
+# 카테고리가 많고, 이 과제는 전처리 성능 비교가 목적이 아니다.
+
+
+def test_a_wide_image_is_not_clipped():
+    """가로가 긴 이미지도 통째로 들어간다."""
+    import numpy as np
+    from PIL import Image
+
+    from inspection import FeatureConfig, PatchEmbedder
+
+    wide = Image.fromarray((np.random.rand(1000, 1500, 3) * 255).astype("uint8"))
+    embedder = PatchEmbedder(FeatureConfig())
+    assert tuple(embedder.transform(wide).shape) == (3, 448, 448)
+
+
+def test_there_is_only_one_size_to_configure():
+    """맞출 값이 `crop` 하나다.
+
+    짧은 변 기준 리사이즈 값과 크롭 값을 따로 두면 카테고리마다 두 값을
+    맞춰야 하고, **어긋나면 조용히 잘린다.**
+    """
+    from dataclasses import fields
+
+    from inspection import FeatureConfig
+
+    names = {f.name for f in fields(FeatureConfig)}
+    assert "resize" not in names, "크기를 정하는 값이 둘이면 어긋난다"
+    assert "crop" in names

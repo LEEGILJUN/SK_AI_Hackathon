@@ -19,7 +19,7 @@ from inspection.crop import crop_with_context
 from inspection.types import PatchRef
 from tests.synthetic import IMAGE_SIZE, make_normal, write_set
 
-CONFIG = FeatureConfig(backbone="resnet18", resize=64, crop=64)
+CONFIG = FeatureConfig(backbone="resnet18", crop=64)
 GRID = (8, 8)
 
 
@@ -69,14 +69,31 @@ def test_row_and_col_are_not_swapped():
     assert across[0] > origin[0] and across[1] == origin[1]  # 오른쪽으로만
 
 
-def test_non_square_image_accounts_for_center_crop():
-    """긴 이미지는 가운데만 잘려 들어가므로, 되돌린 좌표가 안쪽에 있어야 한다."""
-    wide = (256, 128)  # 너비가 두 배
-    left, _, right, _ = patch_box(ref(0, 0), GRID, wide, CONFIG)
+def test_a_wide_image_maps_across_its_whole_width():
+    """가로가 긴 이미지도 격자가 **전체 폭**을 덮는다.
 
-    # 짧은 변 기준으로 축소한 뒤 가운데를 잘랐으므로 왼쪽 끝이 아니다
-    assert left > 0
-    assert right < wide[0]
+    전처리가 자르지 않고 정사각으로 리사이즈하므로 되짚기도 축마다 따로다.
+    전에는 "짧은 변 맞춤 + 중앙 크롭" 기하로 되짚어서 양옆이 사각지대였다.
+
+    **여기가 어긋나면 역추적이 엉뚱한 자리를 가리킨다** — 판별 1번과 5번이
+    그 좌표로 이미지를 잘라 모델에 주므로, 조용히 틀린 곳을 보게 된다.
+    """
+    wide = (256, 128)  # 너비가 두 배
+    first_left, _, _, _ = patch_box(ref(0, 0), GRID, wide, CONFIG, margin=0)
+    _, _, last_right, _ = patch_box(ref(0, GRID[1] - 1), GRID, wide, CONFIG, margin=0)
+
+    assert first_left == 0, "첫 칸이 왼쪽 끝에서 시작해야 한다"
+    assert last_right == wide[0], "마지막 칸이 오른쪽 끝까지 가야 한다"
+
+
+def test_each_axis_scales_on_its_own():
+    """가로와 세로의 배율이 다르다. 한 배율로 되짚으면 세로가 어긋난다."""
+    wide = (256, 128)
+    _, top, _, bottom = patch_box(ref(0, 0), GRID, wide, CONFIG, margin=0)
+    left, _, right, _ = patch_box(ref(0, 0), GRID, wide, CONFIG, margin=0)
+
+    assert right - left == wide[0] // GRID[1]
+    assert bottom - top == wide[1] // GRID[0]
 
 
 def test_margin_widens_and_clamps_to_bounds():
