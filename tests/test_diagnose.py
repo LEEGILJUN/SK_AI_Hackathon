@@ -82,7 +82,7 @@ def bank_profile(dates: list[str] | None = None) -> BankProfile:
 
 def build(
     *,
-    visible="defect",
+    visible="visible",
     quality_ok=True,
     score=1.0,
     thr=2.20,
@@ -132,7 +132,7 @@ def test_normal_overlap_with_sweep():
         auroc=0.617,
         reason="과검률 70.0%가 되어 임계값 조정으로는 해결되지 않는다.",
     )
-    result = decide(build(patch="normal", score=0.8), sweep=sweep)
+    result = decide(build(patch="genuine_normal", score=0.8), sweep=sweep)
 
     assert result.cause == "normal_overlap"
     assert result.requires_bank_rebuild is False
@@ -152,7 +152,7 @@ def test_threshold_with_sweep():
         auroc=1.0,
         reason="과검률 0.0%로 달성한다.",
     )
-    result = decide(build(patch="normal", score=2.1), sweep=sweep)
+    result = decide(build(patch="genuine_normal", score=2.1), sweep=sweep)
 
     assert result.cause == "threshold"
     assert result.requires_bank_rebuild is False
@@ -161,7 +161,7 @@ def test_threshold_with_sweep():
 
 def test_coverage_gap():
     """현재 조건의 정상 패치가 뱅크에 없으면 커버리지 부족."""
-    result = decide(build(patch="normal", coverage_date="2026-06-20", bank_dates=["2026-06-01"]))
+    result = decide(build(patch="genuine_normal", coverage_date="2026-06-20", bank_dates=["2026-06-01"]))
 
     assert result.cause == "coverage_gap"
     assert result.requires_bank_rebuild is True
@@ -208,11 +208,11 @@ def test_missing_patch_judgment_withholds_verdict():
 def test_stub_vlm_does_not_count_as_judgment():
     """스텁이 낸 판정은 근거가 아니다. 보류로 떨어져야 한다."""
     evidence = collect_evidence(
-        defect_visible=vision("defect", stub=True),
+        defect_visible=vision("visible", stub=True),
         quality=quality(True),
         inference=inference(1.0),
         threshold=threshold(),
-        patch_judgment=vision("defect", stub=True),  # 스텁이 결함이라고 말해도
+        patch_judgment=vision("visible", stub=True),  # 스텁이 결함이라고 말해도
         bank_profile=bank_profile(),
         condition_key="date",
         condition_value="2026-06-01",
@@ -234,7 +234,7 @@ def test_unknown_patch_judgment_withholds():
 def test_missing_trace_withholds():
     """역추적이 없으면 더 갈 수 없다."""
     evidence = collect_evidence(
-        defect_visible=vision("defect"),
+        defect_visible=vision("visible"),
         quality=quality(True),
         inference=None,
         threshold=threshold(),
@@ -250,7 +250,7 @@ def test_missing_trace_withholds():
 
 def test_defect_not_visible_stops_before_diagnosis():
     """결함이 안 보이면 미검출이 아니라 접수 오류일 수 있다."""
-    result = decide(build(visible="normal", patch="defect"))
+    result = decide(build(visible="not_visible", patch="defect"))
 
     assert result.cause is None
     assert "접수 오류" in result.blocking_reason
@@ -260,10 +260,10 @@ def test_defect_not_visible_stops_before_diagnosis():
 def test_no_sweep_lowers_confidence():
     """스윕 없이 내린 판정은 확신도가 낮고 사람 확인이 붙어야 한다."""
     with_sweep = decide(
-        build(patch="normal", score=0.8),
+        build(patch="genuine_normal", score=0.8),
         sweep=FeasibilityVerdict(False, 1.0, 0.05, 0.45, 0.7, 1.0, 0.6, "겹친다"),
     )
-    without = decide(build(patch="normal", score=0.8))
+    without = decide(build(patch="genuine_normal", score=0.8))
 
     assert with_sweep.cause == without.cause == "normal_overlap"
     assert with_sweep.confidence == "high"
@@ -344,12 +344,12 @@ def test_rebuild_blocked_for_four_of_six_causes():
         ("criteria", {"score": 3.0, "area": 50.0}, None),
         (
             "normal_overlap",
-            {"patch": "normal", "score": 0.8},
+            {"patch": "genuine_normal", "score": 0.8},
             FeasibilityVerdict(False, 1.0, 0.05, 0.45, 0.7, 1.0, 0.6, "겹친다"),
         ),
         (
             "threshold",
-            {"patch": "normal", "score": 2.1},
+            {"patch": "genuine_normal", "score": 2.1},
             FeasibilityVerdict(True, 1.0, 0.05, 1.9, 0.0, 1.0, 1.0, "해결된다"),
         ),
     ],
@@ -418,11 +418,11 @@ def test_all_condition_axes_are_checked():
         },
     )
     evidence = collect_evidence(
-        defect_visible=vision("defect"),
+        defect_visible=vision("visible"),
         quality=quality(True),
         inference=inference(1.0),
         threshold=threshold(),
-        patch_judgment=vision("normal"),
+        patch_judgment=vision("genuine_normal"),
         bank_profile=profile,
         conditions={"date": "2026-06-01", "lot": "LOT-A", "shift": "night"},
         criteria=criteria(),

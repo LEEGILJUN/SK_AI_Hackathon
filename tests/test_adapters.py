@@ -277,7 +277,7 @@ def test_patch_judgment_maps_to_opposite_causes():
     from agents.vision import VisionJudgment
 
     contaminated = VisionJudgment("defect", 0.9, "찍힘 보임", "real-model", is_stub=False)
-    genuine = VisionJudgment("normal", 0.9, "정상 표면", "real-model", is_stub=False)
+    genuine = VisionJudgment("genuine_normal", 0.9, "정상 표면", "real-model", is_stub=False)
 
     assert cause_from_patch_judgment(contaminated) == "bank_contamination"
     assert cause_from_patch_judgment(genuine) == "normal_overlap"
@@ -310,3 +310,49 @@ def test_tool_spec_converts_to_openai_shape():
     assert payload["type"] == "function"
     assert payload["function"]["name"] == "lookup_threshold"
     assert json.dumps(payload)  # 직렬화가 되어야 전송된다
+
+
+# ── 두 판별의 어휘는 겹치지 않는다 ─────────────────────────────────────
+
+
+def test_the_two_checks_do_not_share_a_verdict_word():
+    """**판별 1번과 5번이 같은 단어를 쓰면 섞여 읽힌다.**
+
+    전에는 둘 다 `defect`/`normal` 이었고 실제로 혼동이 났다 — 판별 1번이
+    `normal` 인 것을 "코어셋에 문제가 없다"로 읽은 일이 있었는데, 그건
+    5번의 뜻이다. 1번의 그것은 "이 사진에서 결함을 못 봤다"이고 뱅크가
+    멀쩡하다는 말이 전혀 아니다.
+
+    겹쳐도 되는 것은 `unknown` 하나뿐이다 — 둘 다 "판단 못 했다"로 같은 뜻이다.
+    """
+    from agents.vision import PATCH_VERDICTS, VISIBILITY_VERDICTS
+
+    assert VISIBILITY_VERDICTS & PATCH_VERDICTS == {"unknown"}, (
+        f"두 판별이 단어를 나눠 쓰지 않는다: "
+        f"{sorted(VISIBILITY_VERDICTS & PATCH_VERDICTS)}"
+    )
+    assert "normal" not in VISIBILITY_VERDICTS | PATCH_VERDICTS, (
+        "`normal` 은 두 뜻으로 읽히므로 쓰지 않는다"
+    )
+
+
+def test_the_prompts_ask_for_the_words_the_code_accepts():
+    """프롬프트가 다른 단어를 요구하면 응답이 전부 `unknown` 으로 떨어진다.
+
+    모델은 시킨 대로 답하는데 코드가 그것을 못 읽으면, 판별이 조용히
+    죽고 화면에는 "판단 못 했다"만 남는다.
+    """
+    import inspect as _inspect
+
+    from agents import vision
+
+    visibility = _inspect.getsource(vision.judge_defect_visible)
+    patch = _inspect.getsource(vision.judge_bank_patch)
+
+    for word in vision.VISIBILITY_VERDICTS:
+        assert f'"{word}' in visibility, f"판별 1번 프롬프트에 {word} 가 없다"
+    for word in vision.PATCH_VERDICTS:
+        assert f'"{word}' in patch, f"판별 5번 프롬프트에 {word} 가 없다"
+
+    assert "genuine_normal" not in visibility, "판별 1번이 5번 어휘를 쓴다"
+    assert "not_visible" not in patch, "판별 5번이 1번 어휘를 쓴다"

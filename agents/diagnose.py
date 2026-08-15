@@ -409,7 +409,7 @@ def decide(
     criteria_verdict = _value(evidence, 7)
 
     # ── 1. 결함이 보이지 않으면 접수 자체를 다시 봐야 한다 ─────────────
-    if visible == "normal":
+    if visible == "not_visible":
         result.blocking_reason = (
             "이미지에서 결함이 확인되지 않았다. 미검출이 아니라 접수 오류이거나 "
             "다른 이미지가 첨부됐을 수 있다. 원인을 판정하지 않는다."
@@ -468,7 +468,7 @@ def decide(
         _finalize(result)
         return result
 
-    if patch_verdict == "normal":
+    if patch_verdict == "genuine_normal":
         # 진짜 정상품과 가까웠다. 이제 왜 못 잡았는지가 셋으로 갈린다.
         if coverage is False:
             result.cause = "coverage_gap"

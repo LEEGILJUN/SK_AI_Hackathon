@@ -34,7 +34,7 @@ def main() -> int:
     parser.add_argument("--item", default="", help="line_01/pcb1 형식. 비우면 기본 품목")
     parser.add_argument("--issue", default="", help="이슈 원문. 비우면 기본 문안")
     parser.add_argument(
-        "--patch-override", default=None, choices=["defect", "normal"],
+        "--patch-override", default=None, choices=["defect", "genuine_normal"],
         help="판별 5번을 손으로 지정. **기본은 지정하지 않는다** — 모델에 묻는다",
     )
     parser.add_argument("--threshold", type=float, default=2.20)

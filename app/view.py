@@ -807,7 +807,7 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
                 context: dict[str, str] | None = None, on_visa: bool = False) -> str:
     options = [
         ("defect", "결함이다 → 뱅크 오염"),
-        ("normal", "진짜 정상품이다 → 정상 분포 중첩"),
+        ("genuine_normal", "진짜 정상품이다 → 정상 분포 중첩"),
         ("unknown", "판단 불가"),
         ("ask_model", "모델에게 묻기 (미연결 시 판정 보류)"),
     ]

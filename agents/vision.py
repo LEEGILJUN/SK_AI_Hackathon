@@ -14,6 +14,23 @@
 두 함수 모두 판정을 지어내지 않는다. 모델이 없거나 응답이 깨지면
 verdict="unknown" 을 돌려주고, 근거 계층은 그것을 근거에서 제외한다.
 비어 있는 근거가 틀린 근거보다 낫다.
+
+── 두 판별은 판정 단어를 나눠 쓴다 ────────────────────────────────────
+
+**전에는 둘 다 `defect` / `normal` 을 썼고 실제로 혼동이 났다.** 판별 1번이
+`normal` 인 것을 "코어셋에 문제가 없다"로 읽은 일이 있었는데, 그건 5번의
+뜻이다. 1번의 `normal` 은 **접수된 이미지에서 결함이 안 보인다**는 뜻이고,
+그건 뱅크가 멀쩡하다는 말이 전혀 아니다.
+
+    1번  visible / not_visible     이 사진에 결함이 보이는가
+    5번  defect / genuine_normal   뱅크의 그 패치가 잘못 들어간 결함인가
+
+`not_visible` 과 `genuine_normal` 은 뜻이 다르다. 앞은 **못 봤다**이고 뒤는
+**진짜 정상품이다**이다. 앞은 우리 위치 추정이 틀렸을 수도 있다는 뜻을 품고
+있고(기판에서 상위 1자리 3/10), 뒤는 뱅크에 대한 판정이다.
+
+단어를 나눠 두면 코드에서도 섞이지 않는다. `visible == "defect"` 같은 비교는
+이제 아예 성립하지 않는다.
 """
 
 from __future__ import annotations
@@ -26,7 +43,17 @@ from PIL import Image
 
 from .adapters.base import ChatMessage, ImagePart, ModelAdapter
 
-Verdict = Literal["defect", "normal", "unknown"]
+#: 판별 1번 — 이 사진에 결함이 보이는가.
+VisibilityVerdict = Literal["visible", "not_visible", "unknown"]
+VISIBILITY_VERDICTS: frozenset[str] = frozenset({"visible", "not_visible", "unknown"})
+
+#: 판별 5번 — 뱅크의 그 패치가 잘못 들어간 결함인가 진짜 정상품인가.
+PatchVerdict = Literal["defect", "genuine_normal", "unknown"]
+PATCH_VERDICTS: frozenset[str] = frozenset({"defect", "genuine_normal", "unknown"})
+
+#: 두 판별을 함께 담는 자리(`VisionJudgment`)의 타입. **비교할 때는 어느
+#: 판별의 값인지를 알고 써야 한다** — 겹치는 값은 `unknown` 하나뿐이다.
+Verdict = Literal["visible", "not_visible", "defect", "genuine_normal", "unknown"]
 
 _JSON_RULE = (
     "Answer with a single JSON object and nothing else. "
@@ -140,12 +167,14 @@ def judge_defect_visible(
             else ""
         )
         + "Decide whether a visible surface defect is present.\n"
-        '"defect" means you can point to an actual anomaly (scratch, dent, '
-        "contamination, crack, discoloration, missing part).\n"
-        '"normal" means the surface looks acceptable.\n'
+        '"visible" means you can point to an actual anomaly (scratch, dent, '
+        "foreign material, crack, discoloration, missing part).\n"
+        '"not_visible" means you do not see one here.\n'
         '"unknown" means the image is too unclear to judge.\n\n'
+        '"not_visible" is about this view, not about the product. Say it when '
+        "you see no defect, even if one might exist elsewhere on the item.\n\n"
         "Respond with:\n"
-        '{"verdict": "defect|normal|unknown", "confidence": 0.0-1.0, '
+        '{"verdict": "visible|not_visible|unknown", "confidence": 0.0-1.0, '
         '"reason": "one short sentence naming what you saw and where"}\n'
         f"{_JSON_RULE}"
     )
@@ -161,7 +190,7 @@ def judge_defect_visible(
     except Exception as exc:
         return _unknown(adapter, f"시각 판독 호출이 실패했다: {exc}", call_failed=True)
 
-    verdict, confidence, reason = _read(response.json(), {"defect", "normal", "unknown"})
+    verdict, confidence, reason = _read(response.json(), VISIBILITY_VERDICTS)
     if verdict == "unknown" and not reason:
         reason = "모델 응답을 판정으로 읽지 못했다."
 
@@ -194,8 +223,8 @@ def judge_bank_patch(
         inspection.crop.crop_with_context 로 만든다.
 
     판정이 갈리는 지점
-        defect  → 뱅크 오염. 오염 샘플 제거 후 재구성
-        normal  → 정상 분포 중첩. 재구성은 효과가 없다
+        defect         → 뱅크 오염. 오염 샘플 제거 후 재구성
+        genuine_normal → 정상 분포 중첩. 재구성은 효과가 없다
     """
     prompt = (
         "This image region was registered as NORMAL in a defect-detection "
@@ -203,7 +232,8 @@ def judge_bank_patch(
         "correct.\n"
         '"defect" means this region actually contains an anomaly and should '
         "not have been registered as normal.\n"
-        '"normal" means it is a genuine good product surface.\n'
+        '"genuine_normal" means it is a real good product surface and the '
+        "registration was correct.\n"
         '"unknown" means you cannot tell.\n\n'
         "Being registered as normal is not evidence that it is normal. "
         "Judge only from what you see.\n"
@@ -215,7 +245,7 @@ def judge_bank_patch(
         )
     prompt += (
         "\nRespond with:\n"
-        '{"verdict": "defect|normal|unknown", "confidence": 0.0-1.0, '
+        '{"verdict": "defect|genuine_normal|unknown", "confidence": 0.0-1.0, '
         '"reason": "one short sentence"}\n'
         f"{_JSON_RULE}"
     )
@@ -229,7 +259,7 @@ def judge_bank_patch(
     except Exception as exc:
         return _unknown(adapter, f"패치 판독 호출이 실패했다: {exc}", call_failed=True)
 
-    verdict, confidence, reason = _read(response.json(), {"defect", "normal", "unknown"})
+    verdict, confidence, reason = _read(response.json(), PATCH_VERDICTS)
     if verdict == "unknown" and not reason:
         reason = "모델 응답을 판정으로 읽지 못했다."
 
@@ -253,6 +283,6 @@ def cause_from_patch_judgment(judgment: VisionJudgment) -> str | None:
         return None
     if judgment.verdict == "defect":
         return "bank_contamination"
-    if judgment.verdict == "normal":
+    if judgment.verdict == "genuine_normal":
         return "normal_overlap"
     return None

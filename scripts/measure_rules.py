@@ -25,11 +25,22 @@ USE_COMPUTED_POSITION = "--computed" in sys.argv
 NEAR_RATIO = 0.9  # inspection/types.py score_position() 의 기본값
 
 
-def _verdict(flag: object) -> str:
-    """시나리오는 참/거짓으로 적고 코드는 defect/normal 로 읽는다."""
+def _visibility(flag: object) -> str:
+    """판별 1번 — 시나리오의 참/거짓을 판정 단어로.
+
+    **판별 5번과 어휘가 다르다.** 1번은 "이 사진에 보이는가"이고 5번은
+    "그 패치가 무엇인가"다. 전에는 둘 다 defect/normal 이라 섞여 읽혔다.
+    """
     if flag is None:
-        return "unknown"
-    return "defect" if flag else "normal"
+        return ""
+    return "visible" if flag else "not_visible"
+
+
+def _patch(flag: object) -> str:
+    """판별 5번 — 뱅크의 그 패치가 잘못 들어간 결함인가 진짜 정상품인가."""
+    if flag is None:
+        return ""
+    return "defect" if flag else "genuine_normal"
 
 
 def _position(ev: dict) -> str | None:
@@ -47,14 +58,14 @@ def build_evidence(ev: dict) -> list[Evidence]:
     """정답 근거를 판별 7항목으로 옮긴다. 값이 없으면 usable=False 로 둔다."""
     patch_ref = ev.get("nearest_patch_ref")
     return [
-        Evidence(1, "defect_visible", _verdict(ev.get("defect_visible")),
+        Evidence(1, "defect_visible", _visibility(ev.get("defect_visible")),
                  "vlm", ev.get("defect_visible") is not None),
         Evidence(2, "quality_within_baseline", ev.get("quality_within_baseline"),
                  "compute", ev.get("quality_within_baseline") is not None),
         Evidence(3, "score_position", _position(ev),
                  "lookup", _position(ev) is not None),
         Evidence(4, "nearest_patch", patch_ref, "trace", patch_ref is not None),
-        Evidence(5, "nearest_patch_is_defect", _verdict(ev.get("nearest_patch_is_defect")),
+        Evidence(5, "nearest_patch_is_defect", _patch(ev.get("nearest_patch_is_defect")),
                  "vlm", ev.get("nearest_patch_is_defect") is not None),
         Evidence(6, "coverage_present", ev.get("coverage_present"),
                  "lookup", ev.get("coverage_present") is not None),
