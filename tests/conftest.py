@@ -30,3 +30,27 @@ def demo_lookup(demo_factory):
         banks=demo_factory.bank_versions(),
         quality_provider=demo_factory.quality_baseline,
     )
+
+
+@pytest.fixture(scope="session")
+def shaped_catalog():
+    """실제 공장과 같은 배분의 레코드 목록. **이미지는 없다.**
+
+    Mac 의 합성 공장은 로트가 14장이라 규모 때문에 갈리는 결함을 못 잡는다.
+    자세한 것은 `tests/factory_shape.py` 를 보라.
+    """
+    from tests.factory_shape import build_catalog
+
+    return build_catalog()
+
+
+@pytest.fixture(scope="session")
+def shaped_lookup(shaped_catalog):
+    """실제 규모의 카탈로그를 보는 목 조회 계층."""
+    from lookup import MockLookup
+    from tests.factory_shape import LINES
+
+    return MockLookup(
+        catalog=shaped_catalog,
+        banks={(line, obj): f"{obj}-{line[-2:]}-v1" for line, obj in LINES.items()},
+    )
