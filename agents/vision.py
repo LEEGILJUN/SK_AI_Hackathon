@@ -102,8 +102,22 @@ def judge_defect_visible(
     adapter: ModelAdapter,
     image: str | Path | Image.Image,
     reported_defect: str = "",
+    context_image: str | Path | Image.Image | None = None,
 ) -> VisionJudgment:
     """접수된 이미지에 결함이 실제로 보이는가.
+
+    image
+        **역추적이 가리킨 자리를 잘라 확대한 조각**을 넣는다. 전체 이미지를
+        그대로 주면 못 본다 — VisA 결함은 30~45px 인데 원본이 1500×1000 이다.
+
+        실측(`docs/실험_역추적크롭.md`)에서 갈렸다.
+
+            여유 24px (63×64)    0/10   전부 "무엇을 보는지 모르겠다"
+            여유 64px (143×144)  9/10   ← 이 값을 쓴다
+
+    context_image
+        조각 주변. 무엇을 보고 있는지가 드러나 판독이 안정된다. 판별 5번과
+        같은 방식이다.
 
     reported_defect
         접수자가 말한 결함 종류. 있으면 프롬프트에 넣되, 그것만 찾도록
@@ -119,7 +133,13 @@ def judge_defect_visible(
     prompt = (
         "You are inspecting a product image from a manufacturing line.\n"
         f"{hint}"
-        "Decide whether a visible surface defect is present.\n"
+        + (
+            "The first image is the region flagged by the detector. "
+            "The second image shows its surroundings for context.\n"
+            if context_image is not None
+            else ""
+        )
+        + "Decide whether a visible surface defect is present.\n"
         '"defect" means you can point to an actual anomaly (scratch, dent, '
         "contamination, crack, discoloration, missing part).\n"
         '"normal" means the surface looks acceptable.\n'
@@ -130,9 +150,13 @@ def judge_defect_visible(
         f"{_JSON_RULE}"
     )
 
+    parts = [ImagePart(image)]
+    if context_image is not None:
+        parts.append(ImagePart(context_image))
+
     try:
         response = adapter.chat(
-            [ChatMessage.user(prompt, images=[ImagePart(image)])], json_object=True
+            [ChatMessage.user(prompt, images=parts)], json_object=True
         )
     except Exception as exc:
         return _unknown(adapter, f"시각 판독 호출이 실패했다: {exc}", call_failed=True)

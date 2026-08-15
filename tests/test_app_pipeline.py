@@ -787,3 +787,101 @@ def test_a_truncated_table_says_how_many_were_folded():
     folded = _sampled(rows, total=31, shown=8)
     assert folded[-1] == ("…", "외 23건은 접었습니다")
     assert len(folded) == 9
+
+
+# ── 판별 1번은 전체 이미지가 아니라 역추적 크롭을 본다 ──────────────────
+#
+# **4090 실측에서 진단이 통째로 멈췄다.** 전체 이미지를 그대로 주자 시각 언어
+# 모델이 결함 이미지를 "normal" 이라 답했고, 판별 1번이 단독 차단 조건이라
+# `decide()` 가 "접수 오류"로 끊었다.
+#
+# 우리 실측이 이미 답을 갖고 있었다(`docs/실험_역추적크롭.md`).
+#
+#     여유 24px (63×64)    0/10   전부 "무엇을 보는지 모르겠다"
+#     여유 64px (143×144)  9/10
+#
+# 그 값이 코드에는 **판별 5번에만** 물려 있었다.
+
+
+def _session_at_inspection(factory):
+    """추론까지 마친 세션. 판별 항목 입력을 여기서 본다."""
+    from agents.adapters import build_adapters
+    from app.pipeline import _DemoSession
+
+    line, object_name = CONTAMINATED_ITEM
+    session = _DemoSession(
+        factory, default_issue(factory),
+        {"line": line, "object_name": object_name, "defect_type": "scratch",
+         "product_id": factory.reported_product},
+        None, build_adapters(), 2.20, None,
+    )
+    session.intake_issue(line=line, object_name=object_name,
+                         defect_type="scratch",
+                         product_id=factory.reported_product)
+    session.lookup_mes()
+    session.run_inspection()
+    return session
+
+
+def test_check_one_is_asked_about_a_crop_not_the_whole_image(demo_factory, monkeypatch):
+    """판별 1번에 들어가는 것이 원본 경로가 아니라 잘라낸 조각이어야 한다."""
+    from PIL import Image
+
+    import app.pipeline as pipeline
+    from agents.vision import VisionJudgment
+
+    seen = {}
+
+    def spy(adapter, image, reported_defect="", context_image=None):
+        seen["image"] = image
+        seen["context"] = context_image
+        return VisionJudgment(verdict="defect", confidence=0.9, reason="",
+                              model="spy", is_stub=False)
+
+    monkeypatch.setattr(pipeline, "judge_defect_visible", spy)
+    run(demo_factory)
+
+    assert seen, "판별 1번이 불리지 않았다"
+    assert isinstance(seen["image"], Image.Image), (
+        "원본 경로가 그대로 들어간다 — 크롭이 안 물렸다"
+    )
+    assert seen["context"] is not None, "주변 맥락도 함께 줘야 판독이 안정된다"
+
+
+def test_the_crop_is_enlarged_enough_to_read(demo_factory):
+    """실측에서 정해진 크기로 확대한다. 작으면 전부 unknown 이 나온다."""
+    session = _session_at_inspection(demo_factory)
+    crop, context = session._query_crop(session.inference)
+
+    assert crop is not None and context is not None
+    assert min(crop.size) >= 512, f"확대가 안 됐다: {crop.size}"
+
+
+def test_the_crop_comes_from_the_reported_image_not_the_bank(demo_factory):
+    """판별 1번은 **접수 이미지**를, 판별 5번은 **뱅크 이미지**를 자른다.
+
+    대상을 헷갈리면 "접수 이미지에 결함이 보이는가"를 뱅크 이미지에 묻게 된다.
+    """
+    session = _session_at_inspection(demo_factory)
+    top = session.inference.top_match
+
+    assert top.query.source_image != top.bank.source_image, (
+        "질의와 뱅크가 같은 이미지면 이 시험이 구분하지 못한다"
+    )
+    assert session._query_crop(session.inference)[0] is not None
+
+
+def test_a_missing_traceback_falls_back_to_the_whole_image(demo_factory):
+    """자를 자리를 못 찾으면 전체 이미지로 되돌아간다.
+
+    판독이 약해지지만 **멈추지는 않는다.** 못 봤다는 답이 나오면 그 사실이
+    근거에 남는다.
+    """
+    session = _session_at_inspection(demo_factory)
+
+    class NoMatch:
+        top_match = None
+        grid_h = grid_w = 0
+
+    assert session._query_crop(NoMatch()) == (None, None)
+    assert session._query_crop(None) == (None, None)

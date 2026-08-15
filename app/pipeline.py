@@ -851,6 +851,18 @@ class _DemoSession:
         self.inference = ordered[0][1] if ordered else None
         missed = ordered
 
+        # **접수 제품과 진단 제품이 다르면 그렇다고 적는다.** 접수 제품이
+        # 미검이 아니면 남은 미검 중 첫 번째를 보는데, 화면이 그 사실을 말하지
+        # 않으면 보는 사람이 "왜 다른 이미지를 봤지" 하고 막힌다. 실제로 그런
+        # 질문을 받았다.
+        diagnosed = ordered[0][0].product_id if ordered else None
+        if reported and diagnosed and reported != diagnosed:
+            rows.insert(0, (
+                "보는 제품",
+                f"접수는 {reported} 인데 그 건은 잡혔습니다. "
+                f"같은 로트에서 빠진 {diagnosed} 를 진단합니다.",
+            ))
+
         self.outcome.missed_records = [r for r, _ in missed]
         if missed:
             top_record, top_result = missed[0]
@@ -915,8 +927,18 @@ class _DemoSession:
         # (기본 30%)을 넘어야 설비를 의심한다.
         lot_paths = [f.resolve(r.path) for r in self.records] or [self.query]
         quality = assess_quality(lot_paths, baseline.stats)
+        # **역추적이 가리킨 자리를 잘라서 묻는다.** 전체 이미지를 그대로 주면
+        # 못 본다 — VisA 결함은 30~45px 인데 원본이 1500×1000 이다. 4090
+        # 실측에서 전체 이미지로 물었더니 결함 이미지를 "normal" 이라 답했고,
+        # 판별 1번이 단독 차단 조건이라 진단이 통째로 멈췄다.
+        #
+        # 자를 자리를 못 찾으면 전체 이미지로 되돌아간다. 그때는 판독이 약한
+        # 것이고, 못 봤다는 답이 나오면 그 사실이 근거에 남는다.
+        query_crop, query_context = self._query_crop(result)
         visible = judge_defect_visible(
-            self.vlm, self.query, reported_defect=intake.report.defect_type or "표면 결함"
+            self.vlm, query_crop or self.query,
+            reported_defect=intake.report.defect_type or "표면 결함",
+            context_image=query_context,
         )
 
         patch_judgment = self._judge_nearest_patch(result)
@@ -1035,6 +1057,36 @@ class _DemoSession:
         patch = crop_patch(source, ref, grid, f.embedder.config, margin=64, enlarge_to=512)
         context = crop_with_context(source, ref, grid, f.embedder.config, context_cells=2)
         return judge_bank_patch(self.vlm, patch, context_image=context)
+
+    def _query_crop(self, result):
+        """접수 이미지에서 **가장 이상한 자리**를 잘라낸다 — 판별 1번의 입력.
+
+        판별 5번이 뱅크 이미지를 자르는 것과 대상이 다르다. 여기는 지금 검사
+        중인 이미지이고, `top_match.query` 가 그 좌표다.
+
+        여유 64px · 512px 확대는 실측에서 정해진 값이다
+        (`docs/실험_역추적크롭.md`). 여유가 24px 이면 열 장 전부 "무엇을 보는지
+        모르겠다"가 나온다.
+        """
+        top = result.top_match if result is not None else None
+        if top is None or not self.query:
+            return None, None
+
+        source = Path(self.query)
+        if not source.exists():
+            return None, None
+
+        grid = (result.grid_h, result.grid_w)
+        config = self.factory.embedder.config
+        try:
+            patch = crop_patch(source, top.query, grid, config,
+                               margin=64, enlarge_to=512)
+            context = crop_with_context(source, top.query, grid, config,
+                                        context_cells=2)
+        except Exception:
+            # 좌표가 이미지 밖으로 나가는 등으로 못 자르면 전체로 되돌아간다.
+            return None, None
+        return patch, context
 
     # ── 도구 3. 진단 ────────────────────────────────────────────────────
 
