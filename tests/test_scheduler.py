@@ -191,28 +191,20 @@ def test_the_cap_is_small_enough_to_be_reviewable():
 # 전건 판정 보류"인 상태를 통과시킨다 — 실제로 그런 적이 있다.
 
 
-def _run():
+def _run(factory, lookup):
     from agents.adapters import build_adapters
-    from app.pipeline import DemoFactory
-    from lookup import MockLookup
 
-    factory = DemoFactory()
-    lookup = MockLookup(
-        catalog=factory.catalog,
-        banks=factory.bank_versions(),
-        quality_provider=factory.quality_baseline,
-    )
     return run_nightly(factory, lookup, build_adapters(), now=datetime(2026, 8, 15, 7, 0))
 
 
-def test_it_actually_reaches_diagnosis_end_to_end():
+def test_it_actually_reaches_diagnosis_end_to_end(demo_factory, demo_lookup):
     """미검을 찾고 그것이 파이프라인까지 전달되는가.
 
     **여기가 무너지면 스케줄러는 이슈만 만들고 아무것도 진단하지 못한다.**
     파이프라인이 자기 조회 계층을 새로 만들면 여기서 찾은 미검을 저기서 못
     찾아 3단계에서 멈춘다.
     """
-    report = _run()
+    report = _run(demo_factory, demo_lookup)
     assert report.scanned > 0, "pending 구간이 비어 있으면 스케줄러가 할 일이 없다"
     assert report.missed > 0 and report.issues
 
@@ -221,7 +213,7 @@ def test_it_actually_reaches_diagnosis_end_to_end():
     assert [s.status for s in outcome.stages if s.key == "diagnose"] != ["skipped"]
 
 
-def test_the_pipeline_shares_the_schedulers_lookup():
+def test_the_pipeline_shares_the_schedulers_lookup(demo_factory):
     """한 실행 안에 조회 계층은 하나다.
 
     둘이면 서로 다른 이미지·임계값을 보고, 조회 기록도 갈라져 화면의 방식별
@@ -229,10 +221,9 @@ def test_the_pipeline_shares_the_schedulers_lookup():
     찾은 미검을 파이프라인이 못 찾는다** — 실제로 그런 적이 있다.
     """
     from agents.adapters import build_adapters
-    from app.pipeline import DemoFactory
     from lookup import MockLookup
 
-    factory = DemoFactory()
+    factory = demo_factory
 
     class Spy(MockLookup):
         seen: list = []
@@ -253,14 +244,14 @@ def test_the_pipeline_shares_the_schedulers_lookup():
 
 
 
-def test_it_does_not_pre_decide_check_five():
+def test_it_does_not_pre_decide_check_five(demo_factory, demo_lookup):
     """판별 5번을 스케줄러가 미리 정하지 않는다.
 
     **최근접 패치가 결함인가 진짜 정상품인가가 뱅크 오염과 정상 분포 중첩을
     가르는 유일한 자리다.** `run_pipeline` 의 기본값이 "defect" 이므로 그냥
     부르면 자동 접수 건이 전부 오염으로 기운다. 모델이 없으면 보류가 옳다.
     """
-    report = _run()
+    report = _run(demo_factory, demo_lookup)
     assert all(i.outcome.patch_override is None for i in report.issues)
 
 

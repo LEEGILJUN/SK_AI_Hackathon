@@ -691,3 +691,82 @@ def test_the_quality_baseline_follows_the_item(factory):
     assert all(s is not None for s in seen)
     means = [s["brightness"]["mean"] for s in seen]
     assert len(set(means)) > 1, "품목이 달라도 기준이 같다 — 상수를 돌려주고 있다"
+
+
+# ── 로트가 크면 조회가 조용히 자른다 ────────────────────────────────────
+#
+# **4090 실측에서 터진 자리다.** `find_images` 의 기본 상한이 50 인데 가상
+# 공장의 로트는 100장이다. 카탈로그는 정상을 먼저 넣으므로 잘리면 **결함이
+# 먼저 사라진다.** 로트 74장 중 50장만 와서 결함 6장이 전부 빠졌고,
+# 파이프라인은 "미검 없음"이라고 답했다. Mac 은 로트가 14장이라 안 걸렸다.
+
+
+def _lot_with_defects_at_the_end(factory, size=74, defects=6):
+    """정상을 앞에, 결함을 뒤에 둔 큰 로트 하나를 만든다. 실제 순서와 같다."""
+    from dataclasses import replace
+
+    line, obj, lot = "line_02", "pcb2", "LOT-BIG-001"
+    seed_normal = next(r for r in factory.catalog
+                       if r.object_name == obj and r.ground_truth == "pass")
+    seed_defect = next(r for r in factory.catalog
+                       if r.object_name == obj and r.ground_truth == "defect")
+
+    rows = [
+        replace(seed_normal, product_id=f"PCB2-BIG-N{i:03d}", lot=lot,
+                line=line, split="operation")
+        for i in range(size - defects)
+    ]
+    rows += [
+        replace(seed_defect, product_id=f"PCB2-BIG-D{i:03d}", lot=lot,
+                line=line, split="operation")
+        for i in range(defects)
+    ]
+    return rows
+
+
+def test_a_large_lot_is_not_silently_truncated(demo_factory):
+    """로트가 크면 결함이 조용히 잘려 나가지 않는가.
+
+    잘리면 파이프라인이 "미검 없음"이라고 답한다. 틀린 답인데 **에러가 아니라
+    정상 응답으로 나와서** 아무도 눈치채지 못한다.
+    """
+    from agents.adapters import build_adapters
+    from app.pipeline import _DemoSession
+    from lookup import MockLookup
+
+    rows = _lot_with_defects_at_the_end(demo_factory)
+    lookup = MockLookup(catalog=rows + list(demo_factory.catalog),
+                        banks=demo_factory.bank_versions(),
+                        quality_provider=demo_factory.quality_baseline)
+    session = _DemoSession(demo_factory, "x", {}, None, build_adapters(), 2.20, lookup)
+    session.intake_issue(line="line_02", object_name="pcb2",
+                         defect_type="스크래치", product_id="PCB2-BIG-D000")
+    result = session.lookup_mes()
+
+    assert result["images"] == 74, f"로트 74장이 다 와야 하는데 {result['images']}장"
+    assert result["defects"] == 6, (
+        f"결함 6장이 와야 하는데 {result['defects']}장 — 상한에 잘렸다"
+    )
+
+
+def test_hitting_the_scan_limit_is_written_on_the_screen(demo_factory):
+    """상한에 닿으면 화면에 그 사실을 적는다.
+
+    상한 자체는 남긴다 — 조건 없이 수만 장을 끌어오는 실수를 막아야 한다.
+    다만 **조용히 자르면 "이게 전부"로 읽힌다.**
+    """
+    from agents.adapters import build_adapters
+    from app.pipeline import LOT_SCAN_LIMIT, _DemoSession
+    from lookup import MockLookup
+
+    rows = _lot_with_defects_at_the_end(demo_factory, size=LOT_SCAN_LIMIT + 10)
+    lookup = MockLookup(catalog=rows, banks=demo_factory.bank_versions(),
+                        quality_provider=demo_factory.quality_baseline)
+    session = _DemoSession(demo_factory, "x", {}, None, build_adapters(), 2.20, lookup)
+    session.intake_issue(line="line_02", object_name="pcb2",
+                         defect_type="스크래치", product_id="PCB2-BIG-D000")
+    session.lookup_mes()
+
+    stage = next(s for s in session.outcome.stages if s.key == "mes")
+    found = dict(stage.rows)["찾은 이미지"]
+    assert "잘렸을 수 있습니다" in found, f"상한에 닿았는데 화면에 안 적힌다: {found}"

@@ -173,16 +173,20 @@ def is_missed(record: ImageRecord, score: float, threshold: float) -> bool:
     결과는 불량인데 설비는 양품으로 흘려보낸 것. 여기서 다시 정의하면 두 벌이
     되고 한쪽만 고쳐진다.
 
-    설비 판정(`verdict`)이 기록돼 있으면 그것을 그대로 믿는다. 안 돼 있는
-    구간이면 **지금 뱅크로 다시 추론한 점수**로 판정을 대신 세운다 — 야간
-    누적분은 아직 판정 기록이 없을 수 있다.
+    **pending 은 아직 검사하지 않은 구간이므로 기록된 판정을 믿지 않는다.**
+    거기에 `verdict` 가 들어 있으면 그것은 지난 판정이거나 데이터를 만들 때
+    채워 넣은 값이고, 우리가 답할 것은 "지금 뱅크가 이것을 놓치는가"다. 지난
+    판정을 믿으면 이미 잡히는 건까지 미검으로 올려 사람이 헛일을 한다.
+
+    다른 구간이면 기록된 설비 판정을 그대로 믿는다. 이미 판정이 끝난 것을
+    다시 추론해 뒤집는 것은 우리 일이 아니다.
 
     `ground_truth` 가 없으면(사람이 아직 안 본 건) 미검이라 말할 수 없다.
     **점수가 낮다는 것만으로 미검이라 부르면 진짜 양품을 이슈로 만든다.**
     """
     if record.ground_truth is None:
         return False
-    if record.verdict is not None:
+    if record.split != PENDING_SPLIT and record.verdict is not None:
         return record.is_missed
     return record.ground_truth == "defect" and score < threshold
 

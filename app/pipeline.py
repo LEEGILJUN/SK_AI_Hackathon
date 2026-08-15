@@ -172,6 +172,18 @@ FALLBACK_SEQUENCE: list[tuple[str, dict[str, Any]]] = [
     ("prepare_release", {}),
 ]
 
+#: 로트 하나를 조회할 때의 상한.
+#:
+#: **기본값 50 으로 두면 조용히 잘린다.** 가상 공장의 로트는 100장이고,
+#: 카탈로그는 정상을 먼저 넣으므로 잘리면 **결함이 먼저 사라진다.** 4090
+#: 실측에서 로트 74장 중 50장만 와서 결함 6장이 전부 빠졌고, 파이프라인은
+#: "미검 없음"이라고 답했다. 스케줄러가 찾은 미검을 파이프라인이 못 찾은
+#: 원인이 이것이다.
+#:
+#: 상한 자체는 남긴다 — 조건 없이 수만 장을 끌어오는 실수를 막아야 한다.
+#: 대신 상한에 닿으면 화면에 그 사실을 적는다.
+LOT_SCAN_LIMIT = 2000
+
 AGENT_PROMPT = """현장에서 미검출 이슈가 하나 접수됐다. 접수부터 승인 요청까지 진행하라.
 
 이슈 원문:
@@ -712,6 +724,7 @@ class _DemoSession:
         records = self.lookup.find_images(
             line=line or None, object_name=obj or None,
             lot=lot or None, product_id=product_id or None,
+            limit=LOT_SCAN_LIMIT,
         )
 
         # 제품 하나만 지목됐으면 **그 제품이 속한 로트를 함께 가져온다.**
@@ -721,7 +734,7 @@ class _DemoSession:
         if product_id and len(records) == 1 and records[0].lot:
             batch = self.lookup.find_images(
                 line=records[0].line, object_name=records[0].object_name,
-                lot=records[0].lot,
+                lot=records[0].lot, limit=LOT_SCAN_LIMIT,
             )
             if len(batch) > len(records):
                 records = batch
@@ -749,7 +762,9 @@ class _DemoSession:
                     f"{k}={v}" for k, v in
                     (("제품", product_id), ("로트", lot), ("라인", line), ("품목", obj)) if v) or "—"),
                     ("품목 뱅크", profile.bank_version if profile else "없음"),
-                    ("찾은 이미지", f"{len(records)}장"),
+                    ("찾은 이미지", f"{len(records)}장" + (
+                        f" — 상한 {LOT_SCAN_LIMIT} 에 걸려 잘렸을 수 있습니다"
+                        if len(records) >= LOT_SCAN_LIMIT else "")),
                     ("결함으로 확인된 것", f"{sum(1 for r in records if r.ground_truth == 'defect')}장")],
                 note="뱅크는 품목마다 다릅니다. 캡슐 뱅크로 PCB 를 판정할 수 없습니다.",
             )

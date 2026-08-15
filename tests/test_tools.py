@@ -366,18 +366,16 @@ def test_agent_survives_model_failure():
 # 시험 274건이 전부 통과하는 동안 아무도 못 잡았다.
 
 
-def _pipeline_tool_names():
-    """실제 시연 파이프라인이 등록하는 도구 이름."""
+def _pipeline_specs(factory):
+    """실제 시연 파이프라인이 등록하는 도구 명세."""
     from agents.adapters import build_adapters
-    from app.pipeline import DemoFactory, _DemoSession
+    from app.pipeline import _DemoSession
 
-    session = _DemoSession(
-        DemoFactory(), "x", {}, None, build_adapters(), 2.20, None
-    )
-    return [spec.name for spec in session.registry().specs]
+    session = _DemoSession(factory, "x", {}, None, build_adapters(), 2.20, None)
+    return session.registry().specs
 
 
-def test_the_system_prompt_names_every_tool():
+def test_the_system_prompt_names_every_tool(demo_factory):
     """등록된 도구가 프롬프트에 다 있어야 한다.
 
     없는 도구는 모델이 부를 이유를 못 찾는다. 도구를 추가하고 프롬프트를 안
@@ -385,15 +383,16 @@ def test_the_system_prompt_names_every_tool():
     """
     from agents.tools import SYSTEM_PROMPT
 
-    missing = [n for n in _pipeline_tool_names() if n not in SYSTEM_PROMPT]
+    names = [spec.name for spec in _pipeline_specs(demo_factory)]
+    missing = [n for n in names if n not in SYSTEM_PROMPT]
     assert not missing, f"프롬프트가 모르는 도구가 있다: {missing}"
 
 
-def test_the_system_prompt_does_not_name_a_tool_that_is_gone():
+def test_the_system_prompt_does_not_name_a_tool_that_is_gone(demo_factory):
     """반대로, 없는 도구를 부르라고 하지 않는다."""
     from agents.tools import SYSTEM_PROMPT
 
-    registered = set(_pipeline_tool_names())
+    registered = {spec.name for spec in _pipeline_specs(demo_factory)}
     mentioned = {
         word.strip(".,\"'()")
         for word in SYSTEM_PROMPT.replace("->", " ").split()
@@ -429,21 +428,14 @@ def test_the_prompt_tells_the_model_to_follow_next():
     assert "Call\nthat tool" in SYSTEM_PROMPT or "Call that tool" in SYSTEM_PROMPT
 
 
-def test_id_shaped_arguments_carry_an_example():
+def test_id_shaped_arguments_carry_an_example(demo_factory):
     """ID 를 받는 인자에는 형식 예시가 붙어 있어야 한다.
 
     예시가 없으면 모델이 이슈 원문의 말("1라인")을 그대로 넣는다. 예시가 붙은
     인자는 형식을 맞춰 부르는 것이 4090 실측에서 확인됐다.
     """
-    specs = None
-    from agents.adapters import build_adapters
-    from app.pipeline import DemoFactory, _DemoSession
-
-    specs = _DemoSession(
-        DemoFactory(), "x", {}, None, build_adapters(), 2.20, None
-    ).registry().specs
-
     bare = []
+    specs = _pipeline_specs(demo_factory)
     for spec in specs:
         params = spec.parameters.get("properties", {})
         for name in ("line", "object_name", "product_id", "lot"):
