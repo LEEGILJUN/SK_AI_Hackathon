@@ -1,0 +1,14 @@
+{
+  "candle": ["circular", "smooth surface", "central wick", "off-white", "2x2 arrangement", "cylindrical"],
+  "capsules": ["oblong", "translucent", "capsule-shaped", "rounded ends", "smooth surface", "glossy finish"],
+  "cashew": ["kidney-shaped", "curved", "smooth surface", "light brown", "tan", "beige"],
+  "chewinggum": ["rectangular", "white", "smooth surface", "rounded corners", "oblong", "uniform"],
+  "fryum": ["circular", "wheel-shaped", "six spokes", "central hole", "symmetrical", "peach color"],
+  "macaroni1": ["curved", "smooth surface", "semi-circular", "hollow", "yellow", "crescent-shaped"],
+  "macaroni2": ["crescent-shaped", "yellow", "ridged surface", "semi-circular", "group of four", "curved edges"],
+  "pcb1": ["rectangular blue pcb", "silver mesh covers", "symmetrical layout", "white text markings", "two circular speakers", "two circular ultrasonic transducers"],
+  "pcb2": ["integrated circuits", "rectangular blue pcb", "white silkscreen markings", "rectangular", "blue pcb", "surface-mount components"],
+  "pcb3": ["surface-mount components", "rectangular blue pcb", "clear led", "black led", "compact electronic module", "three silver pins"],
+  "pcb4": ["surface-mount components", "rectangular blue pcb", "rectangular", "micro-usb port", "white silkscreen markings", "blue pcb"],
+  "pipe_fryum": ["rectangular", "beige", "textured", "matte", "flat", "uniform"]
+}
