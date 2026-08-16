@@ -67,8 +67,14 @@ VALUE_KO: dict[str, str] = {
     "False": "아니오",
 }
 
+#: 낱말 경계만으로는 **경로 안까지 바꾼다.** 진단 근거에 파일 경로가 그대로
+#: 실리는데 `line_01/pcb1/defect/defect_000.png` 의 가운데가 `불량` 이 되어,
+#: 화면에 적힌 경로가 실제 파일을 안 가리켰다. 앞뒤에 `/` `.` `-` `_` 가
+#: 붙어 있으면 낱말이 아니라 이름의 조각이므로 건드리지 않는다.
 _VALUE_RE = re.compile(
-    "|".join(rf"\b{re.escape(k)}\b" for k in sorted(VALUE_KO, key=len, reverse=True))
+    r"(?<![\w/.\-])(?:"
+    + "|".join(re.escape(k) for k in sorted(VALUE_KO, key=len, reverse=True))
+    + r")(?![\w/.\-])"
 )
 
 #: 표 왼쪽 칸에 영어 식별자로 나오던 것. 게이트 지표 이름이 대부분이다.
@@ -524,6 +530,8 @@ table.cfg td:nth-child(2){font-family:var(--mono);font-weight:650;color:var(--in
 .src.editable{color:var(--accent);background:var(--panel2)}
 .src.fixed{color:var(--ink3);background:var(--panel2)}
 .src.derived{color:var(--skip);background:var(--skip-bg)}
+/* 아직 확인 안 된 자리. 비워 두면 "안 적었다"인지 "없다"인지 갈리지 않는다. */
+.pend{color:var(--ink3);font-style:italic}
 
 /* ── 실행 중 덮개 ──────────────────────────────────────────────────── */
 /* 열 단계가 한 덩어리로 돌고 끝나야 화면이 뜬다. 실모델에서는 몇 분 동안
@@ -1410,6 +1418,21 @@ def _settings_html(outcome: RunOutcome) -> str:
     # 중첩 중 하나로 간다. 3.0 줄이 바로 그것이라, **같은 근거로 다른 결과를
     # 설명하는 화면**이 되어 있었다.
     #
+    # ── 이유 절은 경로가 하나로 정해질 때만 적는다 ─────────────────────
+    #
+    # 그것을 고치면서 3.0 에 "스윕에서 해결 가능하다고 나옴"을 적었는데
+    # **그것도 추론이었다.** `threshold` 로 가는 길이 셋이다
+    # (`diagnose.py` 488 · 526 · 554). 스윕이 없으면
+    # `_threshold_feasibility()` 가 `None` 을 돌려주고 다른 두 길로 가는데,
+    # 그 둘은 `confidence=low` 에 `needs_human=True` 라 화면 설명과 정반대
+    # 인상이 된다. 어느 길이었는지는 그 실행의 `reasoning` 을 봐야 갈린다.
+    #
+    # 1.8 과 같은 종류의 오류다 — 코드를 읽고 "이렇게 갔겠지"로 적은 것이다.
+    # **관측된 것만 적고, 이유는 경로가 하나뿐일 때만 적는다.**
+    # 2.2 의 "최근접 패치가 결함"은 `bank_contamination` 으로 가는 길이
+    # 하나뿐이라(458) 코드로 정해진다. 1.8 은 4090 로그에서 판별 1번
+    # `not_visible` 을 직접 봤다. 3.0 만 비워 둔다.
+    #
     # **"같은 이미지를 놓고 임계값만 바꾸면 원인이 그대로인가"는 아직 안 쟀다.**
     # 원래 문구가 주장하던 것이 사실 이것인데, 이번 측정은 대표 이미지가 함께
     # 움직여 그 질문에 답하지 못한다. 반증된 것이 아니라 미측정이므로 **어느
@@ -1447,8 +1470,8 @@ def _settings_html(outcome: RunOutcome) -> str:
           <tr><td>2.2</td><td>뱅크 오염</td>
               <td>미검 3장 — 대표 이미지의 최근접 패치가 결함</td></tr>
           <tr><td>3.0</td><td>임계값 문제</td>
-              <td>미검 12장 — 최근접 패치는 진짜 정상품이고, 스윕에서 임계값
-                  조정으로 해결 가능하다고 나옴</td></tr>
+              <td>미검 12장 — <span class="pend">어느 경로로 이 원인이 됐는지는
+                  확인 중입니다</span></td></tr>
         </table>
         <p class="hint">{escape(measured)} · 자세한 것은
           <code>docs/실험_임계값.md</code></p>
