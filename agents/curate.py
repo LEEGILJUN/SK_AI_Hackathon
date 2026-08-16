@@ -154,7 +154,7 @@ class CoverageCost:
         )
         if self.is_heavy:
             text += (
-                " 빠지는 양이 많다 — 빠진 조건을 보충하지 않으면 뱅크 오염을 고치다"
+                " 빠지는 양이 많다. 빠진 조건을 보충하지 않으면 뱅크 오염을 고치다"
                 " 커버리지 부족을 만들 수 있다."
             )
         return text
@@ -191,13 +191,13 @@ class CurationPlan:
 
     def summary(self) -> str:
         if not self.touches_bank:
-            return f"뱅크를 건드리지 않는다 — {self.reason}"
+            return f"뱅크를 건드리지 않는다: {self.reason}"
         parts = []
         if self.remove:
             parts.append(f"제거 {len(self.remove)}장")
         if self.add:
             parts.append(f"보충 조건 {len(self.add)}개")
-        return f"뱅크 재구성 — {', '.join(parts)}"
+        return f"뱅크 재구성: {', '.join(parts)}"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -357,7 +357,7 @@ def plan_curation(
                 reason=(
                     "뱅크 오염으로 진단됐으나 제거할 대상을 특정하지 못했다. "
                     "역추적이 반복해서 지목한 이미지가 없으므로 사람이 확인해야 한다. "
-                    "고립도는 단독 근거로 쓰지 않는다 — 실측에서 혼입 이미지를 짚지 못했다."
+                    "고립도는 단독 근거로 쓰지 않는다. 실측에서 혼입 이미지를 짚지 못했다."
                 ),
                 needs_human=True,
             )

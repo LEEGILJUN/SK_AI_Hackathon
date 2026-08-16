@@ -73,7 +73,7 @@ ISSUE_GRAPH: list[dict] = [
     {
         "issue_id": "ISS-0071", "line": "line_01", "object_name": "pcb1",
         "defect_type": "melt", "cause": "equipment_optics",
-        "action": "설비 점검 요청 — 조명 열화 확인", "resolved": False,
+        "action": "설비 점검 요청: 조명 열화 확인", "resolved": False,
         "summary": "화질 지표가 기준 분포를 벗어났다. 모델 문제가 아니다.",
     },
 ]

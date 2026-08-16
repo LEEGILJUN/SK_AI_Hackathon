@@ -151,7 +151,7 @@ def write_approval_document(
     cause_label = CAUSE_LABEL_KO.get(diagnosis.cause or "", "판정 보류")
 
     parts: list[str] = []
-    parts.append(f"# 뱅크 배포 승인 요청 — {record.to_version}\n")
+    parts.append(f"# 뱅크 배포 승인 요청: {record.to_version}\n")
     parts.append(
         "> 이 문서는 자동 생성됐습니다. **배포는 실행되지 않았습니다.** "
         "아래를 검토하고 승인 여부를 결정해 주세요.\n"
@@ -233,7 +233,7 @@ def write_approval_document(
         parts.append(f"**제거 {len(record.removed)}장**\n")
         for image in record.removed[:20]:
             reason = next((c.reason for c in plan.remove if c.image == image), "")
-            parts.append(f"- `{image}` — {reason}")
+            parts.append(f"- `{image}`: {reason}")
         if len(record.removed) > 20:
             parts.append(f"- … 외 {len(record.removed) - 20}장")
         parts.append("")
@@ -254,7 +254,7 @@ def write_approval_document(
 
     if reproducibility:
         mark = "100%" if reproducibility.identical else "**불일치**"
-        parts.append(f"**재현성**: {reproducibility.runs}회 반복 — {mark}. {reproducibility.detail}\n")
+        parts.append(f"**재현성**: {reproducibility.runs}회 반복, {mark}. {reproducibility.detail}\n")
 
     # ── 섀도 ────────────────────────────────────────────────────────
     if shadow:
@@ -266,7 +266,7 @@ def write_approval_document(
         parts.append(f"{shadow.summary()}\n")
 
         if shadow.newly_missed:
-            parts.append(f"### 새로 놓치는 건 {len(shadow.newly_missed)}건 — 확인 필요\n")
+            parts.append(f"### 새로 놓치는 건 {len(shadow.newly_missed)}건 (확인 필요)\n")
             parts.append("고치려던 문제가 나아져도 다른 것을 잃으면 개선이 아닙니다.\n")
             parts.append("| 이미지 | 현행 점수 | 후보 점수 |")
             parts.append("|---|---|---|")

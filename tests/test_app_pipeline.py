@@ -372,8 +372,11 @@ def test_simulator_replays_real_numbers_not_invented_ones(factory):
         pytest.skip("이 실행에서는 섀도까지 가지 않았다")
 
     html = render_page(outcome, outcome.issue_text)
-    assert "코어셋 검증 — 가상 라인" in html
-    assert "코어셋 검증 중입니다" in html
+    # **문구가 아니라 블록으로 잡는다.** 전에 제목 문자열을 그대로 걸어
+    # 두었더니 화면 문안을 다듬는 것이 시험을 깨는 일이 되어, 고쳐야 할
+    # 문장을 못 고치고 그대로 뒀다. 확인할 것은 "섀도 재생 블록이 그려지는가"
+    # 이지 제목이 무엇인가가 아니다.
+    assert 'id="block-simulator"' in html
     # 흘려보내는 자료가 섀도 사례 전부여야 한다.
     for case in outcome.shadow.cases:
         assert f"/image/{case.image}" in html
@@ -470,7 +473,7 @@ def test_diagnosis_panel_draws_the_traced_pair(factory):
     html = render_page(outcome, outcome.issue_text)
     assert "이상 점수 히트맵" in html
     assert "이슈 이력 그래프" in html
-    assert "무엇을 어떻게 찾았나" in html
+    assert 'id="block-retrieval"' in html  # 제목 문구가 아니라 블록으로
 
     top = outcome.inference.top_match
     grid_h, grid_w = outcome.grid

@@ -279,7 +279,7 @@ class RunOutcome:
         if self.agent_run is None:
             return []
         return [
-            (r.name, "성공" if r.ok else f"실패 — {r.error}")
+            (r.name, "성공" if r.ok else f"실패: {r.error}")
             for r in self.agent_run.tool_results
         ]
 
@@ -761,8 +761,8 @@ class _DemoSession:
                 key="intake",
                 title="1. 인테이크",
                 status="done" if intake.verdict == "proceed" else "blocked",
-                headline={"proceed": "진단으로 넘김", "need_more_info": "정보 부족 — 되물음",
-                          "duplicate": "이미 해결된 사례 — 중단"}[intake.verdict],
+                headline={"proceed": "진단으로 넘김", "need_more_info": "정보 부족, 되물음",
+                          "duplicate": "이미 해결된 사례, 중단"}[intake.verdict],
                 detail=f"{intake.note} {source}",
                 rows=[(label, f"{getattr(intake.report, key) or '—'}"
                               f"{'  (양식)' if key in filled_by_form else '  (원문 추출)' if extracted.get(key) else ''}")
@@ -883,7 +883,7 @@ class _DemoSession:
                     (("제품", product_id), ("로트", lot), ("라인", line), ("품목", obj)) if v) or "—"),
                     ("품목 뱅크", profile.bank_version if profile else "없음"),
                     ("찾은 이미지", f"{len(records)}장" + (
-                        f" — 상한 {LOT_SCAN_LIMIT} 에 걸려 잘렸을 수 있습니다"
+                        f" (상한 {LOT_SCAN_LIMIT} 에 걸려 잘렸을 수 있습니다)"
                         if len(records) >= LOT_SCAN_LIMIT else "")),
                     ("결함으로 확인된 것", f"{sum(1 for r in records if r.ground_truth == 'defect')}장")],
                 note="뱅크는 품목마다 다릅니다. 캡슐 뱅크로 PCB 를 판정할 수 없습니다.",
@@ -1010,7 +1010,7 @@ class _DemoSession:
         self.outcome.stages.append(
             Stage(
                 key="inspect",
-                title="3. 추론 — 미검·과검",
+                title="3. 추론: 미검·과검",
                 status="done" if missed else "blocked",
                 headline=f"{len(self.records)}장 중 미검 {len(missed)}장 · 과검 {len(overkill)}장",
                 detail=(
