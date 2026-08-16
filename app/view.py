@@ -896,8 +896,10 @@ def _taxonomy_html(outcome: RunOutcome) -> str:
         원인 {len(cause_names())}종 중 <strong>뱅크 재구성이 답인 것은
         {len(rebuild_causes)}종뿐</strong>입니다({escape(", ".join(rebuild_causes))}).
         나머지는 다시 만들어도 해결되지 않거나 오히려 나빠집니다.
-        <strong>뱅크 오염과 정상 분포 중첩은 판별 5번 하나로 구분되고</strong>
-        조치가 정반대입니다. 그래서 5번을 얻지 못하면 판정하지 않습니다.
+        <strong>판별 5번이 결함이면 뱅크 오염으로 정해집니다.</strong>
+        진짜 정상품이면 커버리지 부족·임계값 문제·정상 분포 중첩으로 나뉘고,
+        판별 6번과 임계값 스윕이 그것을 가릅니다. <strong>뱅크 오염과 정상 분포
+        중첩은 조치가 정반대라, 5번을 얻지 못하면 판정하지 않습니다.</strong>
       </p>
       <p class="note">
         언어 모델은 이 표를 <code>lookup_ontology</code> 도구로 <strong>읽을 수만</strong>
@@ -1142,8 +1144,9 @@ def _evidence_visual_html(outcome: RunOutcome) -> str:
       {traced}
       <p class="note">
         역추적한 두 자리를 같은 좌표계로 잘라 나란히 놓은 것입니다.
-        <strong>이 뱅크 패치가 결함이면 뱅크 오염, 진짜 정상품이면 정상 분포
-        중첩이며 조치가 정반대입니다</strong>(판별 5번).
+        <strong>이 뱅크 패치가 결함이면 뱅크 오염 하나로 정해집니다.</strong>
+        진짜 정상품이면 커버리지 부족·임계값 문제·정상 분포 중첩 중 하나이고,
+        판별 6번과 임계값 스윕이 그것을 가릅니다(판별 5번).
       </p>
       {override}
     </div>
