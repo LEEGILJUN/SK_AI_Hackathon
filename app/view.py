@@ -330,9 +330,15 @@ a{color:var(--accent)}
 .ev-grid>div.wide{flex:1.35 1 320px}
 .ev-label{font-family:var(--mono);font-size:11px;letter-spacing:.1em;
   text-transform:uppercase;color:var(--ink3)}
-.heat{display:grid;gap:3px;background:var(--panel2);padding:8px;border-radius:6px;
+/* 격자 칸 수가 이미지 해상도를 따라간다. 합성 64px 에서는 8x8 인데 VisA
+   512px 에서는 **64x64 로 4,096 칸**이다. 칸마다 최소 높이를 주면 64행이
+   640px 을 요구해 300px 상자를 넘쳐 흐르고, 아래 글자 위로 붉은 줄이 덮인다.
+   실제로 4090 화면이 그랬다. 칸 크기는 상자가 정하게 두고 넘치면 자른다. */
+.heat{display:grid;gap:var(--cell-gap,3px);grid-auto-rows:1fr;overflow:hidden;
+  background:var(--panel2);padding:8px;border-radius:6px;
   border:1px solid var(--rule2);aspect-ratio:1;max-width:300px}
-.heat i{background:var(--stop);border-radius:2px;min-height:10px;display:block}
+.heat i{background:var(--stop);border-radius:var(--cell-r,2px);min-height:0;
+  min-width:0;display:block}
 /* 역추적이 지목한 칸. 이 한 칸이 진단의 출발점이라 눈에 먼저 들어와야 한다. */
 .heat i.hot{outline:3px solid var(--accent);outline-offset:2px;position:relative;z-index:1}
 
@@ -969,14 +975,30 @@ def _evidence_visual_html(outcome: RunOutcome) -> str:
     lo, hi = min(flat), max(flat)
     span = (hi - lo) or 1.0
 
+    # 칸 사이 간격과 모서리는 **격자 크기를 따라간다.** 상자 안쪽이 284px 인데
+    # 64칸이면 칸 하나가 4.4px 다. 거기에 3px 간격을 주면 간격이 칸보다 넓어져
+    # 히트맵이 아니라 세로줄 무늬가 된다(4090 화면이 그랬다). 모서리 둥글리기도
+    # 4px 칸에서는 칸을 동그라미로 만든다.
+    cell_gap = 3 if grid_w <= 16 else 2 if grid_w <= 32 else 1 if grid_w <= 48 else 0
+    cell_radius = 2 if cell_gap >= 2 else 0
+
     # 역추적이 지목한 칸에만 붙는 표시. f-string 식 안에 역슬래시를 두면
     # Python 3.11 에서 SyntaxError 다(3.12 의 PEP 701 부터 허용). 대상 환경이
     # 3.11 이므로 따옴표를 밖으로 뺀다.
     hot_attr = " class='hot'"
+
+    # 칸마다 붙는 툴팁을 **큰 격자에서는 빼 준다.** 64x64 면 4,096개라 HTML 이
+    # 209KB 가 되는데, 칸이 4.4px 라 애초에 마우스로 짚을 수 없다. 짚을 수 없는
+    # 설명에 페이지 무게의 절반을 쓰는 셈이다. 역추적이 지목한 칸은 하나뿐이니
+    # 그것만 남긴다.
+    def cell(r: int, c: int, v: float) -> str:
+        hot = bool(top and r == top.query.row and c == top.query.col)
+        tip = f' title="({r},{c}) {v:.4f}"' if hot or cell_gap else ""
+        return (f'<i style="opacity:{(v - lo) / span:.3f}"'
+                f'{hot_attr if hot else ""}{tip}></i>')
+
     cells = "".join(
-        f'<i style="opacity:{(v - lo) / span:.3f}"'
-        f'{hot_attr if top and r == top.query.row and c == top.query.col else ""}'
-        f' title="({r},{c}) {v:.4f}"></i>'
+        cell(r, c, v)
         for r, row in enumerate(result.patch_distances)
         for c, v in enumerate(row)
     )
@@ -1058,7 +1080,8 @@ def _evidence_visual_html(outcome: RunOutcome) -> str:
       <div class="ev-grid">
         <div>
           <div class="ev-label">이상 점수 히트맵 · {grid_h}×{grid_w}</div>
-          <div class="heat" style="grid-template-columns:repeat({grid_w},1fr)">{cells}</div>
+          <div class="heat" style="grid-template-columns:repeat({grid_w},1fr);
+               --cell-gap:{cell_gap}px;--cell-r:{cell_radius}px">{cells}</div>
           <p class="hint">진할수록 정상에서 멉니다. 테두리 친 칸이 가장 높은 자리이고,
              아래 두 조각이 그 칸을 잘라낸 것입니다.</p>
         </div>
