@@ -1129,7 +1129,7 @@ def _retrieval_html(outcome: RunOutcome) -> str:
     return f"""
     <div class="evidence" id="block-retrieval">
       <div class="ev-head">
-        <span class="stage-title">무엇을 어떻게 찾았나</span>
+        <span class="stage-title">조회 방식별 호출 기록</span>
         <span class="sim-state">{escape(str(len(outcome.retrievals)))}회 조회</span>
       </div>
       <div class="chips">{chips}</div>
@@ -1276,7 +1276,7 @@ def _simulator_html(outcome: RunOutcome) -> str:
 
         if (c.nearest) {{
           txt.appendChild(text("span", "why2",
-            "신규 뱅크에서의 최근접 정상 패치 출처 \\u2014 " + c.nearest));
+            "신규 뱅크에서의 최근접 정상 패치 출처: " + c.nearest));
         }}
         row.appendChild(txt);
         row.appendChild(text("span", "kd " + (up ? "up" : "down"),
@@ -1298,7 +1298,7 @@ def _simulator_html(outcome: RunOutcome) -> str:
       }}
 
       function finish() {{
-        state.textContent = "검증 완료 \\u2014 사람 승인 대기";
+        state.textContent = "검증 완료. 사람 승인 대기";
         document.getElementById("sim-note").textContent =
           "판정이 서로 다른 " + (caught + lost) + "장만 사람이 확인하면 됩니다. " +
           "나머지 " + same + "장은 두 뱅크가 같게 판정했습니다.";
@@ -1307,7 +1307,7 @@ def _simulator_html(outcome: RunOutcome) -> str:
       function release() {{
         if (i >= cases.length) {{ finish(); return; }}
         const c = cases[i++];
-        state.textContent = "코어셋 검증 중입니다 \\u2014 " + i + "/" + cases.length;
+        state.textContent = "코어셋 검증 중입니다 " + i + "/" + cases.length;
 
         const piece = document.createElement("div");
         piece.className = "piece " + (c.after === "defect" ? "defect" : "pass")
