@@ -119,7 +119,7 @@ def main() -> None:
         seen.add(sid)
         # ── 파일 끝의 스키마 예시는 채점 대상이 아니다 ──────────────────
         #
-        # 장영진이 "예시 1건 — 아래 형식을 그대로 복제해 나머지를 채웁니다"
+        # 도메인 담당이 "예시 1건 — 아래 형식을 그대로 복제해 나머지를 채웁니다"
         # 라고 적어 둔 골격이다. 대상 라인·품목이 공장 구성에 없어
         # `data/build_factory.py` 도 걸러 낸다.
         #
@@ -174,7 +174,7 @@ def main() -> None:
 
     if skipped_example:
         print(f"\n스키마 예시 {skipped_example}건은 채점에서 뺐습니다 "
-              f"(장영진이 형식 견본으로 둔 골격).")
+              f"(도메인 담당이 형식 견본으로 둔 골격).")
     print(f"\n원인 일치        {ok}/{total}")
     print(f"  현장 근거      {field_ok}/{len(field)}")
     print(f"  기술적 가정(*) {ok - field_ok}/{total - len(field)}")

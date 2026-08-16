@@ -1,6 +1,6 @@
 """`data/build_factory.py` 의 불변식.
 
-이동현이 만든 공장 데이터 생성기를 이길준이 고쳤다(2026-08-14~15). 고친 것이
+데이터 담당이 만든 공장 데이터 생성기를 에이전트 담당이 고쳤다(2026-08-14~15). 고친 것이
 되돌아가지 않게 못 박는다. **이미지를 복사하지 않는다** — 순수 함수만 부른다.
 전체 실행은 로트 36개 × 1,000장이라 테스트에서 돌릴 것이 아니다
 (`--no-images` 로 CSV 만 만들면 1.6초다).
@@ -164,7 +164,7 @@ def test_the_shifts_are_named_the_usual_way(bf):
 def test_the_scenario_injection_is_read(bf):
     """`injection` 절을 읽는다.
 
-    장영진이 뱅크에 넣을 혼입 이미지를 정확히 지정해 뒀는데 생성기가 읽지
+    도메인 담당이 뱅크에 넣을 혼입 이미지를 정확히 지정해 뒀는데 생성기가 읽지
     않고 있었다. 대신 해시가 아무 결함이나 뱅크에 넣었다.
     """
     scenarios, _, _, _ = bf.load_scenarios(REPO_ROOT / "data" / "scenarios.yaml")
@@ -223,7 +223,7 @@ def test_the_scenario_contamination_lands_near_what_we_measured(bf):
         assert rate >= bf.MIN_DETECTABLE_CONTAMINATION_PCT, (
             f"{scenario.scenario_id}: 뱅크 오염 {scenario.contaminated_count}장이면 "
             f"뱅크 {bf.BANK_BUILD_SIZE}장 기준 {rate:.2f}% 다. 검출 한계 아래라 "
-            f"역추적이 못 짚을 수 있다 — 장영진 확인 필요"
+            f"역추적이 못 짚을 수 있다 — 도메인 담당 확인 필요"
         )
 
 

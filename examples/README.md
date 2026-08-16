@@ -8,9 +8,9 @@
 
 | 예시 | 대상 | 채울 실제 파일 | 소유 |
 |---|---|---|---|
-| [`scenarios_예시.yaml`](scenarios_예시.yaml) | 시나리오와 정답 | `data/scenarios.yaml` | 장영진 |
-| [`가상공장_구조.md`](가상공장_구조.md) | 폴더트리·MES·조회 | `data/build_factory.py`, `data/manifest.csv`, `data/mes.csv` | 이동현 |
-| [`MES_설계.md`](MES_설계.md) | **MES 에 무엇을 더 넣을 것인가** | `data/mes.csv` | 이동현·장영진 |
+| [`scenarios_예시.yaml`](scenarios_예시.yaml) | 시나리오와 정답 | `data/scenarios.yaml` | 도메인 담당 |
+| [`가상공장_구조.md`](가상공장_구조.md) | 폴더트리·MES·조회 | `data/build_factory.py`, `data/manifest.csv`, `data/mes.csv` | 데이터 담당 |
+| [`MES_설계.md`](MES_설계.md) | **MES 에 무엇을 더 넣을 것인가** | `data/mes.csv` | 데이터 담당·도메인 담당 |
 
 ## 왜 형식을 맞춰야 하는가
 
@@ -20,8 +20,8 @@
 
 접합부는 두 곳입니다.
 
-- **`lookup/base.py`** — 조회 함수 5개의 시그니처. 이동현 담당
-- **`data/scenarios.yaml`의 `ground_truth`** — 채점이 읽는 필드. 장영진 담당
+- **`lookup/base.py`** — 조회 함수 5개의 시그니처. 데이터 담당 담당
+- **`data/scenarios.yaml`의 `ground_truth`** — 채점이 읽는 필드. 도메인 담당 담당
 
 ## 지금 상태
 

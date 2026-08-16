@@ -84,7 +84,7 @@ LOT_CODE_BY_START_DATE = {
     date(2026, 7, 25): "ACC",
 }
 
-# 이길준 수정 (2026-08-14): "dirt" 를 뺐다. VisA pcb1~4 결함 어휘 어디에도
+# 에이전트 담당 수정 (2026-08-14): "dirt" 를 뺐다. VisA pcb1~4 결함 어휘 어디에도
 # 없는 이름이라 ESA3 은 한 번도 붙은 적이 없다. 코드는 이어 붙이지 않고
 # 비워 둔다 — 뒤를 당기면 이미 나간 값의 뜻이 바뀐다.
 ERROR_CODE_BY_DEFECT_NAME = {
@@ -99,7 +99,7 @@ ERROR_CODE_BY_DEFECT_NAME = {
     "wrong place": "ESA8",
 }
 
-# 이길준 수정 (2026-08-14): 이물·표면을 없는 결함(dirt)에 물려 두어 두 낱말이
+# 에이전트 담당 수정 (2026-08-14): 이물·표면을 없는 결함(dirt)에 물려 두어 두 낱말이
 # 조용히 무시되고 있었다. pcb 어휘 안으로 옮긴다. "뱅크 오염"은 대응할 결함이
 # 정말 없어서 뺐다 — 억지로 물리면 엉뚱한 이미지가 붙는다.
 ISSUE_KEYWORD_TO_DEFECT = {
@@ -146,7 +146,7 @@ class ScenarioInfo:
     date_end: date
     issue_text: str
     attachments: List[str]
-    #: 이길준 추가 (2026-08-14): injection 절. 장영진이 뱅크에 넣을 오염
+    #: 에이전트 담당 추가 (2026-08-14): injection 절. 도메인 담당이 뱅크에 넣을 오염
     #: 이미지를 여기에 정확히 지정해 뒀는데 읽지 않고 있었다.
     injection_method: str = ""
     contaminated_count: int = 0
@@ -277,7 +277,7 @@ HOLDOUT_TAIL_RATIO = 0.3
 def build_split_calendar(bank_lots, scenario_lots, pending_lots=()) -> Dict[Tuple[str, str], str]:
     """(라인, 일자) → 어느 구간인가.
 
-    **이길준 수정 (2026-08-15): 이미지 단위 해시에서 일자 구간으로 바꿨다.**
+    **에이전트 담당 수정 (2026-08-15): 이미지 단위 해시에서 일자 구간으로 바꿨다.**
 
     전에는 `pick_split` 이 이미지마다 해시로 갈라서 **같은 날짜에 뱅크·운영·
     홀드아웃이 전부 섞였다.** `scripts/check_factory.py` 4번이 그걸 잡는다 —
@@ -333,7 +333,7 @@ def pick_split(calendar: Dict[Tuple[str, str], str], line: str, date_str: str, l
 def error_code_for(defect_name: str) -> str:
     """결함 이름 → 설비 오류 코드.
 
-    **이길준 추가 (2026-08-14): 모르는 결함에 "0000"(정상)을 주지 않는다.**
+    **에이전트 담당 추가 (2026-08-14): 모르는 결함에 "0000"(정상)을 주지 않는다.**
 
     전에는 `ERROR_CODE_BY_DEFECT_NAME.get(name, "0000")` 이었다. 손으로 적은
     표라서 카테고리를 늘리면 표에 없는 이름이 반드시 나오는데, 그때 정상
@@ -406,7 +406,7 @@ def build_copy_task(source_rel: str, destination_path: Path) -> CopyTask:
 
 #: 이미지를 실제로 복사할 것인가. `--no-images` 로 끈다.
 #:
-#: **이길준 추가 (2026-08-14).** 로트 26개 × 1,000장이라 복사본이 약 5.2GB 다.
+#: **에이전트 담당 추가 (2026-08-14).** 로트 26개 × 1,000장이라 복사본이 약 5.2GB 다.
 #: 그런데 `manifest.csv` · `mes.csv` 만 있으면 되는 일이 많다 — 조회 계층
 #: (`lookup/factory.py`)이 하는 것은 전부 조인이라 파일이 실제로 있어야 할
 #: 이유가 없고, 계약 테스트도 CSV 로 돈다.
@@ -442,7 +442,7 @@ def collect_target_lots(selected_scenarios: List[ScenarioInfo]) -> List[Tuple[st
 
 #: 라인마다 시나리오 발생 **이전에** 둘 초기 뱅크 구성 일자 수.
 #:
-#: **이길준 추가 (2026-08-15).** 로트는 시나리오 attachment 가 가리키는
+#: **에이전트 담당 추가 (2026-08-15).** 로트는 시나리오 attachment 가 가리키는
 #: 자리에서만 만들어졌는데, 시나리오는 전부 미검 이미지를 하나씩 달고 있다.
 #: 그래서 **결함이 없는 날이 하루도 없었고**, 뱅크 구간과 운영 구간이
 #: 일자로 갈릴 수가 없었다(`scripts/check_factory.py` 4번).
@@ -676,14 +676,14 @@ def apply_bank_contamination(
 ) -> Tuple[List[ManifestRow], List[str]]:
     """뱅크 오염을 시나리오가 지정한 만큼만 넣는다.
 
-    **이길준 추가 (2026-08-14).**
+    **에이전트 담당 추가 (2026-08-14).**
 
     `pick_split` 이 결함을 뱅크에서 막게 되면서 오염이 들어올 길이 없어졌다.
     그런데 없어도 되는 게 아니다 — 시나리오 다섯 건이 뱅크 오염을 정답으로
     걸고 있다. 우연히 섞이던 것을 **의도한 것만 들어오게** 바꾼 것이지
     없앤 것이 아니다.
 
-    장영진이 `injection.params` 에 이미 지정해 뒀다.
+    도메인 담당이 `injection.params` 에 이미 지정해 뒀다.
 
         method: bank_contamination
         params:
@@ -857,7 +857,7 @@ def verify_scenario_integration(selected_scenarios: List[ScenarioInfo], manifest
 def compute_shift(started_at_value: datetime) -> str:
     """교대 이름.
 
-    **이길준 수정 (2026-08-14): 이름이 한 칸씩 밀려 있었다.** 자정~08시가
+    **에이전트 담당 수정 (2026-08-14): 이름이 한 칸씩 밀려 있었다.** 자정~08시가
     "day", 08~16시가 "swing" 이었다. 통상 주간이 08–16, 스윙이 16–24,
     야간이 00–08 이다. 기능에는 영향이 없지만 심사에서 눈에 띌 자리다.
     """
@@ -872,7 +872,7 @@ def compute_shift(started_at_value: datetime) -> str:
 def build_mes_rows(manifest_rows: List[ManifestRow]) -> List[Dict[str, str]]:
     """이미지마다 MES 한 행.
 
-    **이길준 수정 (2026-08-14): inspected_count · defect_count 가 개수가
+    **에이전트 담당 수정 (2026-08-14): inspected_count · defect_count 가 개수가
     아니라 일련번호였다.**
 
     전에는 결함 행마다 1, 2, 3… 이 들어가고 정상 행은 0 이었다. 열 이름이

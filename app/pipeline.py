@@ -397,7 +397,7 @@ class DemoFactory:
 
     품목이 여럿이고 **품목마다 뱅크가 따로** 있습니다. MES 가 아는 이미지
     목록(`catalog`)도 함께 만들어, 제품명·로트로 이미지를 찾는 경로가 실제로
-    돌아갑니다. 이동현의 가상 공장이 오면 이 클래스가 빠집니다.
+    돌아갑니다. 데이터 담당의 가상 공장이 오면 이 클래스가 빠집니다.
     """
 
     def __init__(self, normal_count: int | None = None, defect_count: int | None = None,
@@ -690,7 +690,7 @@ class _DemoSession:
         # **조회 계층은 밖에서 준다.** 여기서 만들어 버리면 한 실행 안에 조회
         # 계층이 둘이 되고(부르는 쪽 하나, 파이프라인 하나) 서로 다른 답을
         # 낸다 — 스케줄러가 찾은 미검을 파이프라인이 못 찾는 식이다.
-        # 이동현의 실구현(`lookup/factory.py`)을 끼우는 자리도 여기다.
+        # 데이터 담당의 실구현(`lookup/factory.py`)을 끼우는 자리도 여기다.
         self.lookup = lookup or MockLookup(
             threshold=threshold,
             catalog=factory.catalog,

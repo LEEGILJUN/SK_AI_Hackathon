@@ -55,7 +55,7 @@ def compute_metrics(image_path: str | Path) -> QualityMetrics:
     noise       평탄한 영역의 국소 표준편차 중앙값
 
     noise 는 아직 잠정 정의다. quality_baseline.yaml 에 산출식이 TODO 로
-    남아 있으며, 장영진이 확정하면 여기를 그 정의로 맞춘다. 지금 구현은
+    남아 있으며, 도메인 담당이 확정하면 여기를 그 정의로 맞춘다. 지금 구현은
     "무늬가 없는 곳에서도 남아 있는 흔들림"을 재는 통상적인 방식이다.
     """
     gray = _to_gray(image_path)

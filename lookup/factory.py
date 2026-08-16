@@ -1,6 +1,6 @@
 """가상 공장 데이터를 읽는 조회 계층 — `lookup/mock.py` 를 대신한다.
 
-`data/build_factory.py` 가 만든 `manifest.csv` · `mes.csv` 와 장영진의 기준
+`data/build_factory.py` 가 만든 `manifest.csv` · `mes.csv` 와 도메인 담당의 기준
 파일들을 읽어 `lookup/base.py` 의 함수 8개를 채운다.
 
 ── 무엇이 목과 다른가 ───────────────────────────────────────────────────
@@ -21,7 +21,7 @@
     find_images           manifest      ✓
     defect_distribution   manifest      ✓
     get_bank_profile      manifest      ✓
-    get_threshold         thresholds.yaml     자리표시 (장영진 확정 필요)
+    get_threshold         thresholds.yaml     자리표시 (도메인 담당 확정 필요)
     get_criteria          criteria.yaml       규칙 1건뿐 — pcb 는 아직 없음
     get_quality_baseline  quality_baseline.yaml / 이미지에서 산출
     find_similar_issues   issue_history.jsonl  ✓ 24건 (중복 차단 전용)

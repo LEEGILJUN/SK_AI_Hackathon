@@ -1,10 +1,10 @@
-"""판별 7번 면적이 실데이터에서 어떻게 나오는지 잰다 — 장영진에게 넘길 근거.
+"""판별 7번 면적이 실데이터에서 어떻게 나오는지 잰다 — 도메인 담당에게 넘길 근거.
 
     python scripts/measure_mask.py                 # 기본 품목
     python scripts/measure_mask.py --object pcb2
     python scripts/measure_mask.py --images 20
 
-**값을 고치지 않는다.** `data/criteria.yaml` 은 장영진 소유이고 면적 기준
+**값을 고치지 않는다.** `data/criteria.yaml` 은 도메인 담당 소유이고 면적 기준
 150px² 와 `binarize_threshold: 0.5` 에는 아직 근거 TODO 가 붙어 있다. 이
 스크립트는 그 근거를 만들기 위한 측정만 한다.
 
@@ -112,7 +112,7 @@ def main() -> int:
         "보고 그 장들을 따로 봐야 합니다.\n"
         "전부 아니오면 컷오프로는 못 가릅니다 — 기준값을 바꿀 것이 아니라\n"
         "정규화 방식을 바꿔야 한다는 뜻입니다.\n"
-        "\n이 표를 장영진에게 그대로 넘기면 됩니다. criteria.yaml 은 고치지 마세요."
+        "\n이 표를 도메인 담당에게 그대로 넘기면 됩니다. criteria.yaml 은 고치지 마세요."
     )
     return 0
 

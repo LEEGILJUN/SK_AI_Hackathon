@@ -48,8 +48,22 @@ ALLOWED = (
     "example.com",
 )
 
-#: 사람이 읽어야 하는 것. 막지 않고 알린다.
-NAMES = ("이길준", "장영진", "이동현")
+#: 실명이 저장소에 다시 들어왔는지 본다.
+#:
+#: **이 파일에 이름을 적어 두면 검사기 자신이 이름을 유출한다.** 그래서
+#: 추적하지 않는 `.private_names` 에서 읽는다(한 줄에 하나). 파일이 없으면
+#: 이 항목만 건너뛰고 나머지 검사는 그대로 돈다.
+#:
+#: 저장소에서 실명을 빼기로 정했고(2026-08-17) 역할명으로 바꿨다.
+#: 다시 들어오는 것을 막는 것이 이 검사의 몫이다.
+NAMES_FILE = REPO_ROOT / ".private_names"
+
+
+def private_names() -> list[str]:
+    if not NAMES_FILE.exists():
+        return []
+    return [ln.strip() for ln in NAMES_FILE.read_text(encoding="utf-8").splitlines()
+            if ln.strip() and not ln.startswith("#")]
 
 
 def _run(*args: str) -> str:
@@ -127,17 +141,27 @@ def main() -> int:
     else:
         print(f"{OK} 커밋 이력 — 과거 커밋에도 없음")
 
-    counts = {n: len(_run("git", "grep", "-c", n).splitlines()) for n in NAMES}
-    total = sum(counts.values())
-    if total:
-        print(f"{WARN} 실명이 {total}개 파일에 있습니다 — "
-              + " · ".join(f"{n} {c}" for n, c in counts.items()))
-        print("      **막지 않습니다.** 공개 저장소에 본인 이름을 넣을지는")
-        print("      본인들이 정할 일이고, 해커톤 출품작이라 드러내는 편이")
-        print("      맞을 수도 있습니다")
+    names = private_names()
+    if not names:
+        print(f"{WARN} 실명 검사 — `.private_names` 가 없어 건너뜁니다")
+        print("      한 줄에 하나씩 적어 두면 실명이 다시 들어왔는지 봅니다.")
+        print("      이 파일은 추적하지 않습니다(.gitignore).")
+        named = []
+    else:
+        named = [n for n in names if _run("git", "grep", "-l", n).strip()]
+        if named:
+            counts = {n: len(_run("git", "grep", "-l", n).splitlines()) for n in named}
+            print(f"{FAIL} 실명이 다시 들어왔습니다 — "
+                  + " · ".join(f"{c}개 파일" for c in counts.values()))
+            for n in named:
+                for line in _run("git", "grep", "-n", n).splitlines()[:5]:
+                    print(f"      {line[:100]}")
+            print("      역할명으로 바꾸세요 — 저장소에서 실명을 빼기로 정했습니다")
+        else:
+            print(f"{OK} 실명 — 저장소에 없음")
 
     print()
-    if tracked or history:
+    if tracked or history or named:
         print("공개하기 전에 위 항목을 고치세요.")
         return 1
     print("공개를 막는 것은 없습니다.")

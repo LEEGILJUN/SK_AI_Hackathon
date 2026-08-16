@@ -335,12 +335,12 @@ def test_the_switch_script_runs(tmp_path):
     assert "pcb1-01-v2_20260815-1000" in listed.stdout
 
     switched = run("--to", "pcb1-01-v2_20260815-1000_" + config_id(CONFIG),
-                   "--by", "이길준", "--reason", "시험")
+                   "--by", "에이전트 담당", "--reason", "시험")
     assert switched.returncode == 0, switched.stderr[-500:]
     assert current_bank("pcb1-01", root=tmp_path).version == "pcb1-01-v2"
     assert "되돌리려면" in switched.stdout, "원복 명령을 함께 찍어야 한다"
 
-    missing = run("--to", "v9_20260101-0000_abcdef", "--by", "이길준", "--reason", "시험")
+    missing = run("--to", "v9_20260101-0000_abcdef", "--by", "에이전트 담당", "--reason", "시험")
     assert missing.returncode == 1, "없는 판을 가리키면 실패해야 한다"
 
 
@@ -415,16 +415,16 @@ def test_a_rollback_is_recorded_as_one(tmp_path):
     v1 = "pcb1-01-v1_20260816-0900_" + config_id(CONFIG)
     v2 = "pcb1-01-v2_20260816-1000_" + config_id(CONFIG)
 
-    record_decision("pcb1-01", v2, by="이길준", reason="뱅크 오염 조치",
+    record_decision("pcb1-01", v2, by="에이전트 담당", reason="뱅크 오염 조치",
                     root=tmp_path, previous=v1, at=datetime(2026, 8, 16, 10, 30))
-    back = record_decision("pcb1-01", v1, by="이길준", reason="과검 증가",
+    back = record_decision("pcb1-01", v1, by="에이전트 담당", reason="과검 증가",
                            root=tmp_path, previous=v2, at=datetime(2026, 8, 16, 15, 0))
 
     assert back.rollback is True, "판 번호가 낮아졌으면 되돌린 것이다"
 
     history = read_decisions("pcb1-01", root=tmp_path)
     assert [d.rollback for d in history] == [False, True], "오래된 것이 앞이어야 한다"
-    assert history[0].by == "이길준" and history[0].reason == "뱅크 오염 조치"
+    assert history[0].by == "에이전트 담당" and history[0].reason == "뱅크 오염 조치"
 
 
 def test_the_log_only_grows(tmp_path):

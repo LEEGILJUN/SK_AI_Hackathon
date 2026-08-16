@@ -1357,7 +1357,7 @@ def _settings_html(outcome: RunOutcome) -> str:
     안 보이면 "누가 정한 숫자인가"를 물을 수조차 없다.
 
     **조절은 판정 임계값 하나뿐이다.** 게이트 통과 기준과 판정 기준은
-    `data/gate.yaml` · `data/criteria.yaml` 에서 오고 장영진 소유이며, 그
+    `data/gate.yaml` · `data/criteria.yaml` 에서 오고 도메인 담당 소유이며, 그
     파일들의 규칙이 **값마다 근거를 함께 적는 것**이다. 화면에서 즉석으로
     바꾸면 근거 없는 숫자가 되어 그 규칙이 무너진다.
 
@@ -1384,12 +1384,12 @@ def _settings_html(outcome: RunOutcome) -> str:
     if gate is not None:
         for check in gate.checks:
             # `improvement` 는 빼놓는다. 그 기준값은 사람이 정한 설정이 아니라
-            # **이전 뱅크의 실측 AUROC** 라, 설정값 표에 넣으면 장영진이 정한
+            # **이전 뱅크의 실측 AUROC** 라, 설정값 표에 넣으면 도메인 담당이 정한
             # 숫자로 읽힌다. 게이트 단계 표에는 그대로 남아 있다.
             if check.name == "improvement":
                 continue
             rows += row(ROW_LABEL_KO.get(check.name, check.name),
-                        str(check.threshold), "fixed", "data/gate.yaml · 장영진")
+                        str(check.threshold), "fixed", "data/gate.yaml · 도메인 담당")
 
     if not rows:
         return ""

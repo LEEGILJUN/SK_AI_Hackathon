@@ -95,7 +95,7 @@ SCHEMA_TEMPLATE = ("line_02", "capsules")
 def test_only_the_schema_template_disagrees(factory_lines, scenario_targets):
     """채점 기준이 공장 구성과 같다. 예외는 스키마 예시 하나뿐이다.
 
-    **`data/scenarios.yaml` 은 고치지 않는다**(장영진 소유의 채점 기준).
+    **`data/scenarios.yaml` 은 고치지 않는다**(도메인 담당 소유의 채점 기준).
     어긋나는 것이 하나 더 생기면 여기서 잡아 알려 줄 뿐이다.
     """
     mismatched = sorted(

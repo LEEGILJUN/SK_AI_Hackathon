@@ -29,7 +29,7 @@ def _real():
 def test_the_schema_example_is_not_a_scenario():
     """예시는 채점 대상이 아니다.
 
-    장영진이 "예시 1건 — 아래 형식을 그대로 복제해 나머지를 채웁니다" 라고
+    도메인 담당이 "예시 1건 — 아래 형식을 그대로 복제해 나머지를 채웁니다" 라고
     적어 둔 골격이고, 대상 라인·품목이 공장 구성에 없어 생성기도 걸러 낸다.
     """
     examples = [s for s in SCENARIOS if s["id"].startswith("SC-TEMPLATE")]
