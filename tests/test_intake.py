@@ -72,3 +72,49 @@ def test_a_lot_is_not_mistaken_for_a_product():
     assert find_product_id(
         "A-217 로트의 PCB1-LOT-AAJ-img_0087 이 빠집니다."
     ) == "PCB1-LOT-AAJ-img_0087"
+
+
+def test_모델이_자연어를_담아와도_식별자로_맞춘다():
+    """**모델은 명세를 안 지킨다.** 도구 명세에 "라인 ID(예: line_01). 1라인
+    같은 말이 아니다" 라고 적어 두었는데도 `1라인`·`PCB 기판` 을 담아 왔다.
+
+    그대로 두면 뱅크 조회가 정확한 문자열 일치라 `None` 이 되고 2단계에서
+    멈춘다. 실측에서 그랬다. 지금까지 완주한 것은 모델이 도구 인자에는
+    정규 ID 를 넘겼기 때문이지 이 값이 맞아서가 아니었다.
+    """
+    from agents.intake import normalize, IssueReport
+    from lookup.base import ImageRecord
+
+    class _Lookup:
+        def find_images(self, line=None, object_name=None, lot=None,
+                        product_id=None, limit=50):
+            table = {"line_01": "pcb1", "line_02": "pcb2"}
+            if line not in table:
+                return []
+            return [ImageRecord(product_id="P-1", line=line,
+                                object_name=table[line], path="x.png")]
+
+    lookup = _Lookup()
+    for raw_line, raw_object, line, obj in [
+        ("1라인", "PCB 기판", "line_01", "pcb1"),
+        ("1번 라인", "기판", "line_01", "pcb1"),
+        ("line 1", None, "line_01", "pcb1"),
+        ("2라인", "PCB", "line_02", "pcb2"),
+        ("line_01", "pcb1", "line_01", "pcb1"),      # 이미 맞으면 그대로
+    ]:
+        report = IssueReport(raw_text="")
+        report.line, report.object_name = raw_line, raw_object
+        normalize(report, lookup)
+        assert report.line == line, f"{raw_line} → {report.line}"
+        assert report.object_name == obj, f"{raw_object} → {report.object_name}"
+
+
+def test_라인을_못_정하면_비우고_되묻는다():
+    """**추측하지 않는다.** 번호가 없으면 어느 라인인지 정할 근거가 없다."""
+    from agents.intake import normalize, IssueReport
+
+    report = IssueReport(raw_text="")
+    report.line, report.object_name = "스크래치 라인", "PCB"
+    normalize(report, None)
+    assert report.line is None
+    assert report.object_name is None

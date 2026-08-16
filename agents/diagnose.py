@@ -425,7 +425,7 @@ def decide(
         quality_detail = next((e.detail for e in evidence if e.item_no == 2), "")
         result.reasoning = (
             f"{quality_detail} 화질이 기준을 벗어난 상태에서는 이상 점수와 최근접 패치가 "
-            f"모두 신뢰할 수 없는 값이 되므로, 뱅크를 건드리기 전에 설비를 먼저 확인해야 한다."
+            f"모두 신뢰할 수 없는 값이 되므로, 뱅크를 건드리기 전에 설비를 먼저 확인해야 합니다."
         )
         _finalize(result)
         return result
@@ -463,7 +463,7 @@ def decide(
         result.reasoning = (
             f"최근접 정상 패치를 되짚었더니 {nearest_detail} 였고, 그 패치를 판독한 결과 "
             f"실제로는 결함이었다({patch_detail}). 정상으로 등록되어 뱅크에 들어간 결함이 "
-            f"같은 유형의 불량을 정상으로 끌어당기고 있다."
+            f"같은 유형의 불량을 정상으로 끌어당기고 있습니다."
         )
         _finalize(result)
         return result
@@ -492,7 +492,7 @@ def decide(
                 result.confidence = "high"
             result.needs_human = False
             result.reasoning = (
-                f"최근접 패치는 진짜 정상품이고 현재 조건도 뱅크에 있다. "
+                f"최근접 패치는 진짜 정상품이고 현재 조건도 뱅크에 있습니다. "
                 f"임계값 스윕 결과: {sweep.reason}"
             )
             _finalize(result)
@@ -528,7 +528,7 @@ def decide(
             result.needs_human = True
             criteria_detail = next((e.detail for e in evidence if e.item_no == 7), "")
             result.reasoning = (
-                f"최근접 패치는 진짜 정상품이고 현재 조건도 뱅크에 있다. "
+                f"최근접 패치는 진짜 정상품이고 현재 조건도 뱅크에 있습니다. "
                 f"판정 기준으로는 명백한 불량인데({criteria_detail}) 이상 점수가 "
                 f"임계값에 못 미쳤으므로 검출 문턱의 문제다. 다만 임계값 스윕 없이는 "
                 f"과검률 대가를 제시할 수 없어 확정하지 않는다."
@@ -544,7 +544,7 @@ def decide(
             result.reasoning = (
                 f"최근접 패치가 진짜 정상품이고 형상이 유사하다. 판정 기준으로도 "
                 f"불량이라 하기 어려운 상태이므로({criteria_detail}) 임계값을 내려도 "
-                f"과검만 늘고 이 결함은 계속 정상 쪽에 남는다. 뱅크 재구성은 효과가 없다."
+                f"과검만 늘고 이 결함은 계속 정상 쪽에 남습니다. 뱅크 재구성은 효과가 없습니다."
             )
             _finalize(result)
             return result
@@ -555,9 +555,9 @@ def decide(
             result.confidence = "low"
             result.needs_human = True
             result.reasoning = (
-                "최근접 패치는 진짜 정상품이고 이상 점수가 임계값 바로 아래에 있다. "
+                "최근접 패치는 진짜 정상품이고 이상 점수가 임계값 바로 아래에 있습니다. "
                 "임계값 조정으로 해결될 여지가 있으나, 판정 기준도 임계값 스윕도 없어 "
-                "점수 위치 하나로 판단한 것이라 확신도가 낮다."
+                "점수 위치 하나로 판단한 것이라 확신도가 낮습니다."
             )
             _finalize(result)
             return result
@@ -568,7 +568,7 @@ def decide(
         result.reasoning = (
             "최근접 패치가 진짜 정상품이고 형상이 유사하며, 이상 점수가 임계값에 크게 "
             "못 미친다. 정상 분포와 겹쳐 거리 기반으로는 구분되지 않는 상태로 보인다. "
-            "임계값 스윕으로 과검률 대가를 산출해 확정해야 한다."
+            "임계값 스윕으로 과검률 대가를 산출해 확정해야 합니다."
         )
         _finalize(result)
         return result

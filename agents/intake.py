@@ -191,6 +191,61 @@ def find_product_id(text: str) -> str | None:
     return (cued or plain or [None])[0]
 
 
+#: 라인 이름에서 번호만 뽑는다. `1라인`·`라인 1`·`1번 라인`·`line 1`·`L1`
+#: 이 전부 같은 것을 가리킨다.
+_LINE_NUMBER = re.compile(r"(?:line|라인|l)\s*_?\s*0*(\d{1,2})|0*(\d{1,2})\s*(?:번\s*)?(?:라인|line)",
+                          re.IGNORECASE)
+
+
+def _is_identifier(value: str | None) -> bool:
+    """조회 계층이 그대로 쓸 수 있는 식별자인가.
+
+    식별자는 ASCII 소문자·숫자·밑줄뿐이다. `PCB 기판`·`1라인` 처럼 사람이
+    부르는 말은 여기서 걸린다.
+    """
+    return bool(value) and re.fullmatch(r"[a-z][a-z0-9_]*", value or "") is not None
+
+
+def normalize(report: IssueReport, lookup: LookupLayer | None = None) -> IssueReport:
+    """모델이 뽑은 값을 조회 계층이 쓸 수 있는 식별자로 맞춘다.
+
+    **모델은 명세를 안 지킨다.** 도구 명세에 "라인 ID(예: line_01). 1라인
+    같은 말이 아니다" 라고 적어 두었는데도 `1라인`·`PCB 기판` 을 담아 왔다.
+    명세를 더 세게 적는 것으로는 안 되고, 받는 쪽이 맞춰야 한다.
+
+    그대로 두면 두 가지가 깨진다.
+
+      화면에 `PCB 기판` 이 찍힌다        심사위원이 물으면 답할 것이 없다
+      이력 그래프를 자연어로 조회한다     중복 차단이 제 역할을 못 한다
+
+    그리고 **뱅크 조회는 정확한 문자열 일치라 `None` 이 된다.** 실측에서
+    자연어를 넣으면 2단계에서 멈췄다. 지금까지 완주한 것은 모델이 도구
+    인자에는 정규 ID 를 넘겼기 때문이지 이 값이 맞아서가 아니다.
+
+    **추측하지 않는다.** 라인은 번호만 뽑아 형식을 맞추는 것이고, 품목은
+    그 라인의 이미지를 실제로 조회해서 얻는다. 어느 쪽도 못 정하면 비워
+    두고 되묻는다.
+    """
+    if not _is_identifier(report.line) and report.line:
+        match = _LINE_NUMBER.search(report.line)
+        number = next((g for g in (match.groups() if match else ()) if g), None)
+        report.line = f"line_{int(number):02d}" if number else None
+
+    if not _is_identifier(report.object_name):
+        # **조회해서 얻는다.** 라인마다 품목이 정해져 있으므로 그 라인의
+        # 이미지를 한 장 찾으면 품목이 따라 나온다. 매핑을 여기 적어 두면
+        # 공장 데이터와 두 벌이 되고 한쪽만 고쳐진다.
+        found = None
+        if lookup is not None and report.line:
+            try:
+                records = lookup.find_images(line=report.line, limit=1)
+                found = records[0].object_name if records else None
+            except Exception:
+                found = None
+        report.object_name = found
+    return report
+
+
 def receive(
     text: str,
     adapter: ModelAdapter,
@@ -215,6 +270,10 @@ def receive(
     """
     report = extract(text, adapter)
 
+    normalize(report, lookup)
+
+    # 사람이 고른 값은 정규화 뒤에 덮는다. 양식에서 직접 고른 것이라
+    # 모델 추출보다 정확하고, 다시 손댈 이유가 없다.
     for key, value in (known or {}).items():
         if value and hasattr(report, key):
             setattr(report, key, value)
