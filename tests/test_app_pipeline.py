@@ -390,7 +390,10 @@ def test_simulator_is_absent_when_there_was_no_shadow_run(factory):
                   adapters=(ScriptedLLM([("intake_issue", {})]), StubAdapter()))
     html = render_page(outcome, outcome.issue_text)
     assert outcome.shadow is None
-    assert "코어셋 검증 — 가상 라인" not in html
+    # **부정 단언이라 더 조심해야 한다.** 문구로 잡아 두면 제목을 다듬는
+    # 순간 단언이 항상 참이 되어, 시뮬레이터가 떠도 시험이 통과한다.
+    # 379행 짝과 같은 것을 보게 블록으로 잡는다.
+    assert 'id="block-simulator"' not in html
 
 
 # ── 온톨로지 · 진단 근거 · 조회 방식 ────────────────────────────────────
