@@ -313,7 +313,7 @@ def collect_evidence(
         if unknown:
             detail_6 += f". 기록이 없어 못 본 축: {', '.join(unknown)}"
         if bank_profile.is_estimated:
-            detail_6 += " (폴더 스캔으로 역추정한 이력 — 추정)"
+            detail_6 += " (폴더 스캔으로 역추정한 이력, 추정)"
 
     items.append(
         Evidence(

@@ -206,7 +206,7 @@ def evaluate_gate(
         )
     else:
         failed = ", ".join(f"{c.name}({c.value} vs 기준 {c.threshold})" for c in checks if not c.passed)
-        reason = f"통과하지 못했다 — {failed}."
+        reason = f"통과하지 못했다: {failed}."
 
     return GateResult(passed=passed, checks=checks, reason=reason, candidate_version=candidate_version)
 

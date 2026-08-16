@@ -1021,7 +1021,7 @@ class _DemoSession:
                 or [("갈린 건", "없음")],
                 note=(
                     (f"미검 {len(self_matched)}건은 최근접 정상 패치의 출처가 "
-                     f"자기 자신입니다 — 그 이미지가 뱅크 구성에 쓰였다는 뜻이고, "
+                     f"자기 자신입니다. 그 이미지가 뱅크 구성에 쓰였다는 뜻이고, "
                      f"뱅크 오염의 가장 뚜렷한 흔적입니다. 진단 대표로는 뽑지 "
                      f"않습니다. ") if self_matched else ""
                 ) + "사람이 개입하지 않습니다. 처리 과정을 보는 화면입니다.",
@@ -1168,7 +1168,7 @@ class _DemoSession:
                     + ("7번 면적은 이 뱅크의 자리별 정상 기준선 대비로 쟀습니다 "
                        "(단위: 자리별 변동 폭의 배수)."
                        if self.area_basis != "raw" else
-                       "**7번 면적에 기준선이 없어 예전 방식으로 쟀습니다** — 품목마다 "
+                       "**7번 면적에 기준선이 없어 예전 방식으로 쟀습니다.** 품목마다 "
                        "뜻이 달라 판정 기준과 대조할 수 없는 값입니다.")
                 ),
             )
@@ -1526,7 +1526,7 @@ class _DemoSession:
                 key="release",
                 title="10. 승인 요청",
                 status="done",
-                headline="배포 대기 — 자동 반영 없음",
+                headline="배포 대기. 자동 반영 없음",
                 detail=f"승인 요청 문서를 생성했습니다. 재현성 {reproducibility.runs}회 "
                        f"{'일치' if reproducibility.identical else '불일치'}.",
                 rows=[("배포 승인", "아니오 (사람이 결정)"),
@@ -1579,18 +1579,18 @@ def _replay_fixed_sequence(session: _DemoSession, registry: ToolRegistry) -> Age
     도구가 앞 단계를 요구하며 실패하면 거기서 멈춘다. 실패를 삼키고 계속
     가면 화면에 빈 칸이 생기고 왜 비었는지 알 수 없게 된다.
     """
-    run = AgentRun(prompt="(고정 순서 — 언어 모델 미연결)")
+    run = AgentRun(prompt="(고정 순서, 언어 모델 미연결)")
     for index, (name, arguments) in enumerate(FALLBACK_SEQUENCE, start=1):
         result = registry.execute(ToolCall(id=f"fixed-{index}", name=name, arguments=dict(arguments)))
         run.tool_results.append(result)
         run.steps = index
         if not result.ok:
-            run.stopped_reason = f"{name} 에서 멈췄다 — {result.error}"
+            run.stopped_reason = f"{name} 에서 멈췄다: {result.error}"
             return run
         # 도구가 "여기서 멈춘다"고 하면 따른다. 재구성이 답이 아닌 원인이 그렇다.
         nxt = result.output.get("next", "") if isinstance(result.output, dict) else ""
         if "멈춘다" in nxt or "중단" in nxt:
-            run.stopped_reason = f"{name} 이후 진행하지 않았다 — {nxt}"
+            run.stopped_reason = f"{name} 이후 진행하지 않았다: {nxt}"
             return run
     run.stopped_reason = "고정 순서를 끝까지 실행했다."
     return run

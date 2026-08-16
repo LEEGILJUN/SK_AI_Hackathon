@@ -294,7 +294,7 @@ def write_approval_document(
             "그대로 승인하실 경우 근거를 남겨 주세요.\n"
         )
         for check in gate.failures:
-            parts.append(f"- {check.name}: {check.value} (기준 {check.threshold}) — {check.detail}")
+            parts.append(f"- {check.name}: {check.value} (기준 {check.threshold}): {check.detail}")
         parts.append("")
 
     parts.append("승인하시면 아래를 수동으로 진행합니다. **자동 반영은 없습니다.**\n")
