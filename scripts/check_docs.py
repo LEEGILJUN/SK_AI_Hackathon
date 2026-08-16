@@ -174,6 +174,13 @@ def check_test_counts(actual: int | None) -> None:
                 if match.group(1) is None and other.search(line):
                     continue
                 value = int(number)
+                # **한 줄에 수집 건수와 통과 건수를 같이 적는 것이 맞다.**
+                # "435건 가운데 430건을 통과하고 5건을 건너뛰었습니다" 에서
+                # 430 은 통과 수이지 전체가 아니다. 같은 줄에 전체 건수가
+                # 이미 있으면 나머지 숫자는 그 내역이므로 세지 않는다.
+                # 이걸 안 두면 정확한 문장을 비틀어야 검사를 통과한다.
+                if value != actual and re.search(rf"{actual}\s*건", line):
+                    continue
                 if value < 20 or value > 5000:
                     continue
                 if value != actual:
