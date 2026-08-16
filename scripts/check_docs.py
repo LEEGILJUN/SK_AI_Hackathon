@@ -165,6 +165,11 @@ def check_test_counts(actual: int | None) -> None:
     other = re.compile(r"시나리오|이미지|장\b|작업|케이스|커밋|이슈|로트")
 
     for doc in documents():
+        # **낸 문서와 실측 기록은 그때의 숫자가 맞다.** 제출본을 지금 값으로
+        # 고치면 무엇을 제출했는지 알 수 없게 되고, 실험 기록을 고치면 언제
+        # 잰 것인지가 사라진다. 둘 다 낡는 것이 아니라 시점을 적은 것이다.
+        if doc.name == "기획서.md" or doc.name.startswith("실험_"):
+            continue
         text = doc.read_text(encoding="utf-8")
         for line_no, line in enumerate(text.split("\n"), 1):
             for match in near.finditer(line):

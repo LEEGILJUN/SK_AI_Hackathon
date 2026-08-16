@@ -44,6 +44,11 @@ BLOCKERS: list[tuple[str, str]] = [
 #: 걸려도 되는 것. 검사기 자신과 예시·규칙 문서다.
 ALLOWED = (
     "scripts/check_public.py",
+    # **이 시험의 일이 가짜 유출 경로를 담는 것이다.** 사용자 경로가 승인
+    # 문서에 찍히지 않는지 재려면 그 모양의 문자열이 있어야 한다. 이름은
+    # someuser·otheruser 처럼 지어낸 것만 쓴다 — 진짜 사번을 넣었다가
+    # 4090 에서 이 검사에 잡힌 적이 있다.
+    "tests/test_release.py",
     "noreply@anthropic.com",
     "example.com",
 )

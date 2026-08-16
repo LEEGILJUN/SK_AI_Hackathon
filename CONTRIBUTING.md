@@ -11,9 +11,9 @@
 
 | | 채울 파일 | 웹 클로드에 붙여넣을 자료 |
 |---|---|---|
-| **장영진** | `data/scenarios.yaml`<br>`data/criteria.yaml`<br>`data/quality_baseline.yaml` | [`examples/웹클로드에_붙여넣기_시나리오.md`](examples/웹클로드에_붙여넣기_시나리오.md) |
-| **이동현** | `data/build_factory.py`<br>`data/manifest.csv`, `mes.csv`<br>`lookup/` 실구현 | [`examples/웹클로드에_붙여넣기_가상공장.md`](examples/웹클로드에_붙여넣기_가상공장.md) |
-| **이길준** | `agents/`, `inspection/`, `app/` | — |
+| **도메인 담당** | `data/scenarios.yaml`<br>`data/criteria.yaml`<br>`data/quality_baseline.yaml` | [`examples/웹클로드에_붙여넣기_시나리오.md`](examples/웹클로드에_붙여넣기_시나리오.md) |
+| **데이터 담당** | `data/build_factory.py`<br>`data/manifest.csv`, `mes.csv`<br>`lookup/` 실구현 | [`examples/웹클로드에_붙여넣기_가상공장.md`](examples/웹클로드에_붙여넣기_가상공장.md) |
+| **에이전트 담당** | `agents/`, `inspection/`, `app/` | — |
 
 **나머지 코드는 안 읽으셔도 됩니다.** 형식만 맞으면 알아서 붙습니다.
 
