@@ -79,11 +79,11 @@ _VALUE_RE = re.compile(
 
 #: 표 왼쪽 칸에 영어 식별자로 나오던 것. 게이트 지표 이름이 대부분이다.
 ROW_LABEL_KO: dict[str, str] = {
-    "detection_rate": "검출률 — 불량을 실제로 잡는 비율",
-    "false_positive_rate": "과검률 — 양품을 불량이라 하는 비율",
-    "auroc": "분리도(AUROC) — 임계값과 무관한 구분 능력",
-    "newly_missed": "새로 놓친 건수 — 전에는 잡던 것을 못 잡게 된 수",
-    "improvement": "개선 폭 — 고치려던 문제가 나아졌는가",
+    "detection_rate": "검출률 (불량을 실제로 잡는 비율)",
+    "false_positive_rate": "과검률 (양품을 불량이라 하는 비율)",
+    "auroc": "분리도 AUROC (임계값과 무관한 구분 능력)",
+    "newly_missed": "새로 놓친 건수 (전에는 잡던 것을 못 잡게 된 수)",
+    "improvement": "개선 폭 (이전 뱅크보다 나아졌는가)",
 }
 
 #: 과제 고유 용어의 한 줄 풀이. 물음표 표시로 붙는다.
@@ -96,7 +96,7 @@ TERM_KO: dict[str, str] = {
     "코어셋": "뱅크에서 서로 먼 것만 추려 크기를 줄인 것. 전부 담으면 느려서 대표만 남긴다",
     "역추적": "미검출 이미지가 뱅크의 어느 정상 패치와 가까웠는지 되돌아 찾는 것",
     "패치": "이미지를 격자로 자른 칸 하나",
-    "섀도": "새 뱅크를 실제 판정에 쓰지 않고 같은 이미지에 나란히 돌려 판정이 갈리는 것만 뽑는 검증",
+    "섀도": "새 뱅크를 실제 판정에 쓰지 않고 같은 이미지에 나란히 돌려, 판정이 서로 다른 것만 뽑는 검증",
     "홀드아웃": "학습에 안 쓰고 남겨 둔 이미지. 성능을 재는 데 쓴다",
     "게이트": "새 뱅크를 배포 후보로 넘길지 정하는 통과 기준",
     "미검": "불량인데 양품으로 판정한 것. 이 과제가 다루는 문제",
@@ -573,25 +573,25 @@ OPEN_STAGES = {"evidence", "diagnose"}
 #: 값은 (단계 key, 짧은 이름, 이 단계가 무엇을 하는가 한 줄).
 STEP_NAMES: dict[str, tuple[str, str, str]] = {
     "intake_issue": ("intake", "인테이크",
-                     "올라온 글에서 라인·품목을 뽑고, 정보가 모자라면 되묻는다"),
+                     "올라온 글에서 라인·품목을 뽑고, 정보가 모자라면 되묻습니다"),
     "lookup_mes": ("mes", "MES 조회",
-                   "제품명·로트로 검사할 이미지를 찾고 그 품목의 뱅크를 확인한다"),
+                   "제품명·로트로 검사할 이미지를 찾고, 그 품목의 뱅크를 확인합니다"),
     "run_inspection": ("inspect", "추론",
-                       "찾은 이미지를 뱅크로 판정해 미검·과검을 가려낸다"),
+                       "찾은 이미지를 뱅크로 판정해 미검·과검을 가려냅니다"),
     "run_checks": ("evidence", "판별 7항목",
-                   "원인을 구분하기 위한 일곱 가지를 잰다"),
+                   "원인을 구분하기 위한 일곱 가지를 측정합니다"),
     "diagnose_issue": ("diagnose", "진단",
-                       "일곱 가지를 모아 원인 6종 중 하나로 규명한다"),
+                       "일곱 가지를 모아 원인 6종 중 하나로 규명합니다"),
     "plan_curation": ("curate", "큐레이션",
-                      "뱅크에서 무엇을 빼고 무엇을 채울지 정한다"),
+                      "뱅크에서 무엇을 빼고 무엇을 채울지 정합니다"),
     "rebuild_bank": ("rebuild", "재구성",
-                     "계획대로 새 뱅크를 만든다. 배포하지 않는다"),
+                     "계획대로 새 뱅크를 만듭니다. 배포하지 않습니다"),
     "evaluate_gate": ("gate", "게이트",
-                      "새 뱅크가 배포 후보가 될 만한지 기준과 대조한다"),
+                      "새 뱅크가 배포 후보가 될 만한지 기준과 대조합니다"),
     "shadow_compare": ("shadow", "섀도",
-                       "새 뱅크를 판정에 쓰지 않고 나란히 돌려 갈린 것만 뽑는다"),
+                       "새 뱅크를 판정에 쓰지 않고 나란히 돌려, 판정이 서로 다른 것만 뽑습니다"),
     "prepare_release": ("release", "승인 요청",
-                        "배포 패키지와 승인 요청 문서를 만든다. 배포는 사람이 한다"),
+                        "배포 패키지와 승인 요청 문서를 만듭니다. 배포는 사람이 결정합니다"),
 }
 
 #: 화면이 훑을 열 단계. (단계 key, 짧은 이름, 도구 이름).
@@ -730,13 +730,13 @@ def _halt_html(outcome: RunOutcome, views: list) -> str:
     by_design = last is not None and last[4] == "skipped"
 
     reason = outcome.agent_run.stopped_reason if outcome.agent_run else ""
-    failed = [f"{name} — {status}" for name, status in outcome.tool_trace
+    failed = [f"{name}: {status}" for name, status in outcome.tool_trace
               if status.startswith("실패")]
     rest = ", ".join(f"{v[0]}. {v[2]}" for v in pending)
 
     design_note = (
         "<p>재구성이 답이 아닌 원인이라 여기서 끝난 것입니다. "
-        "<strong>여섯 원인 중 넷은 뱅크를 다시 만드는 것이 답이 아닙니다</strong> — "
+        "<strong>여섯 원인 중 넷은 뱅크를 다시 만드는 것이 답이 아닙니다.</strong> "
         "멈춘 것이 결론이며 고장이 아닙니다.</p>"
         if by_design else ""
     )
@@ -749,7 +749,7 @@ def _halt_html(outcome: RunOutcome, views: list) -> str:
       {f'<p>{escape(reason)}</p>' if reason else ''}
       {design_note}
       {''.join(f'<p class="fail">{escape(f)}</p>' for f in failed)}
-      <p class="rest">{escape(f'남은 단계 — {rest}')}</p>
+      <p class="rest">{escape(f'남은 단계: {rest}')}</p>
     </div>
     """
 
@@ -839,7 +839,7 @@ def _taxonomy_html(outcome: RunOutcome) -> str:
     state = (
         f"이번 실행에서 모델이 {len(asked)}회 조회했습니다"
         if asked else
-        "이번 실행에서는 조회되지 않았습니다 — 물어볼 언어 모델이 없으면 부르지 않습니다"
+        "이번 실행에서는 조회되지 않았습니다. 물어볼 언어 모델이 없으면 부르지 않습니다"
     )
 
     rebuild_causes = [CAUSES[c].label for c in cause_names()
@@ -847,7 +847,7 @@ def _taxonomy_html(outcome: RunOutcome) -> str:
     return f"""
     <div class="evidence" id="block-taxonomy">
       <div class="ev-head">
-        <span class="stage-title">진단 지식 체계 — 무엇으로 갈리는가</span>
+        <span class="stage-title">원인 6종과 판별 기준</span>
         <span class="kind schema">스키마 조회</span>
       </div>
       <table class="tax">{rows}</table>
@@ -855,12 +855,12 @@ def _taxonomy_html(outcome: RunOutcome) -> str:
         원인 {len(cause_names())}종 중 <strong>뱅크 재구성이 답인 것은
         {len(rebuild_causes)}종뿐</strong>입니다({escape(", ".join(rebuild_causes))}).
         나머지는 다시 만들어도 해결되지 않거나 오히려 나빠집니다.
-        <strong>뱅크 오염과 정상 분포 중첩은 판별 5번 하나로 갈리고</strong>
-        조치가 정반대입니다 — 그래서 5번을 얻지 못하면 판정하지 않습니다.
+        <strong>뱅크 오염과 정상 분포 중첩은 판별 5번 하나로 구분되고</strong>
+        조치가 정반대입니다. 그래서 5번을 얻지 못하면 판정하지 않습니다.
       </p>
       <p class="note">
         언어 모델은 이 표를 <code>lookup_ontology</code> 도구로 <strong>읽을 수만</strong>
-        있습니다. <strong>이 조회는 원인을 정하지 않습니다</strong> — 판정은 판별
+        있습니다. <strong>이 조회는 원인을 정하지 않습니다.</strong> 판정은 판별
         7항목을 모아 <code>decide()</code> 가 규칙으로 냅니다. {escape(state)}.
       </p>
     </div>
@@ -879,7 +879,7 @@ def _ontology_html(outcome: RunOutcome) -> str:
     없고, 그러면 중복 차단이라는 역할도 못 맡긴다.
 
     역할이 좁은 것은 설계다. 과거 사례가 비슷하다고 이번 원인을 그것으로 정하면
-    진단이 유사도 맞히기가 된다. 그래프는 "이미 답이 나온 일인가"만 묻는다.
+    원인 규명이 아니라 유사 사례 찾기가 된다. 그래프는 "이미 답이 나온 일인가"만 묻는다.
     """
     intake = outcome.intake
     if intake is None or not intake.similar:
@@ -918,17 +918,17 @@ def _ontology_html(outcome: RunOutcome) -> str:
         """
 
     verdict_note = (
-        f"<strong>중복으로 끊었습니다</strong> — {escape(intake.duplicate_of or '')} 과 "
+        f"<strong>중복이라 여기서 끊었습니다.</strong> {escape(intake.duplicate_of or '')} 과 "
         f"같은 라인·같은 증상이며 이미 조치가 끝났습니다. 진단하지 않습니다."
         if blocked else
         "<strong>중복이 아니라 진행합니다.</strong> 유사도가 높은 건도 "
-        "<em>라인이 다릅니다</em> — 라인마다 뱅크가 따로이므로 1라인 뱅크가 "
-        "뱅크 오염됐다고 2라인도 그렇다는 뜻이 아닙니다. 관련 사례로만 넘깁니다."
+        "<em>라인이 다릅니다.</em> 라인마다 뱅크가 따로이므로 1라인 뱅크에 "
+        "오염이 있다고 2라인도 그렇다는 뜻이 아닙니다. 관련 사례로만 넘깁니다."
     )
     return f"""
     <div class="evidence" id="block-ontology">
       <div class="ev-head">
-        <span class="stage-title">이슈 이력 그래프 — 이미 답이 나온 일인가</span>
+        <span class="stage-title">이슈 이력 그래프 검색</span>
         <span class="kind graph">그래프 검색</span>
       </div>
       <div class="query-node">
@@ -941,8 +941,8 @@ def _ontology_html(outcome: RunOutcome) -> str:
       <p class="detail">{verdict_note}</p>
       <p class="note">
         진한 간선이 이번 이슈와 겹친 자리입니다. <strong>이 그래프는 원인을
-        정하지 않습니다</strong> — 과거가 비슷하다고 이번 원인을 그것으로 정하면
-        진단이 유사도 맞히기가 됩니다. 원인은 판별 7항목으로 매번 새로 규명합니다.
+        정하지 않습니다.</strong> 과거가 비슷하다고 이번 원인을 그것으로 정하면
+        원인 규명이 아니라 유사 사례 찾기가 됩니다. 원인은 판별 7항목으로 매번 새로 규명합니다.
       </p>
     </div>
     """
@@ -1052,15 +1052,15 @@ def _evidence_visual_html(outcome: RunOutcome) -> str:
     return f"""
     <div class="evidence" id="block-evidence">
       <div class="ev-head">
-        <span class="stage-title">진단 근거 — 모델이 어디를 보고 통과시켰나</span>
+        <span class="stage-title">진단 근거: 히트맵과 역추적 패치</span>
         <span class="sim-state">{escape(outcome.bank_version)}</span>
       </div>
       <div class="ev-grid">
         <div>
           <div class="ev-label">이상 점수 히트맵 · {grid_h}×{grid_w}</div>
           <div class="heat" style="grid-template-columns:repeat({grid_w},1fr)">{cells}</div>
-          <p class="hint">진할수록 정상에서 멀다. 테두리 친 칸이 가장 높은 자리이고,
-             아래 두 조각이 그 칸을 잘라낸 것이다.</p>
+          <p class="hint">진할수록 정상에서 멉니다. 테두리 친 칸이 가장 높은 자리이고,
+             아래 두 조각이 그 칸을 잘라낸 것입니다.</p>
         </div>
         <div class="wide">
           <div class="ev-label">이상 점수 · 임계값</div>
@@ -1075,8 +1075,8 @@ def _evidence_visual_html(outcome: RunOutcome) -> str:
             <em class="{'over' if verdict == '검출' else 'under'}">{verdict}</em>
           </p>
           <p class="hint">
-            임계값 아래라 양품으로 나갔습니다. <strong>점수가 낮다고 이상이
-            없는 것이 아닙니다</strong> — 어디가 이상한지는 히트맵이 압니다.
+            임계값 아래라 양품으로 판정됐습니다. <strong>점수가 낮다고 이상이
+            없는 것은 아닙니다.</strong> 어느 자리가 높았는지는 왼쪽 히트맵에 나타납니다.
           </p>
           {after}
         </div>
@@ -1218,7 +1218,7 @@ def _simulator_html(outcome: RunOutcome) -> str:
         <div class="bad"><b id="t-lost">0</b><span>새로 놓침</span></div>
         <div><b id="t-same">0</b><span>판정 동일</span></div>
       </div>
-      <div class="ev-label">판정이 갈린 건 — 사람이 확인할 목록</div>
+      <div class="ev-label">판정이 서로 다른 건 (사람이 확인할 목록)</div>
       <div class="flips" id="flips"></div>
       <p class="note" id="sim-note">
         흘러가는 판정은 전부 섀도 비교가 실제로 낸 값입니다. 화면은 그것을
@@ -1300,7 +1300,7 @@ def _simulator_html(outcome: RunOutcome) -> str:
       function finish() {{
         state.textContent = "검증 완료 \\u2014 사람 승인 대기";
         document.getElementById("sim-note").textContent =
-          "판정이 갈린 " + (caught + lost) + "장만 사람이 확인하면 됩니다. " +
+          "판정이 서로 다른 " + (caught + lost) + "장만 사람이 확인하면 됩니다. " +
           "나머지 " + same + "장은 두 뱅크가 같게 판정했습니다.";
       }}
 
@@ -1372,12 +1372,12 @@ def _settings_html(outcome: RunOutcome) -> str:
                 f'<td><span class="src {kind}">{escape(source)}</span></td></tr>')
 
     if outcome.threshold:
-        rows += row("판정 임계값 — 이 값을 넘으면 불량이라 판정한다",
+        rows += row("판정 임계값 (이 값을 넘으면 불량이라 판정)",
                     f"{outcome.threshold:.2f}", "editable", "화면에서 조절")
 
     shadow = outcome.shadow
     if shadow is not None and shadow.candidate_threshold:
-        rows += row("신규 뱅크의 임계값 — 전건을 잡는 지점으로 스윕이 계산했다",
+        rows += row("신규 뱅크의 임계값 (전건을 잡는 지점으로 스윕이 계산)",
                     f"{shadow.candidate_threshold:.2f}", "derived", "자동 계산")
 
     gate = outcome.gate
@@ -1443,34 +1443,33 @@ def _settings_html(outcome: RunOutcome) -> str:
     return f"""
     <div class="evidence" id="block-settings">
       <div class="ev-head">
-        <span class="stage-title">이 판정이 선 숫자들 — 어디서 온 값인가</span>
+        <span class="stage-title">판정 기준값과 출처</span>
         <span class="kind schema">설정값</span>
       </div>
       <table class="cfg">{rows}</table>
       <p class="detail">
         <strong>바꿀 수 있는 것은 판정 임계값 하나입니다.</strong> 게이트 통과
         기준은 <code>data/gate.yaml</code> 에서 오고 값마다 근거가 함께 적혀
-        있습니다 — 화면에서 즉석으로 바꾸면 근거 없는 숫자가 됩니다.
+        있습니다. 화면에서 즉석으로 바꾸면 근거 없는 숫자가 됩니다.
       </p>
       <p class="detail">
-        임계값을 바꿔 보시면 <strong>진단 결과가 달라집니다.</strong> 숨기지
-        않고 적습니다 — 다만 <strong>달라지는 이유가 판정이 흔들려서가
-        아닙니다.</strong> 임계값은 미검으로 걸리는 장수를 바꾸고, 그래서
+        임계값을 바꾸면 <strong>진단 결과가 달라집니다.</strong> 다만
+        <strong>달라지는 이유는 판정이 흔들려서가 아닙니다.</strong> 임계값은 미검으로 걸리는 장수를 바꾸고, 그래서
         <strong>진단 대상으로 뽑히는 이미지 자체가 바뀝니다.</strong> 다른
         이미지는 최근접 패치가 다르고, 그러면 원인도 당연히 다릅니다.
         <strong>입력이 바뀐 것이지 같은 것에 대한 답이 바뀐 것이 아닙니다.</strong>
       </p>
       <details class="supplement">
-        <summary>실측값 — 임계값을 옮기면 무엇이 달라지나</summary>
+        <summary>임계값별 실측 결과</summary>
         <table class="cfg">
           <tr><td>1.2</td><td>진단 미도달</td>
-              <td>미검 0장 · 과검 75장 — 볼 것이 없어 3단계에서 멈춥니다</td></tr>
+              <td>미검 0장, 과검 75장. 볼 것이 없어 3단계에서 멈춥니다</td></tr>
           <tr><td>1.8</td><td>판정 보류</td>
-              <td>미검 2장 — 결함이 이미지에서 확인되지 않아 원인을 판정하지 않음</td></tr>
+              <td>미검 2장. 결함이 이미지에서 확인되지 않아 원인을 판정하지 않음</td></tr>
           <tr><td>2.2</td><td>뱅크 오염</td>
-              <td>미검 3장 — 대표 이미지의 최근접 패치가 결함</td></tr>
+              <td>미검 3장. 대표 이미지의 최근접 패치가 결함</td></tr>
           <tr><td>3.0</td><td>임계값 문제</td>
-              <td>미검 12장 — <span class="pend">어느 경로로 이 원인이 됐는지는
+              <td>미검 12장. <span class="pend">어느 경로로 이 원인이 됐는지는
                   확인 중입니다</span></td></tr>
         </table>
         <p class="hint">{escape(measured)} · 자세한 것은
@@ -1478,15 +1477,15 @@ def _settings_html(outcome: RunOutcome) -> str:
         <p class="hint">
           <strong>1.2 와 1.8 은 둘 다 멈췄지만 이유가 다릅니다.</strong>
           1.2 는 과검이 86%라 진단할 미검이 없어서, 1.8 은 미검을 찾았는데
-          그 이미지에서 결함이 확인되지 않아서입니다. 둘 다 고장이 아니라
-          <strong>모르면 멈춘다</strong>가 서로 다른 자리에서 나타난 것입니다.
+          그 이미지에서 결함이 확인되지 않아서입니다. 둘 다 고장이 아닙니다. <strong>근거가 모자라면 판정하지 않는다</strong>는
+          규칙이 서로 다른 자리에서 나타난 것입니다.
         </p>
       </details>
       <p class="note">
         임계값을 내리면 미검은 줄고 <strong>과검이 늘어납니다.</strong> 올리면
         반대입니다. 어느 쪽으로 옮겨도 <strong>뱅크에 섞여 들어간 결함은 섞인
-        채</strong>이고, 증상이 옮겨 다닐 뿐입니다 — <strong>임계값 조절로
-        풀리는 문제가 아니라는 것이 이 서비스가 있는 이유</strong>입니다.
+        채</strong>이고, 증상이 옮겨 다닐 뿐입니다. <strong>임계값 조절로 풀리는 문제가
+        아니라는 것이 이 서비스가 있는 이유</strong>입니다.
       </p>
     </div>
     """
@@ -1516,7 +1515,7 @@ def _driver_html(outcome: RunOutcome) -> str:
     stopped = outcome.agent_run.stopped_reason if outcome.agent_run else ""
     return f"""
     <div class="banner{'' if by_model else ' warn'}">
-      <strong>{escape(label)}</strong> — {escape(outcome.driver_note)}
+      <strong>{escape(label)}.</strong> {escape(outcome.driver_note)}
       {f'<table>{trace}</table>' if trace else ''}
       {f'<p class="note">{escape(stopped)}</p>' if stopped else ''}
     </div>
@@ -1561,10 +1560,10 @@ def _veil_html(on_visa: bool) -> str:
     <div class="veil" id="veil">
       <div class="veil-box">
         <h2><span class="spin"></span>실행 중입니다</h2>
-        <p><strong>고장이 아닙니다.</strong> 열 단계가 한 번에 돌고 있고,
-           다 끝나야 화면이 뜹니다.</p>
+        <p><strong>고장이 아닙니다.</strong> 열 단계가 이어서 실행되고 있습니다.
+           전부 끝나야 결과 화면이 나타납니다.</p>
         <ol class="rail">{steps}</ol>
-        <p class="hint">지금 몇 번째인지는 표시하지 않습니다 — 단계별 신호를
+        <p class="hint">지금 몇 번째인지는 표시하지 않습니다. 단계별 신호를
            받으려면 파이프라인을 고쳐야 하고, <strong>모르는 것을 아는 척하는
            진행 막대는 만들지 않습니다.</strong></p>
         <div class="elapsed" id="elapsed">0:00</div>
@@ -1661,7 +1660,7 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
     question = outcome.intake.question if asked else ""
     supplement = f"""
     <details class="supplement"{' open' if asked else ''}>
-      <summary>{escape('인테이크가 되물었습니다 — 값을 채워 주세요' if asked
+      <summary>{escape('인테이크가 되물었습니다. 값을 채워 주세요' if asked
                        else '보충 입력 (모델이 원문에서 못 뽑을 때만 필요)')}</summary>
       {f'<p class="ask">{escape(question)}</p>' if question else ''}
       <p class="hint">
@@ -1802,12 +1801,12 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
                placeholder="비우면 기본값 {DEFAULT_THRESHOLD}">
         <span class="hint">
           이 값을 넘으면 불량입니다. <strong>내리면 미검은 줄고 과검이 늡니다.</strong>
-          원인 판정까지 따라 바뀌는지는 아래 설정값 표에 적어 두었습니다.
+          원인 판정까지 따라 바뀌는지는 아래 「판정 기준값과 출처」에 적어 두었습니다.
         </span>
       </div>
     </div>
     <p class="nostop">
-      ⚠ 한 번 시작하면 중단할 수 없습니다 — 열 단계가 끝까지 실행되고, 그동안
+      ⚠ 한 번 시작하면 중단할 수 없습니다. 열 단계가 끝까지 실행되고, 그동안
       화면은 기다립니다. {escape(run_cost)}
     </p>
     {supplement}
