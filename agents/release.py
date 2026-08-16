@@ -57,6 +57,50 @@ class ReleasePackage:
         }
 
 
+#: 이 파일 기준 저장소 뿌리. `agents/release.py` 의 두 단계 위다.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def display_path(path: str | Path) -> str:
+    """승인 문서에 적을 경로. **저장소 기준 상대경로로 줄인다.**
+
+    절대경로를 그대로 쓰면 사용자명과 전체 폴더 구조가 문서에 박힌다.
+    실측에서 `C:\\Users\\<사번>\\Desktop\\...` 이 승인 요청 문서에 찍혀
+    나갔고, 하필 그 화면이 시연에서 보여주는 자리였다.
+
+    승인자가 열어야 하는 것은 저장소 안의 폴더이므로 상대경로로 충분하다.
+    저장소 밖이면 마지막 두 조각만 남긴다. 그것도 아니면 이름만 쓴다.
+    """
+    p = Path(path)
+    shown = None
+    try:
+        shown = p.resolve().relative_to(_REPO_ROOT).as_posix()
+    except ValueError:
+        pass
+    # **시연은 윈도우에서 돌고 시험은 맥에서 돈다.** 맥의 `Path` 는 역슬래시를
+    # 구분자로 보지 않아 `C:\Users\...` 를 통째로 한 조각으로 읽는다. 그러면
+    # 아래 "마지막 두 조각" 이 경로 전체가 되어 사용자명이 그대로 남는다.
+    if "\\" in str(p) and "/" not in str(p):
+        p = Path(str(p).replace("\\", "/"))
+    # 저장소 안이어도 사용자 폴더를 거쳐 들어온 경로가 있을 수 있고,
+    # 다른 운영체제의 경로 문자열이 섞여 들어오면 위 계산이 통하지 않는다.
+    # **어느 쪽이든 사용자명이 남으면 쓰지 않는다.**
+    if shown is None or _looks_personal(shown):
+        parts = p.parts[-2:]
+        shown = Path(*parts).as_posix() if parts else p.name
+    return shown
+
+
+def _looks_personal(text: str) -> bool:
+    """사람 폴더를 가리키는 조각이 남아 있는가."""
+    lowered = text.lower().replace("\\", "/")
+    return (
+        lowered.startswith(("users/", "home/", "c:/", "d:/"))
+        or "/users/" in lowered
+        or "/home/" in lowered
+    )
+
+
 def _evidence_table(diagnosis: DiagnosisResult) -> str:
     lines = [
         "| # | 판별 항목 | 값 | 출처 | 확인 |",
@@ -254,7 +298,7 @@ def write_approval_document(
         parts.append("")
 
     parts.append("승인하시면 아래를 수동으로 진행합니다. **자동 반영은 없습니다.**\n")
-    parts.append(f"1. 배포 패키지 확인 — `{path.parent}`")
+    parts.append(f"1. 배포 패키지 확인: `{display_path(path.parent)}`")
     parts.append("2. 장비에 뱅크 반영 (담당자 수행)")
     parts.append("3. 반영 후 초기 물량 모니터링")
     parts.append("")
