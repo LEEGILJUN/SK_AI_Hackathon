@@ -1201,7 +1201,7 @@ def _simulator_html(outcome: RunOutcome) -> str:
     return f"""
     <div class="sim" id="block-simulator">
       <div class="sim-head">
-        <span class="sim-title">코어셋 검증 — 가상 라인</span>
+        <span class="sim-title">코어셋 검증 (가상 라인)</span>
         <span class="sim-state" id="sim-state">대기</span>
       </div>
       <p class="detail">
