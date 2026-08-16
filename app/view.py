@@ -16,7 +16,7 @@ from inspect import signature
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
-from agents.ontology import CAUSES, CHECKS, action_label, cause_names
+from agents.ontology import ACTION_LABEL_KO, CAUSES, CHECKS, action_label, cause_names
 from app.pipeline import FALLBACK_SEQUENCE, RunOutcome, Stage, run_pipeline
 from lookup.base import RETRIEVAL_LABEL
 
@@ -67,15 +67,31 @@ VALUE_KO: dict[str, str] = {
     "False": "아니오",
 }
 
+#: 조치 id 도 값 자리에 그대로 나온다. 진단 카드의 권고·금지 조치가
+#: `remove_contaminated_samples, rebuild_bank` 로 찍혀 있었다(4090 실행 화면).
+#:
+#: **한국어 이름을 여기 적지 않는다** — `agents/ontology.py` 의
+#: `ACTION_LABEL_KO` 를 그대로 가져온다. 원인 체계 표는 이미 그것을 쓰고
+#: 있어서, 화면이 따로 적으면 같은 조치가 표에서는 "혼입 이미지 제거",
+#: 진단 카드에서는 다른 이름으로 나가게 된다.
+_TRANSLATE = {**VALUE_KO, **ACTION_LABEL_KO}
+
 #: 낱말 경계만으로는 **경로 안까지 바꾼다.** 진단 근거에 파일 경로가 그대로
 #: 실리는데 `line_01/pcb1/defect/defect_000.png` 의 가운데가 `불량` 이 되어,
 #: 화면에 적힌 경로가 실제 파일을 안 가리켰다. 앞뒤에 `/` `.` `-` `_` 가
 #: 붙어 있으면 낱말이 아니라 이름의 조각이므로 건드리지 않는다.
 _VALUE_RE = re.compile(
     r"(?<![\w/.\-])(?:"
-    + "|".join(re.escape(k) for k in sorted(VALUE_KO, key=len, reverse=True))
+    + "|".join(re.escape(k) for k in sorted(_TRANSLATE, key=len, reverse=True))
     + r")(?![\w/.\-])"
 )
+
+#: 굵게 표시. **다른 모듈이 쓴 마크다운이 화면에 글자 그대로 나왔다** —
+#: 4090 화면에서 판별 7항목 설명이 `**7번 면적에 기준선이 없어...**` 로
+#: 별표째 찍혔다. 하필 "이 값은 판정 기준과 대조할 수 없다"는 경고라
+#: 강조가 살아야 하는 자리다. escape 한 뒤에 바꾸므로 태그가 새로 들어올
+#: 일은 없다.
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*", re.S)
 
 #: 표 왼쪽 칸에 영어 식별자로 나오던 것. 게이트 지표 이름이 대부분이다.
 ROW_LABEL_KO: dict[str, str] = {
@@ -153,7 +169,17 @@ def _value_ko(text: str) -> str:
     낱말 경계를 쓰면 밑줄은 낱말 문자라 `genuine_normal` 안의 `normal` 도
     안 걸린다.
     """
-    return _VALUE_RE.sub(lambda m: VALUE_KO[m.group(0)], text)
+    return _VALUE_RE.sub(lambda m: _TRANSLATE[m.group(0)], text)
+
+
+def _bold(text: str) -> str:
+    """`**굵게**` 를 태그로. **escape 뒤에 부른다.**
+
+    앞에서 부르면 여기서 만든 태그가 escape 돼 화면에 `&lt;strong&gt;` 이
+    보인다. 뒤에서 부르므로 별표 사이에 들어올 수 있는 것은 이미 escape 된
+    글자뿐이다.
+    """
+    return _BOLD_RE.sub(lambda m: f"<strong>{m.group(1)}</strong>", text)
 
 
 def _row_label(key: str) -> str:
@@ -660,7 +686,7 @@ def _stage_html(stage: Stage) -> str:
         f"<tr><td>{_row_label(k)}</td><td>{_mark(v)}</td></tr>" for k, v in stage.rows
     )
     body = (f"<table>{rows}</table>" if rows else "") + (
-        f'<p class="note">{_gloss(escape(stage.note))}</p>' if stage.note else ""
+        f'<p class="note">{_bold(_gloss(_value_ko(escape(stage.note))))}</p>' if stage.note else ""
     )
 
     # 부차 단계는 표만 접는다. 제목·판정·한 줄 요약은 남으므로 접힌 상태에서도
@@ -675,12 +701,21 @@ def _stage_html(stage: Stage) -> str:
     # 멈춘 이유는 다른 단계의 설명문과 같은 먹색으로 두지 않는다. 화면에서
     # 제일 먼저 찾는 것이 "어디서 왜 멈췄나"인데 지금은 그것이 done 단계의
     # 부연과 구분되지 않아 스크롤로 찾아야 했다.
+    # 한 줄 요약이 이유를 통째로 품고 있으면 같은 문장이 두 번 나온다.
+    # 큐레이션이 뱅크를 안 건드리기로 한 화면이 그렇다 — `summary()` 가
+    # `reason` 을 그대로 담아서, 제목 아래와 「왜 건드리지 않았나」 상자에
+    # 똑같은 문단이 연달아 찍힌다. **값을 고치는 것이 아니라 겹친 자리만
+    # 지운다** — 이유는 이름표가 붙은 상자 쪽에 남는 편이 읽힌다.
+    headline = stage.headline
+    if stage.detail and len(stage.detail) > 20 and stage.detail in headline:
+        headline = headline.replace(stage.detail, "").rstrip(" :·,")
+
     why = WHY_LABEL.get(stage.status)
     if stage.detail and why:
         detail = (f'<div class="why"><b>{why}</b>'
-                  f'<p>{_gloss(_value_ko(escape(stage.detail)))}</p></div>')
+                  f'<p>{_bold(_gloss(_value_ko(escape(stage.detail))))}</p></div>')
     elif stage.detail:
-        detail = f'<p class="detail">{_gloss(_value_ko(escape(stage.detail)))}</p>'
+        detail = f'<p class="detail">{_bold(_gloss(_value_ko(escape(stage.detail))))}</p>'
     else:
         detail = ""
 
@@ -690,7 +725,7 @@ def _stage_html(stage: Stage) -> str:
         <span class="stage-title">{_gloss(escape(stage.title))}</span>
         <span class="chip {stage.status}">{STATUS_LABEL.get(stage.status, stage.status)}</span>
       </div>
-      {f'<div class="headline">{_gloss(_value_ko(escape(stage.headline)))}</div>' if stage.headline else ''}
+      {f'<div class="headline">{_bold(_gloss(_value_ko(escape(headline))))}</div>' if headline else ''}
       {detail}
       {body}
     </section>
