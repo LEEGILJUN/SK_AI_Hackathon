@@ -933,3 +933,37 @@ def test_화면_주소에_역슬래시가_남지_않는다(factory):
     for html in (_bank_html(outcome, factory), _factory_html(factory)):
         assert "%5C" not in html, "주소에 역슬래시가 인코딩돼 남았다"
         assert "\\" not in html.split("<style")[0], "주소에 역슬래시가 그대로 남았다"
+
+
+def test_뺄_이미지가_격자_앞쪽에_온다(factory):
+    """**붙는 것만으로는 부족하다. 보여야 한다.**
+
+    오늘 같은 자리에서 두 번 사고가 났다.
+
+        표시가 안 붙음    윈도우 경로라 비교가 영영 안 맞았다
+        붙었는데 안 보임  116·117 번째라 스크롤해야 나왔다
+
+    캡션은 두 번 다 "빨간 테두리가 뺄 2장입니다" 라고 말했다. **화면이
+    없는 것을 있다고 말하는 상태**가 원인만 바뀌어 반복됐다.
+
+    그래서 셋을 함께 본다 — 몇 개라고 말하는가, 실제로 몇 개인가,
+    그것이 앞쪽인가.
+    """
+    import re
+    from app.view import _bank_html
+
+    outcome = run(factory, patch_override="defect")
+    if outcome.plan is None or not outcome.plan.remove:
+        pytest.skip("이 실행에서는 뺄 이미지가 없다")
+
+    html = _bank_html(outcome, factory)
+    tiles = [m.group(1) for m in re.finditer(r'<figure class="(bm(?:\s+[a-z]+)*)"', html)]
+    grid = [c for c in tiles if "big" not in c.split()]
+    marked = [n for n, c in enumerate(grid) if "out" in c.split()]
+
+    assert len(marked) == len(outcome.plan.remove), (
+        f"뺄 것 {len(outcome.plan.remove)}장인데 표시는 {len(marked)}개다"
+    )
+    assert marked == list(range(len(marked))), (
+        f"뺄 것이 격자 맨 앞에 와야 스크롤 없이 보인다. 지금 순번 {marked}"
+    )
