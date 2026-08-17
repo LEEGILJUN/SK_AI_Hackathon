@@ -6,6 +6,8 @@
 
 **▶ [시연 영상 보기](https://youtu.be/NdkgI8rJRqg)** · 접수부터 승인 요청까지 전 구간
 
+예선 기획서는 [`docs/기획서.md`](docs/기획서.md) 에 있습니다.
+
 ![진단 근거: 히트맵과 역추적 패치](docs/screens/1_traceback_nearest_patch.png)
 
 > 못 잡은 이미지가 메모리 뱅크의 **어느 정상 패치와 가까웠는지** 되짚은
