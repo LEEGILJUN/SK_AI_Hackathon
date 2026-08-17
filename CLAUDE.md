@@ -102,6 +102,7 @@ MES 데이터와 이미지 메타데이터는 **벡터화하지 않습니다.** 
 - 개발·시연 모두 RTX 4090 노트북. 별도 클라우드 GPU 불필요
 - **시연 장비 기준 Python 3.11** (4090 은 3.11.15). 3.12+ 문법을 쓰면 맥에서는 돌고 시연 장비에서만 죽는다 — `app/view.py` 가 f-string 식 안의 역슬래시로 실제로 그랬다. 그 장비는 PyPI·PyTorch 저장소가 막혀 있어 **환경을 되돌릴 수 없으므로 코드가 3.11 을 맞춘다**
 - 최종 통합 테스트는 네트워크 차단 상태에서 수행
+- **경로를 문자열로 견주거나 주소로 쓸 때는 `as_posix()`.** `str(Path(...))` 는 윈도우에서 역슬래시를 낸다. 시연은 윈도우에서 돌고 시험은 맥에서 도니 **맥에서 통과한 것이 증거가 되지 못한다.** 같은 함정에 두 번 걸렸다 — 승인 문서가 사용자 경로를 못 걸렀고, 뱅크에서 뺄 이미지 표시가 4090 화면에만 하나도 안 붙었다
 
 ## 지금 어디까지 구현됐는가
 
@@ -286,6 +287,7 @@ LLM 과 VLM 에 같은 이름을 넣는다 — 모델 하나, 스왑 없음. 등
 .venv/bin/python scripts/measure_baseline_map.py --category pcb1  # 역추적 위치 정확도
 .venv/bin/python scripts/measure_vlm_prompt.py --mode ab   # 판별 1번 병목 (프롬프트/위치/크기)
 .venv/bin/python scripts/measure_backbone.py --mode trace  # 특징 추출기를 바꾸면 역추적이 나아지나
+.venv/bin/python scripts/build_defect_vocab.py   # VisA 결함 어휘표 (어휘를 늘릴 때만)
 .venv/bin/python scripts/check_handoff.py 보낼글.md  # **다른 장비에 보내기 전에**
 .venv/bin/python scripts/demo_diagnose.py       # 접수부터 진단까지
 .venv/bin/python -m uvicorn app.main:app --port 8000   # 웹 화면

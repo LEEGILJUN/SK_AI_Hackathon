@@ -122,3 +122,17 @@ def append_resolved_issue(
     with p.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
     return record
+
+
+def known_defect_types(path: str | Path = DEFAULT_HISTORY) -> list[str]:
+    """이력에 실제로 쓰인 결함 유형. **여기가 정답 목록이다.**
+
+    별도의 목록을 코드에 적지 않는다. 이 값을 쓰는 이유가 `find_similar_
+    issues` 의 대조이므로, **대조 상대가 쓰는 말이 곧 정답**이다. 목록을
+    따로 두면 두 벌이 되고 한쪽만 늘어난다.
+
+    이력이 늘면 어휘도 함께 는다. 새 결함 유형이 처음 올라온 날에는 못
+    맞히지만, 그 건이 승인돼 쌓이면 다음부터는 맞는다.
+    """
+    seen = {str(r.get("defect_type") or "").strip() for r in read_history(path)}
+    return sorted(v for v in seen if v)

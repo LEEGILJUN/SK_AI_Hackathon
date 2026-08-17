@@ -109,6 +109,78 @@ def test_모델이_자연어를_담아와도_식별자로_맞춘다():
         assert report.object_name == obj, f"{raw_object} → {report.object_name}"
 
 
+def test_사람이_말한_품목을_라인으로_덮어쓰지_않는다():
+    """**"2라인 캡슐" 을 pcb2 로 바꿔 놓고 있었다.**
+
+    라인으로 품목을 되찾는 것은 "PCB 기판" 처럼 같은 것을 다르게 부른
+    경우를 위한 것인데, 2라인의 품목이 pcb2 라는 이유로 캡슐을 pcb2 로
+    바꿔 첫 카드에 찍었다. **사용자가 말한 적 없는 값이 화면에 나타나면
+    "모델이 뽑은 것"으로 오해한다.**
+    """
+    from agents.intake import normalize, IssueReport
+    from lookup.base import ImageRecord
+
+    class _Lookup:
+        def find_images(self, line=None, object_name=None, lot=None,
+                        product_id=None, limit=50):
+            table = {"line_01": "pcb1", "line_02": "pcb2"}
+            if line not in table:
+                return []
+            return [ImageRecord(product_id="P-1", line=line,
+                                object_name=table[line], path="x.png")]
+
+    lookup = _Lookup()
+    for raw_line, spoken, expected in [
+        ("1라인", "PCB 기판", "pcb1"),      # 같은 것을 다르게 부른 것 → 되찾는다
+        ("2라인", "기판", "pcb2"),
+        ("2라인", "캡슐", None),            # 다른 품목 → 덮어쓰지 않는다
+        ("9라인", "PCB 기판", None),        # 그 라인에 아무것도 없다
+    ]:
+        report = IssueReport(raw_text="")
+        report.line, report.object_name = raw_line, spoken
+        normalize(report, lookup)
+        assert report.object_name == expected, f"{raw_line}/{spoken} → {report.object_name}"
+
+
+def test_결함_유형이_품목마다_다른_어휘로_맞는다():
+    """**품목마다 쓰는 말이 다르다.** pcb 는 scratch, fryum 은 small scratches.
+
+    실측에서 모델이 `미세 스크래치` 를 담아 왔는데 이력의 값은 `scratch` 라
+    중복 차단의 0.40 짜리 축이 통째로 죽어 있었다.
+    """
+    from agents.intake import normalize_defect_type, defect_vocabulary
+
+    pcb = defect_vocabulary("pcb1")
+    assert normalize_defect_type("미세 스크래치", pcb) == "scratch"
+    assert normalize_defect_type("긁힘", pcb) == "scratch"
+    assert normalize_defect_type("휨 불량", pcb) == "bent"
+    assert normalize_defect_type("기포", pcb) is None, "pcb 에 없는 어휘다"
+
+    fryum = defect_vocabulary("fryum")
+    assert normalize_defect_type("미세 스크래치", fryum) == "small scratches", (
+        "같은 말이 품목에 따라 다른 값으로 가야 한다"
+    )
+
+    capsules = defect_vocabulary("capsules")
+    assert normalize_defect_type("기포", capsules) == "bubble"
+    assert normalize_defect_type("실선 자국", capsules) is None, "모르면 비운다"
+
+
+def test_어휘표가_열두_카테고리를_담는다():
+    """예선은 pcb 넷만 쓰지만 본선에서 나머지를 쓴다."""
+    from agents.intake import defect_vocabulary
+    import json, pathlib
+
+    table = json.loads((pathlib.Path("data") / "defect_vocab.json").read_text(encoding="utf-8"))
+    table.pop("_comment", None)
+    assert len(table) == 12, f"카테고리 {len(table)}개"
+    for category, terms in table.items():
+        assert terms, f"{category} 어휘가 비었다"
+        assert all(aliases for aliases in terms.values()), (
+            f"{category} 에 별칭 없는 어휘가 있다 — 한국어로 오면 못 잡는다"
+        )
+
+
 def test_라인을_못_정하면_비우고_되묻는다():
     """**추측하지 않는다.** 번호가 없으면 어느 라인인지 정할 근거가 없다."""
     from agents.intake import normalize, IssueReport

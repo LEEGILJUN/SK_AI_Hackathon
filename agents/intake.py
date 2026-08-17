@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from dataclasses import dataclass, field, asdict
 from datetime import date
 from typing import Any
@@ -197,6 +198,73 @@ _LINE_NUMBER = re.compile(r"(?:line|라인|l)\s*_?\s*0*(\d{1,2})|0*(\d{1,2})\s*(
                           re.IGNORECASE)
 
 
+#: VisA 12개 카테고리의 결함 어휘와 한국어 별칭.
+#:
+#: **여기서 만들지 않는다.** `scripts/build_defect_vocab.py` 가 VisA 의
+#: `image_anno.csv` 에서 뽑아 `data/defect_vocab.json` 으로 쓴다. 코드에
+#: 적어 두면 두 벌이 되고 한쪽만 는다.
+#:
+#: 실측에서 모델이 `미세 스크래치` 를 담아 왔는데 이력의 값은 `scratch` 라
+#: **중복 차단의 0.40 짜리 대조 축이 통째로 죽어 있었다.** 라인·품목만 겹쳐
+#: 0.60 이고 임계 0.95 를 못 넘는다.
+_VOCAB_PATH = Path(__file__).resolve().parent.parent / "data" / "defect_vocab.json"
+
+
+def defect_vocabulary(object_name: str | None = None) -> dict[str, list[str]]:
+    """품목의 결함 어휘와 별칭. 품목을 모르면 전부 합친다.
+
+    **품목마다 쓰는 말이 다르다.** pcb 는 `scratch` 인데 fryum 은 `small
+    scratches` 다. 품목을 알면 그 카테고리만 본다 — 한 덩어리로 두면
+    "미세 스크래치"가 pcb 에서 엉뚱한 값으로 간다.
+    """
+    try:
+        table = json.loads(_VOCAB_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    table.pop("_comment", None)
+    if object_name and object_name in table:
+        return table[object_name]
+    merged: dict[str, list[str]] = {}
+    for terms in table.values():
+        for term, aliases in terms.items():
+            merged.setdefault(term, [])
+            merged[term] = sorted(set(merged[term]) | set(aliases))
+    return merged
+
+
+def normalize_defect_type(raw: str | None, vocab: dict[str, list[str]]) -> str | None:
+    """결함 유형을 이력이 쓰는 값으로 맞춘다.
+
+    **추측하지 않는다.** 세 단계로만 본다.
+
+      1. 이미 정답 목록에 있으면 그대로
+      2. 별칭표에 적힌 말이 들어 있으면 그것으로
+      3. 어느 쪽도 아니면 `None` — 비워 두고 되묻는다
+
+    `미세 스크래치` 처럼 꾸밈말이 붙어도 `스크래치` 가 들어 있으므로 잡힌다.
+    `실선 자국` 처럼 적어 두지 않은 말은 못 잡는다. **그것까지 잡으려면
+    임베딩이 필요하고, 후보가 여덟 개로 닫혀 있어 그 자리에서는 분류
+    문제가 된다.** 지금은 거기까지 가지 않는다.
+    """
+    if not raw:
+        return None
+    text = str(raw).strip()
+    lowered = text.lower()
+    for term in vocab:
+        if lowered == term.lower():
+            return term
+    # **긴 어휘부터 본다.** `small scratches` 가 있는 품목에서 "미세 스크래치"가
+    # `scratch` 로 가면 안 된다.
+    for term in sorted(vocab, key=len, reverse=True):
+        for alias in vocab[term]:
+            if alias and alias in text:
+                return term
+    for term in sorted(vocab, key=len, reverse=True):
+        if term.lower() in lowered:
+            return term
+    return None
+
+
 def _is_identifier(value: str | None) -> bool:
     """조회 계층이 그대로 쓸 수 있는 식별자인가.
 
@@ -232,9 +300,7 @@ def normalize(report: IssueReport, lookup: LookupLayer | None = None) -> IssueRe
         report.line = f"line_{int(number):02d}" if number else None
 
     if not _is_identifier(report.object_name):
-        # **조회해서 얻는다.** 라인마다 품목이 정해져 있으므로 그 라인의
-        # 이미지를 한 장 찾으면 품목이 따라 나온다. 매핑을 여기 적어 두면
-        # 공장 데이터와 두 벌이 되고 한쪽만 고쳐진다.
+        spoken = (report.object_name or "").strip()
         found = None
         if lookup is not None and report.line:
             try:
@@ -242,8 +308,40 @@ def normalize(report: IssueReport, lookup: LookupLayer | None = None) -> IssueRe
                 found = records[0].object_name if records else None
             except Exception:
                 found = None
+        # **사람이 다른 품목을 말했으면 덮어쓰지 않는다.**
+        #
+        # 라인으로 품목을 되찾는 것은 "PCB 기판" 처럼 같은 것을 다르게 부른
+        # 경우를 위한 것이다. 그런데 "2라인 캡슐" 을 넣으면 2라인의 품목이
+        # pcb2 라는 이유로 **캡슐을 pcb2 로 바꿔** 첫 카드에 찍었다. 사용자가
+        # 말한 적 없는 값이 화면에 나타나면 "모델이 뽑은 것"으로 오해한다.
+        #
+        # 말한 것이 그 품목을 가리키는지 어휘로 확인한다. 못 가리키면 비우고
+        # 되묻는다 — 추측해서 채우면 엉뚱한 라인의 뱅크를 건드린다.
+        if spoken and found and not _mentions(spoken, found):
+            found = None
         report.object_name = found
+
+    # **결함 유형도 맞춘다.** `MATCH_WEIGHT` 에서 0.40 으로 두 번째로 무거운
+    # 축이라, 여기가 안 맞으면 중복 차단이 조용히 안 걸린다. 품목을 알면
+    # 그 카테고리의 어휘만 본다.
+    vocab = defect_vocabulary(report.object_name)
+    if vocab:
+        report.defect_type = normalize_defect_type(report.defect_type, vocab)
     return report
+
+
+def _mentions(spoken: str, item: str) -> bool:
+    """사람이 말한 것이 이 품목을 가리키는가.
+
+    `PCB 기판`·`기판`·`pcb` 는 pcb1 을 가리킨다. `캡슐` 은 아니다.
+    글자·숫자만 남겨 견주므로 띄어쓰기와 대소문자를 타지 않는다.
+    """
+    text = re.sub(r"[^0-9a-z가-힣]", "", spoken.lower())
+    target = re.sub(r"[^0-9a-z]", "", item.lower())
+    if not text or not target:
+        return False
+    stem = target.rstrip("0123456789")          # pcb1 → pcb
+    return target in text or (bool(stem) and stem in text) or "기판" in text
 
 
 def receive(
