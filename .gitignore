@@ -67,3 +67,6 @@ Thumbs.db
 
 # 캡처 작업 폴더. 최종 선택본만 assets/ 로 옮긴다
 shots/
+
+# 자동 생성한 스크롤 영상. 스크립트로 다시 만든다
+demo_scroll.mp4
