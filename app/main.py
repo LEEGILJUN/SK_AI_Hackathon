@@ -36,11 +36,15 @@ from app.pipeline import (  # noqa: E402
 from inspection.crop import crop_patch  # noqa: E402
 from inspection.types import PatchRef  # noqa: E402
 from app.view import render_page  # noqa: E402
+from inspection.store import record_decision  # noqa: E402
+from lookup.base import bank_item_key  # noqa: E402
+from dataclasses import dataclass  # noqa: E402
 
 app = FastAPI(title="검사 AI 자율 운영 에이전트")
 
 _factory: DemoFactory | None = None
 _last: RunOutcome | None = None
+_decision: Decision | None = None
 
 
 def factory() -> DemoFactory:
@@ -62,7 +66,8 @@ def index() -> str:
     "정보가 부족하면 추측하지 않고 되묻는다"가 인테이크의 설계이고, 되물었을
     때 비로소 보충 칸이 열린다.
     """
-    return render_page(None, default_issue(factory()), on_visa=factory().on_visa)
+    return render_page(None, default_issue(factory()), on_visa=factory().on_visa,
+                       factory=factory())
 
 
 @app.post("/run", response_class=HTMLResponse)
@@ -104,7 +109,8 @@ def run(
         `data/criteria.yaml` 에서 오고 값마다 근거가 함께 적혀 있어서, 화면에서
         즉석으로 바꾸면 근거 없는 숫자가 된다.
     """
-    global _last
+    global _last, _decision
+    _decision = None
     override = None if patch_verdict == "ask_model" else patch_verdict
     context = {k: v for k, v in
                (("line", line), ("object_name", object_name),
@@ -126,7 +132,8 @@ def run(
         context=context or None, **options,
     )
     return render_page(_last, issue_text, patch_verdict, context or None,
-                       on_visa=factory().on_visa, threshold=threshold)
+                       on_visa=factory().on_visa, threshold=threshold, factory=factory(),
+                       decision=_decision)
 
 
 @app.get("/approval", response_class=PlainTextResponse)
@@ -188,6 +195,64 @@ def crop(relative_path: str, row: int, col: int, grid_h: int, grid_w: int,
     buffer = io.BytesIO()
     patch.save(buffer, format="PNG")
     return Response(content=buffer.getvalue(), media_type="image/png")
+
+
+@dataclass
+class Decision:
+    """화면에 띄울 승인 기록. **배포 상태가 아니다.**"""
+
+    approved: bool
+    by: str
+    at: str
+    reason: str
+    command: str
+
+
+@app.post("/decision", response_class=HTMLResponse)
+def decide(by: str = Form(""), reason: str = Form(""),
+           decision: str = Form("approve")) -> str:
+    """승인·비승인을 기록한다. **배포하지 않는다.**
+
+    누르면 누가·언제·왜 결정했는지가 저장소에 덧붙고, 승인이면 전환 명령을
+    화면에 띄운다. **운영 뱅크는 바뀌지 않는다** — 사람이 그 명령을 직접
+    실행해야 바뀐다. 품질 검사 설비라 의도적으로 뺀 경계이고, 이 경계 자체가
+    제안의 설득 근거다.
+
+    여기에 `deploy`·`apply`·`install` 을 하는 코드를 넣지 말 것.
+    """
+    global _decision
+    if _last is None or _last.package is None:
+        raise HTTPException(status_code=400, detail="아직 승인할 후보가 없습니다.")
+    if not by.strip() or not reason.strip():
+        raise HTTPException(status_code=400, detail="승인자와 사유가 필요합니다.")
+
+    # 품목은 뱅크 판으로 찾는다. 인테이크가 뽑은 라인·품목은 모델이 자연어를
+    # 넣을 수 있어 열쇠로 못 쓴다.
+    item = next((it for it in factory().items.values()
+                 if it.bank.version == _last.bank_version), None)
+    if item is None:
+        raise HTTPException(status_code=400, detail="대상 품목을 찾지 못했습니다.")
+
+    key = bank_item_key(item.line, item.object_name)
+    # 후보 저장 자리가 있으면 그 폴더 이름, 없으면 재구성이 만든 판 번호.
+    to = (_last.candidate_path.name if _last.candidate_path is not None
+          else (_last.rebuild.record.to_version if _last.rebuild and _last.rebuild.record
+                else _last.bank_version))
+    approved = decision == "approve"
+    record = record_decision(
+        key, to=to, by=by.strip(),
+        reason=("승인: " if approved else "비승인: ") + reason.strip(),
+        previous=_last.bank_version,
+        # 저장소가 없는 합성 실행에서 저장소 기본 자리(`banks/`)에 쓰지 않는다.
+        # 시연 기록이 저장소에 섞여 들어가면 실제 운영 이력과 구분이 안 된다.
+        root=factory().store_root or (factory().root / "decisions"),
+    )
+    _decision = Decision(
+        approved=approved, by=by.strip(), at=record.at, reason=reason.strip(),
+        command=f"python scripts/switch_bank.py --item {key} --to {to}",
+    )
+    return render_page(_last, _last.issue_text, on_visa=factory().on_visa,
+                       factory=factory(), decision=_decision)
 
 
 @app.get("/health", response_class=PlainTextResponse)

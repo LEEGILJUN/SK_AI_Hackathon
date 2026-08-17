@@ -10,9 +10,11 @@
 from __future__ import annotations
 
 import json
+import pathlib
 import re
 from html import escape
 from inspect import signature
+from typing import Any
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
@@ -408,6 +410,52 @@ a{color:var(--accent)}
   letter-spacing:.08em}
 .arrow b{display:block;font-size:15px;color:var(--accent);margin-top:3px}
 
+/* ── 뱅크 구성 ─────────────────────────────────────────────────────── */
+/* "제거 2장"이라는 숫자만으로는 왜 빼는지 알 수 없다는 지적을 받았다.
+   뱅크를 통째로 늘어놓고 뺄 것에 표시를 붙인다. */
+.bank-row{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.bm-grid{flex:1;min-width:260px;display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:5px;
+  background:var(--panel2);border:1px solid var(--rule2);border-radius:6px;
+  padding:9px;max-height:330px;overflow-y:auto}
+.bm{margin:0;position:relative}
+.bm img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:3px;
+  border:2px solid var(--rule);display:block;background:var(--panel)}
+.bm.out img{border-color:var(--stop)}
+.bm figcaption{position:absolute;left:0;right:0;bottom:0;font-family:var(--mono);
+  font-size:9px;text-align:center;color:#fff;background:var(--stop);
+  border-radius:0 0 3px 3px;padding:1px 0}
+.bm.big{flex:0 0 132px}
+.bm.big img{width:132px;height:132px;border-color:var(--accent)}
+.bm.big figcaption{position:static;color:var(--ink2);background:none;
+  font-size:11px;padding-top:5px}
+.picked{margin:0;padding-left:18px;font-size:13px;color:var(--ink2);
+  display:flex;flex-direction:column;gap:4px}
+.picked code{font-family:var(--mono);font-size:12px;color:var(--stop)}
+.decide{background:var(--panel2);border:1px solid var(--rule2);padding:14px;gap:10px}
+button.ghost{background:var(--panel);color:var(--ink2);border:1px solid var(--rule)}
+button.ghost:hover{border-color:var(--stop);color:var(--stop);filter:none}
+.chip.ok{color:var(--ok);background:var(--ok-bg)}
+.chip.no{color:var(--skip);background:var(--skip-bg)}
+.fgrid{display:flex;gap:12px;flex-wrap:wrap}
+.fcard{flex:1;min-width:190px;background:var(--panel2);border:1px solid var(--rule2);
+  border-radius:6px;padding:12px;display:flex;flex-direction:column;gap:9px}
+.fhead{display:flex;gap:8px;align-items:baseline}
+.fhead code{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent)}
+.fhead span{font-size:14px;font-weight:650}
+.fthumbs{display:flex;gap:6px}
+.fthumbs img{width:64px;height:64px;object-fit:cover;border-radius:4px;
+  border:1px solid var(--rule);background:var(--panel)}
+.fcard table{font-size:12.5px}
+.fcard td{padding:2px 6px 2px 0;border:0}
+.fcard td:first-child{width:58%;color:var(--ink3);white-space:normal}
+.bm-grid.wide{max-height:none;grid-template-columns:repeat(auto-fill,minmax(64px,1fr))}
+.bm.flip img{border-color:var(--accent);border-width:3px}
+.bm figcaption.two{position:static;background:none;color:var(--ink3);
+  font-family:var(--mono);font-size:9.5px;line-height:1.25;padding-top:2px;
+  text-align:center}
+.bm figcaption.two b{color:var(--accent);font-size:10.5px}
+
 /* ── 조회 방식 ─────────────────────────────────────────────────────── */
 .chips{display:flex;gap:8px;flex-wrap:wrap}
 .kind{font-family:var(--mono);font-size:11px;padding:2px 9px;border-radius:3px;
@@ -423,6 +471,9 @@ table.ret td:first-child{width:auto;white-space:nowrap}
   gap:5px;font-size:12.5px;color:var(--ink3)}
 
 /* ── 진단 지식 체계 ────────────────────────────────────────────────── */
+table.tax th{font-size:11px;font-family:var(--mono);letter-spacing:.06em;
+  color:var(--ink3);text-align:left;font-weight:600;padding:0 10px 6px 0;
+  border-bottom:1px solid var(--rule);white-space:nowrap}
 table.tax td{font-size:13px;vertical-align:top}
 table.tax td:first-child{white-space:nowrap;font-weight:600}
 table.tax tr.here td{background:var(--panel2)}
@@ -897,7 +948,10 @@ def _taxonomy_html(outcome: RunOutcome) -> str:
         <span class="stage-title">원인 6종과 판별 기준</span>
         <span class="kind schema">스키마 조회</span>
       </div>
-      <table class="tax">{rows}</table>
+      <table class="tax">
+        <thead><tr><th>미검출 원인</th><th>뱅크를 다시 만들어야 하나</th>
+          <th>무엇으로 구분하나</th><th>하면 안 되는 조치</th></tr></thead>
+        {rows}</table>
       <p class="detail">
         원인 {len(cause_names())}종 중 <strong>뱅크 재구성이 답인 것은
         {len(rebuild_causes)}종뿐</strong>입니다({escape(", ".join(rebuild_causes))}).
@@ -1213,6 +1267,223 @@ def _retrieval_html(outcome: RunOutcome) -> str:
     """
 
 
+def _decision_html(outcome: RunOutcome, decision: Any = None) -> str:
+    """승인·비승인을 기록한다. **배포하지 않는다.**
+
+    원안은 *"승인 누르면 배포가 완료되었습니다 문구가 뜬다"* 였는데 그것은
+    만들지 않는다. `CLAUDE.md` 2번 규칙이고 기획서 전체가 그 경계 위에 서
+    있다. 누르면 **누가·언제·왜 승인했는지를 기록하고 전환 명령을 띄운다.**
+    실제 반영은 사람이 그 명령을 실행한다.
+
+    **오히려 시연이 세진다** — 승인을 눌렀는데도 배포가 안 되는 것을
+    보여주기 때문이다. 버튼이 없으면 "안 만든 것"이고, 있는데 멈추면
+    "일부러 멈춘 것"이다.
+    """
+    # **후보 저장 자리가 없어도 띄운다.** 합성으로 서면 뱅크 저장소가 없어
+    # `candidate_path` 가 비는데, 그렇다고 승인 판단이 없어지는 것은 아니다.
+    # 여기서 결정하는 것은 파일 자리가 아니라 **새 뱅크 판을 쓸 것인가**다.
+    if outcome.package is None:
+        return ""
+
+    if decision is not None:
+        state = "승인됨 · 반영 대기" if decision.approved else "비승인 · 후보 유지"
+        cls = "ok" if decision.approved else "no"
+        note = (
+            "<p class=\"detail\"><strong>배포는 아직 실행되지 않았습니다.</strong> "
+            "아래 명령을 사람이 직접 실행해야 운영 뱅크가 바뀝니다.</p>"
+            f"<pre>{escape(decision.command)}</pre>"
+            if decision.approved else
+            "<p class=\"detail\">후보 뱅크는 지워지지 않고 저장소에 남습니다. "
+            "사유가 기록되어 다음 판단의 재료가 됩니다.</p>"
+        )
+        return f"""
+        <div class="evidence" id="block-decision">
+          <div class="ev-head">
+            <span class="stage-title">승인 기록</span>
+            <span class="chip {cls}">{escape(state)}</span>
+          </div>
+          <table class="cfg">
+            <tr><td>결정</td><td>{"승인" if decision.approved else "비승인"}</td><td></td></tr>
+            <tr><td>승인자</td><td>{escape(decision.by)}</td><td></td></tr>
+            <tr><td>시각</td><td>{escape(decision.at)}</td><td></td></tr>
+            <tr><td>사유</td><td>{escape(decision.reason)}</td><td></td></tr>
+          </table>
+          {note}
+          <p class="note">
+            기록은 덧붙이기만 하며 고치거나 지우지 않습니다. 되돌린 이력도
+            그대로 남습니다.
+          </p>
+        </div>
+        """
+
+    return f"""
+    <div class="evidence" id="block-decision">
+      <div class="ev-head">
+        <span class="stage-title">승인 결정</span>
+        <span class="chip pending">기록 대기</span>
+      </div>
+      <p class="detail">
+        <strong>이 화면은 배포하지 않습니다.</strong> 승인을 눌러도 운영 뱅크는
+        바뀌지 않고, 누가 언제 왜 승인했는지가 기록되며 전환 명령이 표시됩니다.
+        실제 반영은 사람이 그 명령을 실행합니다.
+      </p>
+      <form method="post" action="/decision" class="decide">
+        <div class="controls">
+          <div><label for="by">승인자</label>
+            <input id="by" name="by" placeholder="이름 또는 사번" required></div>
+          <div><label for="why">사유</label>
+            <input id="why" name="reason" placeholder="예: 근거 확인함. 신구 비교 불일치 1건 검토 완료" required></div>
+        </div>
+        <div class="controls">
+          <button type="submit" name="decision" value="approve">승인</button>
+          <button type="submit" name="decision" value="reject" class="ghost">비승인</button>
+        </div>
+      </form>
+      <p class="note">
+        승인자와 사유가 없으면 기록하지 않습니다. <strong>누가 왜 승인했는지
+        없는 전환은 나중에 되짚을 수 없습니다.</strong>
+      </p>
+    </div>
+    """
+
+
+def _factory_html(factory: Any = None) -> str:
+    """무엇을 검사하는 공장인가 — 첫 화면의 현황판.
+
+    지적을 받았다. *"심사위원이 무엇을 검사하는 공장인지 모르는 채 진단부터
+    본다."* 맞다. 라인이 몇 개인지, 무엇을 만드는지, 뱅크가 걸려 있는지를
+    모르면 "1라인 pcb1" 이 무슨 말인지 알 수가 없다.
+
+    **읽기 전용이다.** 입력 칸을 미리 채우지 않는다 — 채워 두면 사람이
+    그것부터 채우게 되고 언어 모델이 원문에서 뽑을 일이 없어져 자연어 입력이
+    장식이 된다(`CLAUDE.md`). 여기는 보여 주기만 한다.
+    """
+    if factory is None or not getattr(factory, "items", None):
+        return ""
+
+    def rel(path) -> str:
+        try:
+            return str(pathlib.Path(path).relative_to(factory.root))
+        except (ValueError, TypeError):
+            return ""
+
+    cards = ""
+    for item in factory.items.values():
+        sample = next((r for r in (rel(p) for p in item.bank_normal) if r), "")
+        defect = next((r for r in (rel(p) for p in item.holdout_defect) if r), "")
+        thumbs = "".join(
+            f'<img loading="lazy" src="/image/{quote(img)}" alt="{escape(label)}"'
+            f' title="{escape(label)}">'
+            for img, label in ((sample, "정상 예시"), (defect, "결함 예시")) if img
+        )
+        cards += f"""
+        <div class="fcard">
+          <div class="fhead"><code>{escape(item.line)}</code>
+            <span>{escape(item.object_name)}</span></div>
+          <div class="fthumbs">{thumbs}</div>
+          <table><tr><td>배포된 뱅크</td><td>{escape(item.bank.version)}</td></tr>
+            <tr><td>뱅크 정상 이미지</td><td>{len(item.bank_normal)}장</td></tr>
+            <tr><td>검증용 정상·결함</td><td>{len(item.holdout_normal)}·{len(item.holdout_defect)}장</td></tr>
+          </table>
+        </div>"""
+
+    return f"""
+    <div class="evidence" id="block-factory">
+      <div class="ev-head">
+        <span class="stage-title">가상 공장 현황</span>
+        <span class="sim-state">라인 {len(factory.items)}개</span>
+      </div>
+      <div class="fgrid">{cards}</div>
+      <p class="note">
+        <strong>뱅크는 품목마다 따로입니다.</strong> 캡슐 뱅크로 기판을 판정할
+        수 없어서, 이슈가 어느 라인의 어느 품목인지가 먼저 정해져야 합니다.
+        아래 접수 칸은 <strong>비워 두는 것이 설계입니다</strong> — 라인과 품목은
+        올라온 글에서 언어 모델이 뽑습니다.
+      </p>
+    </div>
+    """
+
+
+def _bank_html(outcome: RunOutcome, factory: Any = None) -> str:
+    """뱅크에 무엇이 들어 있고 무엇을 빼는가.
+
+    지적을 받았다. *"재구성하는데 이미지를 왜 제거하는지 흐름이 이해 안 가다가
+    갑자기 제거한다니까 ???? 이런 느낌"*. 맞다. 지금까지 화면은 **"제거 2장"
+    이라는 숫자뿐**이었고, 뱅크가 무엇으로 이루어져 있는지 본 적이 없으니
+    빼는 것이 무슨 뜻인지 알 수가 없었다.
+
+    뱅크를 통째로 늘어놓고 뺄 것을 표시한다. 그 옆에 못 잡은 이미지를 둔다.
+    **뱅크 오염을 한 화면으로 보여주는 자리**다 — 정상이라고 등록된 것들
+    사이에 결함이 섞여 있고, 그것이 같은 유형의 불량을 정상으로 끌어당겼다.
+
+    **판정하지 않는다.** 뺄 목록은 `plan.remove` 가 정한 것이고 화면은 그
+    목록에 있는 것에 표시만 붙인다.
+    """
+    plan = outcome.plan
+    if factory is None or plan is None or not plan.remove:
+        return ""
+
+    # 품목은 **뱅크 판으로 찾는다.** 인테이크가 뽑은 라인·품목은 모델이 자연어를
+    # 넣을 수 있어 열쇠로 못 쓴다.
+    item = next((it for it in factory.items.values()
+                 if it.bank.version == outcome.bank_version), None)
+    if item is None:
+        return ""
+
+    def rel(path) -> str:
+        try:
+            return str(pathlib.Path(path).relative_to(factory.root))
+        except (ValueError, TypeError):
+            return ""
+
+    removing = {c.image for c in plan.remove}
+    reasons = {c.image: c.reason for c in plan.remove}
+    members = [r for r in (rel(p) for p in list(item.bank_normal) + list(item.contaminants)) if r]
+    if not members:
+        return ""
+
+    cells = "".join(
+        f'<figure class="bm{" out" if m in removing else ""}">'
+        f'<img loading="lazy" src="/image/{quote(m)}" alt="{escape(Path(m).name)}">'
+        f'{"<figcaption>뺀다</figcaption>" if m in removing else ""}</figure>'
+        for m in members
+    )
+    picked = "".join(
+        f'<li><code>{escape(Path(img).name)}</code> {_gloss(escape(reasons.get(img, "")))}</li>'
+        for img in sorted(removing)
+    )
+    query = (
+        f'<figure class="bm big"><img src="/image/{quote(outcome.query_image)}"'
+        f' alt="못 잡은 이미지"><figcaption>못 잡은 이미지</figcaption></figure>'
+        if outcome.query_image else ""
+    )
+    return f"""
+    <div class="evidence" id="block-bank">
+      <div class="ev-head">
+        <span class="stage-title">뱅크 구성과 뺄 이미지</span>
+        <span class="sim-state">{escape(outcome.bank_version)} · {len(members)}장</span>
+      </div>
+      <div class="bank-row">
+        {query}
+        <div class="arrow">가장 가까웠던<br><b>정상 패치</b></div>
+        <div class="bm-grid">{cells}</div>
+      </div>
+      <p class="detail">
+        왼쪽이 검사에서 <strong>양품으로 나간 이미지</strong>이고, 오른쪽이
+        그 판정의 기준이 된 <strong>뱅크 {len(members)}장</strong>입니다.
+        정상만 들어가야 하는데 <strong>결함이 섞여 있습니다.</strong> 섞인
+        것이 같은 유형의 불량을 정상 쪽으로 끌어당겨 못 잡게 만들었습니다.
+      </p>
+      <ul class="picked">{picked}</ul>
+      <p class="note">
+        빨간 테두리가 <strong>뺄 {len(removing)}장</strong>입니다. 근거는 위
+        목록에 있고, <strong>고립도만으로는 뽑지 않습니다</strong> — 정상
+        이미지를 잘못 빼면 커버리지 부족을 스스로 만들기 때문입니다.
+      </p>
+    </div>
+    """
+
+
 def _simulator_html(outcome: RunOutcome) -> str:
     """가상 라인 시뮬레이터 — 새 코어셋이 실제로 무엇을 잡는지 흘려 보여준다.
 
@@ -1261,6 +1532,19 @@ def _simulator_html(outcome: RunOutcome) -> str:
         ],
         ensure_ascii=False,
     )
+    # ⑨ 숫자 대신 그림으로. **14장을 전부 늘어놓는다** — "14장 중 1장이
+    # 갈렸다"는 문장은 그 1장이 무엇인지 안 보여준다.
+    #
+    # **히트맵은 여기 넣지 않는다.** 64x64 면 한 장이 4,096칸이라 14장이면
+    # 57,000 요소다. 지금도 페이지가 4.3MB 인데 그것을 얹으면 못 버틴다.
+    # 갈린 것이 왜 갈렸는지는 아래 목록과 진단 근거 블록이 답한다.
+    tiles = "".join(
+        f'<figure class="bm{"" if c.agreed else " flip"}">'
+        f'<img loading="lazy" src="/image/{quote(c.image)}" alt="{escape(Path(c.image).name)}">'
+        f'<figcaption class="two">{c.current_score:.2f}<br><b>{c.candidate_score:.2f}</b></figcaption>'
+        f'</figure>'
+        for c in shadow.cases
+    )
     moved = (
         f"임계값 {shadow.current_threshold:.2f} → {shadow.candidate_threshold:.2f}"
         if shadow.current_threshold or shadow.candidate_threshold else ""
@@ -1277,6 +1561,12 @@ def _simulator_html(outcome: RunOutcome) -> str:
         <code>{escape(shadow.current_version)}</code> 과 나란히 돌립니다.
         {f'<code>{escape(moved)}</code>. ' if moved else ''}
         <strong>신규 뱅크는 실제 판정에 쓰이지 않습니다.</strong>
+      </p>
+      <div class="bm-grid wide" id="shadow-grid">{tiles}</div>
+      <p class="hint">
+        <strong>{shadow.total}장을 전부 돌렸습니다.</strong> 위가 현행 뱅크, 아래가 새 뱅크의
+        점수입니다. 테두리가 굵은 것이 <strong>판정이 서로 다른 {shadow.review_count}장</strong>이고,
+        사람이 확인할 것은 그것뿐입니다.
       </p>
       <div class="belt" id="belt"><div class="scanner"></div></div>
       <div class="bar"><span id="sim-bar"></span></div>
@@ -1684,7 +1974,7 @@ def _source_banner(on_visa: bool) -> str:
 
 def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str = "defect",
                 context: dict[str, str] | None = None, on_visa: bool = False,
-                threshold: str = "") -> str:
+                threshold: str = "", factory: Any = None, decision: Any = None) -> str:
     options = [
         ("defect", "결함이다 → 뱅크 오염"),
         ("genuine_normal", "진짜 정상품이다 → 정상 분포 중첩"),
@@ -1777,6 +2067,10 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
 
             # 시뮬레이터는 섀도 단계 바로 앞에 끼운다. 숫자만 적힌 표보다
             # 무엇이 어떻게 갈렸는지가 먼저 보여야 한다.
+            # 뱅크 구성은 데이터 선별 바로 뒤. "무엇을 왜 빼는가"는 계획을
+            # 읽은 다음에 와야 순서가 맞다.
+            if key == "curate":
+                add_block(_bank_html(outcome, factory), "block-bank", "뱅크 구성")
             if key == "shadow":
                 add_block(_simulator_html(outcome), "block-simulator", "가상 라인")
             stages_html.append(_stage_html(stage))
@@ -1795,6 +2089,8 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
             # 그래프는 인테이크 바로 뒤. "이미 답이 나온 일인가"를 묻는 자리다.
             if key == "intake":
                 add_block(_ontology_html(outcome), "block-ontology", "이력 그래프")
+
+        add_block(_decision_html(outcome, decision), "block-decision", "승인 결정")
 
         doc = ""
         if outcome.approval_markdown:
@@ -1844,6 +2140,8 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
   </header>
 
   {source_banner}
+
+  {_factory_html(factory)}
 
   <form method="post" action="/run" id="runform">
     <div>
