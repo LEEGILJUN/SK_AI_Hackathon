@@ -247,8 +247,8 @@ def assess_threshold_feasibility(
             resulting_detection=None,
             auroc=auroc,
             reason=(
-                f"어떤 임계값으로도 검출률 {target_detection:.0%}에 닿지 못한다. "
-                f"점수 분포가 겹쳐 있어(AUROC {auroc:.3f}) 임계값 조정으로는 해결되지 않는다."
+                f"어떤 임계값으로도 검출률 {target_detection:.0%}에 닿지 못합니다. "
+                f"점수 분포가 겹쳐 있어(AUROC {auroc:.3f}) 임계값 조정으로는 해결되지 않습니다."
             ),
         )
 
@@ -256,14 +256,14 @@ def assess_threshold_feasibility(
     if achievable:
         reason = (
             f"임계값을 {point.threshold:.4f}로 내리면 검출률 {point.detection_rate:.0%}를 "
-            f"과검률 {point.false_positive_rate:.1%}로 달성한다. "
-            f"허용 과검률 {max_acceptable_fpr:.1%} 안이므로 임계값 조정으로 해결된다."
+            f"과검률 {point.false_positive_rate:.1%}로 달성합니다. "
+            f"허용 과검률 {max_acceptable_fpr:.1%} 안이므로 임계값 조정으로 해결됩니다."
         )
     else:
         reason = (
             f"검출률 {target_detection:.0%}를 달성하려면 임계값을 {point.threshold:.4f}까지 "
-            f"내려야 하고, 그때 과검률이 {point.false_positive_rate:.1%}가 된다. "
-            f"허용 과검률 {max_acceptable_fpr:.1%}를 넘으므로 임계값 조정으로는 해결되지 않는다. "
+            f"내려야 하고, 그때 과검률이 {point.false_positive_rate:.1%}가 됩니다. "
+            f"허용 과검률 {max_acceptable_fpr:.1%}를 넘으므로 임계값 조정으로는 해결되지 않습니다. "
             f"(AUROC {auroc:.3f})"
         )
 

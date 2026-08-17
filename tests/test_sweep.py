@@ -101,7 +101,9 @@ def test_separated_distribution_is_solvable_by_threshold():
     assert verdict.achievable is True
     assert verdict.resulting_fpr == 0.0
     assert verdict.required_threshold is not None
-    assert "임계값 조정으로 해결된다" in verdict.reason
+    # **어미까지 붙잡지 않는다.** 문안 말투를 다듬는 것이 시험을 깨는
+    # 일이 되면, 고쳐야 할 문장을 못 고치고 그대로 두게 된다.
+    assert "임계값 조정으로 해결" in verdict.reason
 
 
 def test_overlapped_distribution_is_not_solvable_by_threshold():
@@ -120,7 +122,7 @@ def test_overlapped_distribution_is_not_solvable_by_threshold():
     assert verdict.achievable is False
     # 전건을 잡으려면 과검을 크게 감수해야 한다는 사실이 숫자로 나와야 한다
     assert verdict.resulting_fpr is not None and verdict.resulting_fpr > 0.05
-    assert "해결되지 않는다" in verdict.reason
+    assert "해결되지 않" in verdict.reason
     assert f"{verdict.resulting_fpr:.1%}" in verdict.reason
 
 
