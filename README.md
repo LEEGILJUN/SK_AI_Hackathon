@@ -4,6 +4,8 @@
 
 2026 SK AI 해커톤 · AI Solution 리그 · 팀 「사람이 병목이다」
 
+**▶ [시연 영상 보기](https://youtu.be/NdkgI8rJRqg)** · 접수부터 승인 요청까지 전 구간
+
 ![진단 근거: 히트맵과 역추적 패치](docs/screens/1_traceback_nearest_patch.png)
 
 > 못 잡은 이미지가 메모리 뱅크의 **어느 정상 패치와 가까웠는지** 되짚은
@@ -287,6 +289,8 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 VisA 원본 이미지와 메모리 뱅크 파일은 저장소에 없습니다. 데이터는
 `data/build_factory.py` 로 재현하고 뱅크는 스크립트로 재구성합니다.
+
+돌려 보기 전에 화면을 먼저 보시려면 [시연 영상](https://youtu.be/NdkgI8rJRqg) 이 있습니다.
 
 저장소를 함께 고치실 분은 [`CONTRIBUTING.md`](CONTRIBUTING.md) 를 보세요.
 
