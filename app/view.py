@@ -112,9 +112,14 @@ TERM_KO: dict[str, str] = {
     "코어셋": "뱅크에서 서로 먼 것만 추려 크기를 줄인 것. 전부 담으면 느려서 대표만 남긴다",
     "역추적": "미검출 이미지가 뱅크의 어느 정상 패치와 가까웠는지 되돌아 찾는 것",
     "패치": "이미지를 격자로 자른 칸 하나",
+    # 「섀도」는 기획서에 정의된 용어라 문서에서는 살린다. 화면은 새 이름을
+    # 쓰되 뜻풀이는 양쪽에 걸어 둔다 — 문서를 먼저 읽고 온 사람과 화면을
+    # 먼저 본 사람이 같은 설명에 닿아야 한다.
+    "신구 비교": "새 뱅크를 실제 판정에 쓰지 않고 같은 이미지에 나란히 돌려, 판정이 서로 다른 것만 뽑는 검증(섀도 평가)",
     "섀도": "새 뱅크를 실제 판정에 쓰지 않고 같은 이미지에 나란히 돌려, 판정이 서로 다른 것만 뽑는 검증",
     "홀드아웃": "학습에 안 쓰고 남겨 둔 이미지. 성능을 재는 데 쓴다",
     "게이트": "새 뱅크를 배포 후보로 넘길지 정하는 통과 기준",
+    "성능 검증": "새 뱅크를 배포 후보로 넘길지 정하는 통과 기준. 통과해도 배포되지 않는다",
     "미검": "불량인데 양품으로 판정한 것. 이 과제가 다루는 문제",
     "미검출": "불량인데 양품으로 판정한 것. 이 과제가 다루는 문제",
     "과검": "양품인데 불량으로 판정한 것. 임계값을 내리면 늘어난다",
@@ -124,6 +129,7 @@ TERM_KO: dict[str, str] = {
     "혼입": "정상만 들어가야 할 뱅크에 결함 이미지가 잘못 섞여 들어간 것",
     "인테이크": "이슈를 접수해 정보가 충분한지, 이미 해결된 건인지 판단하는 단계",
     "큐레이션": "뱅크에 무엇을 넣고 무엇을 뺄지 정하는 단계",
+    "데이터 선별": "뱅크에 무엇을 넣고 무엇을 뺄지 정하는 단계",
     "MES": "생산 실행 시스템. 어느 제품이 어느 로트에서 언제 나왔는지가 여기 있다",
     "로트": "같은 조건에서 함께 생산된 묶음",
 }
@@ -604,23 +610,23 @@ OPEN_STAGES = {"evidence", "diagnose"}
 #: 고정 순서 재생 목록에도 들어 있지 않다.
 #: 값은 (단계 key, 짧은 이름, 이 단계가 무엇을 하는가 한 줄).
 STEP_NAMES: dict[str, tuple[str, str, str]] = {
-    "intake_issue": ("intake", "인테이크",
+    "intake_issue": ("intake", "이슈 접수",
                      "올라온 글에서 라인·품목을 뽑고, 정보가 모자라면 되묻습니다"),
-    "lookup_mes": ("mes", "MES 조회",
+    "lookup_mes": ("mes", "생산 정보 조회",
                    "제품명·로트로 검사할 이미지를 찾고, 그 품목의 뱅크를 확인합니다"),
-    "run_inspection": ("inspect", "추론",
+    "run_inspection": ("inspect", "재검사",
                        "찾은 이미지를 뱅크로 판정해 미검·과검을 가려냅니다"),
-    "run_checks": ("evidence", "판별 7항목",
+    "run_checks": ("evidence", "근거 수집",
                    "원인을 구분하기 위한 일곱 가지를 측정합니다"),
-    "diagnose_issue": ("diagnose", "진단",
+    "diagnose_issue": ("diagnose", "원인 규명",
                        "일곱 가지를 모아 원인 6종 중 하나로 규명합니다"),
-    "plan_curation": ("curate", "큐레이션",
+    "plan_curation": ("curate", "데이터 선별",
                       "뱅크에서 무엇을 빼고 무엇을 채울지 정합니다"),
-    "rebuild_bank": ("rebuild", "재구성",
+    "rebuild_bank": ("rebuild", "뱅크 재구성",
                      "계획대로 새 뱅크를 만듭니다. 배포하지 않습니다"),
-    "evaluate_gate": ("gate", "게이트",
+    "evaluate_gate": ("gate", "성능 검증",
                       "새 뱅크가 배포 후보가 될 만한지 기준과 대조합니다"),
-    "shadow_compare": ("shadow", "섀도",
+    "shadow_compare": ("shadow", "신구 비교",
                        "새 뱅크를 판정에 쓰지 않고 나란히 돌려, 판정이 서로 다른 것만 뽑습니다"),
     "prepare_release": ("release", "승인 요청",
                         "배포 패키지와 승인 요청 문서를 만듭니다. 배포는 사람이 결정합니다"),
@@ -1105,7 +1111,7 @@ def _evidence_visual_html(outcome: RunOutcome) -> str:
                 f'({_value_ko(escape(case.current_verdict))} → '
                 f'{_value_ko(escape(case.candidate_verdict))}, '
                 f'임계값 {shadow.current_threshold:.2f} → {shadow.candidate_threshold:.2f}). '
-                f'섀도 비교가 실제로 낸 값입니다.</p>'
+                f'신구 비교가 실제로 낸 값입니다.</p>'
             )
 
     return f"""
@@ -1262,11 +1268,12 @@ def _simulator_html(outcome: RunOutcome) -> str:
     return f"""
     <div class="sim" id="block-simulator">
       <div class="sim-head">
-        <span class="sim-title">코어셋 검증 (가상 라인)</span>
+        <span class="sim-title">신구 비교 재생 (가상 라인)</span>
         <span class="sim-state" id="sim-state">대기</span>
       </div>
       <p class="detail">
-        신규 코어셋 <code>{escape(shadow.candidate_version)}</code> 을 현행
+        <strong>신구 비교(섀도 평가)</strong>입니다.
+        새 뱅크 <code>{escape(shadow.candidate_version)}</code> 을 현행
         <code>{escape(shadow.current_version)}</code> 과 나란히 돌립니다.
         {f'<code>{escape(moved)}</code>. ' if moved else ''}
         <strong>신규 뱅크는 실제 판정에 쓰이지 않습니다.</strong>
@@ -1282,7 +1289,7 @@ def _simulator_html(outcome: RunOutcome) -> str:
       <div class="ev-label">판정이 서로 다른 건 (사람이 확인할 목록)</div>
       <div class="flips" id="flips"></div>
       <p class="note" id="sim-note">
-        흘러가는 판정은 전부 섀도 비교가 실제로 낸 값입니다. 화면은 그것을
+        흘러가는 판정은 전부 신구 비교가 실제로 낸 값입니다. 화면은 그것을
         한 장씩 재생합니다.
       </p>
     </div>
@@ -1368,7 +1375,7 @@ def _simulator_html(outcome: RunOutcome) -> str:
       function release() {{
         if (i >= cases.length) {{ finish(); return; }}
         const c = cases[i++];
-        state.textContent = "코어셋 검증 중입니다 " + i + "/" + cases.length;
+        state.textContent = "신구 비교 중입니다 " + i + "/" + cases.length;
 
         const piece = document.createElement("div");
         piece.className = "piece " + (c.after === "defect" ? "defect" : "pass")
@@ -1509,7 +1516,7 @@ def _settings_html(outcome: RunOutcome) -> str:
       </div>
       <table class="cfg">{rows}</table>
       <p class="detail">
-        <strong>바꿀 수 있는 것은 판정 임계값 하나입니다.</strong> 게이트 통과
+        <strong>바꿀 수 있는 것은 판정 임계값 하나입니다.</strong> 성능 검증 통과
         기준은 <code>data/gate.yaml</code> 에서 오고 값마다 근거가 함께 적혀
         있습니다. 화면에서 즉석으로 바꾸면 근거 없는 숫자가 됩니다.
       </p>
@@ -1721,7 +1728,7 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
     question = outcome.intake.question if asked else ""
     supplement = f"""
     <details class="supplement"{' open' if asked else ''}>
-      <summary>{escape('인테이크가 되물었습니다. 값을 채워 주세요' if asked
+      <summary>{escape('이슈 접수에서 되물었습니다. 값을 채워 주세요' if asked
                        else '보충 입력 (모델이 원문에서 못 뽑을 때만 필요)')}</summary>
       {f'<p class="ask">{escape(question)}</p>' if question else ''}
       <p class="hint">
@@ -1771,7 +1778,7 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
             # 시뮬레이터는 섀도 단계 바로 앞에 끼운다. 숫자만 적힌 표보다
             # 무엇이 어떻게 갈렸는지가 먼저 보여야 한다.
             if key == "shadow":
-                add_block(_simulator_html(outcome), "block-simulator", "코어셋 검증")
+                add_block(_simulator_html(outcome), "block-simulator", "가상 라인")
             stages_html.append(_stage_html(stage))
             # 진단 바로 뒤에 근거를 그린다. 문장으로만 적으면 확인할 방법이 없다.
             if key == "diagnose":
