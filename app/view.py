@@ -1469,7 +1469,7 @@ def _factory_html(factory: Any = None) -> str:
       <p class="note">
         <strong>뱅크는 품목마다 따로입니다.</strong> 캡슐 뱅크로 기판을 판정할
         수 없어서, 이슈가 어느 라인의 어느 품목인지가 먼저 정해져야 합니다.
-        아래 접수 칸은 <strong>비워 두는 것이 설계입니다</strong> — 라인과 품목은
+        아래 접수 칸은 <strong>비워 두는 것이 설계입니다.</strong> 라인과 품목은
         올라온 글에서 언어 모델이 뽑습니다.
       </p>
     </div>
@@ -1511,6 +1511,13 @@ def _bank_html(outcome: RunOutcome, factory: Any = None) -> str:
     if not members:
         return ""
 
+    # **뺄 것을 앞으로 올린다.** 격자 순서에는 뜻이 없다 — 뱅크 구성은 집합이지
+    # 차례가 아니다. 그런데 혼입 이미지가 목록 뒤에 붙는 탓에 뺄 것이 항상
+    # 맨 끝으로 갔고, 4090 실측에서 132칸 중 116·117번이라 **스크롤 없이는
+    # 똑같은 타일 다섯 줄만 보였다.** 캡션은 "빨간 테두리가 뺄 2장입니다"라고
+    # 말하는데 화면에 그것이 없는 상태였다. 심사위원이 스크롤을 내릴 이유가 없다.
+    members.sort(key=lambda m: m not in removing)
+
     cells = "".join(
         f'<figure class="bm{" out" if m in removing else ""}">'
         f'<img loading="lazy" src="/image/{quote(m)}" alt="{escape(Path(m).name)}">'
@@ -1545,8 +1552,9 @@ def _bank_html(outcome: RunOutcome, factory: Any = None) -> str:
       </p>
       <ul class="picked">{picked}</ul>
       <p class="note">
-        빨간 테두리가 <strong>뺄 {len(removing)}장</strong>입니다. 근거는 위
-        목록에 있고, <strong>고립도만으로는 뽑지 않습니다</strong> — 정상
+        <strong>맨 앞 {len(removing)}장</strong>이 뺄 것이고 빨간 테두리를
+        둘렀습니다. 근거는 위
+        목록에 있고, <strong>고립도만으로는 뽑지 않습니다.</strong> 정상
         이미지를 잘못 빼면 커버리지 부족을 스스로 만들기 때문입니다.
       </p>
     </div>
