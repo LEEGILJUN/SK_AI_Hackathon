@@ -1397,6 +1397,31 @@ def _decision_html(outcome: RunOutcome, decision: Any = None) -> str:
     """
 
 
+def _posix_rel(path: Any, root: Any) -> str:
+    """공장 루트 기준 상대 경로를 **항상 슬래시로** 만든다.
+
+    **`str(Path(...))` 를 쓰면 윈도우에서 역슬래시가 나온다.** 시연은
+    윈도우에서 돌고 시험은 맥에서 도니, 경로를 문자열로 견주는 자리는 전부
+    이 함정이 있다. 맥에서 통과한 것이 증거가 되지 못한다.
+
+    실제로 당했다. 뱅크 구성 화면에서 뺄 이미지에 표시가 **4090 에서만 하나도
+    안 붙었다** — `plan.remove` 쪽은 저장할 때부터 슬래시인데 이쪽만
+    역슬래시라 비교가 전부 어긋났다. 화면은 "빨간 테두리가 뺄 2장입니다"라고
+    적으면서 한 장도 칠하지 않았다.
+
+    `/image/` 주소로도 쓰이므로 역슬래시가 섞이면 이미지 자체가 404 가 된다.
+    """
+    try:
+        return pathlib.Path(path).relative_to(root).as_posix()
+    except (ValueError, TypeError):
+        return ""
+
+
+def _posix(path: Any) -> str:
+    """비교하려는 쪽도 슬래시로 맞춘다. 한쪽만 고치면 또 어긋난다."""
+    return str(path).replace("\\", "/")
+
+
 def _factory_html(factory: Any = None) -> str:
     """무엇을 검사하는 공장인가 — 첫 화면의 현황판.
 
@@ -1412,10 +1437,7 @@ def _factory_html(factory: Any = None) -> str:
         return ""
 
     def rel(path) -> str:
-        try:
-            return str(pathlib.Path(path).relative_to(factory.root))
-        except (ValueError, TypeError):
-            return ""
+        return _posix_rel(path, factory.root)
 
     cards = ""
     for item in factory.items.values():
@@ -1481,13 +1503,10 @@ def _bank_html(outcome: RunOutcome, factory: Any = None) -> str:
         return ""
 
     def rel(path) -> str:
-        try:
-            return str(pathlib.Path(path).relative_to(factory.root))
-        except (ValueError, TypeError):
-            return ""
+        return _posix_rel(path, factory.root)
 
-    removing = {c.image for c in plan.remove}
-    reasons = {c.image: c.reason for c in plan.remove}
+    removing = {_posix(c.image) for c in plan.remove}
+    reasons = {_posix(c.image): c.reason for c in plan.remove}
     members = [r for r in (rel(p) for p in list(item.bank_normal) + list(item.contaminants)) if r]
     if not members:
         return ""
