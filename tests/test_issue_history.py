@@ -198,3 +198,72 @@ def test_the_path_and_matched_edges_come_along(lookup):
     relations = [edge.relation for edge in top.path]
     for expected in ("발생_라인", "대상_품목", "진단_원인", "조치", "결과"):
         assert expected in relations, f"경로에 {expected} 간선이 없다"
+
+
+# ── 승인이 이력으로 쌓이는가 ────────────────────────────────────────────
+
+
+def test_승인된_건이_이력에_쌓이고_다음에_조회된다(tmp_path):
+    """**문서를 만드는 것과 이력이 쌓이는 것은 다르다.**
+
+    지금까지 이슈 이력은 읽기만 했다. 이번에 처리한 건이 안 쌓이면 같은
+    문제가 다음 달에 또 올라와도 "처음 보는 건"이 된다. 기획서가 Pain
+    Point 다섯째로 적은 것이 정확히 이것이다.
+    """
+    from agents.history import append_resolved_issue, read_history, next_issue_id
+
+    path = tmp_path / "issue_history.jsonl"
+    assert read_history(path) == []
+    assert next_issue_id(path) == "ISS-0001"
+
+    first = append_resolved_issue(
+        line="line_01", object_name="pcb1", defect_type="scratch",
+        cause="bank_contamination", action="혼입 이미지 2장 제거 후 뱅크 재구성",
+        summary="정상 학습셋에 불량이 섞여 있었다.", resolved=True,
+        bank_version="pcb1-01-v2", document_no="AR-20260817-cad872",
+        approved_by="품질팀", path=path,
+    )
+    assert first["issue_id"] == "ISS-0001"
+    assert first["resolved"] is True
+    assert first["bank_version"] == "pcb1-01-v2"
+
+    second = append_resolved_issue(
+        line="line_01", object_name="pcb1", defect_type="scratch",
+        cause="threshold", action="임계값 재조정", summary="두 번째 건.",
+        resolved=False, path=path,
+    )
+    assert second["issue_id"] == "ISS-0002", "번호가 이어져야 한다"
+
+    kept = read_history(path)
+    assert len(kept) == 2
+    assert [r["issue_id"] for r in kept] == ["ISS-0001", "ISS-0002"]
+
+
+def test_비승인은_해결로_쌓지_않는다(tmp_path):
+    """**승인 전에 해결로 적으면 다음 이슈가 잘못 끊긴다.**
+
+    `find_similar_issues` 는 `resolved` 를 보고 중복을 차단한다. 후보를
+    만든 것은 해결이 아니다.
+    """
+    from agents.history import append_resolved_issue, read_history
+
+    path = tmp_path / "h.jsonl"
+    append_resolved_issue(
+        line="line_01", object_name="pcb1", defect_type="scratch",
+        cause="bank_contamination", action="후보만 만듦", summary="비승인.",
+        resolved=False, path=path,
+    )
+    assert read_history(path)[0]["resolved"] is False
+
+
+def test_주석_줄은_이력으로_세지_않는다(tmp_path):
+    """실제 파일이 `_comment` 줄로 시작한다. 그것까지 세면 번호가 밀린다."""
+    from agents.history import read_history, next_issue_id
+
+    path = tmp_path / "h.jsonl"
+    path.write_text(
+        '{"_comment": "설명"}\n'
+        '{"issue_id": "ISS-0042", "line": "line_02", "resolved": true}\n',
+        encoding="utf-8")
+    assert len(read_history(path)) == 1
+    assert next_issue_id(path) == "ISS-0043"
