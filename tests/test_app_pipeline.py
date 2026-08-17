@@ -891,3 +891,45 @@ def test_a_missing_traceback_falls_back_to_the_whole_image(demo_factory):
 
     assert session._query_crop(NoMatch()) == (None, None)
     assert session._query_crop(None) == (None, None)
+
+
+def test_뺄_이미지_표시가_윈도우_경로에서도_붙는다(factory):
+    """경로 구분자가 달라도 뺄 이미지에 표시가 붙어야 한다.
+
+    **맥에서 통과한 것이 증거가 되지 못한다.** 시연은 윈도우에서 돌고
+    시험은 맥에서 돈다. 실제로 `str(Path(...))` 가 역슬래시를 내서 4090
+    화면에만 표시가 하나도 안 붙었고(`figure class="bm"` 133개 중 `out`
+    0개), 그런데 캡션은 "빨간 테두리가 뺄 2장입니다" 라고 적고 있었다.
+
+    같은 함정에 두 번 걸렸다 — `agents/release.py` 의 `display_path` 도
+    윈도우 경로를 한 조각으로 읽어 사용자명을 못 걸렀다. **경로를 문자열로
+    견주거나 주소로 쓰는 자리는 전부 이 함정이 있다.**
+    """
+    from app.view import _bank_html
+
+    outcome = run(factory, patch_override="defect")
+    if outcome.plan is None or not outcome.plan.remove:
+        pytest.skip("이 실행에서는 뺄 이미지가 없다")
+
+    before = _bank_html(outcome, factory).count("bm out")
+    assert before > 0, "맥 경로에서 표시가 붙어야 한다"
+
+    for candidate in outcome.plan.remove:
+        candidate.image = candidate.image.replace("/", "\\")
+    assert _bank_html(outcome, factory).count("bm out") == before, (
+        "역슬래시 경로에서도 같은 수가 붙어야 한다"
+    )
+
+
+def test_화면_주소에_역슬래시가_남지_않는다(factory):
+    """`/image/` 주소에 역슬래시가 들어가면 윈도우 밖에서 404 다.
+
+    윈도우 서버는 역슬래시를 받아 줘서 그 기계에서는 통했다. **그래서
+    맥에서도, 4090 에서도 안 걸렸다.** 다른 환경으로 옮기면 그때 터진다.
+    """
+    from app.view import _bank_html, _factory_html
+
+    outcome = run(factory, patch_override="defect")
+    for html in (_bank_html(outcome, factory), _factory_html(factory)):
+        assert "%5C" not in html, "주소에 역슬래시가 인코딩돼 남았다"
+        assert "\\" not in html.split("<style")[0], "주소에 역슬래시가 그대로 남았다"
