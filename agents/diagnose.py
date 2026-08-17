@@ -251,11 +251,7 @@ def collect_evidence(
             ),
             source="trace",
             usable=top is not None,
-            detail=(
-                f"{top.bank.source_image} 격자({top.bank.row},{top.bank.col}), 거리 {top.distance:.4f}"
-                if top
-                else "역추적하지 않음"
-            ),
+            detail=(_nearest_detail(top) if top else "역추적하지 않음"),
         )
     )
 
@@ -350,6 +346,24 @@ def collect_evidence(
 
 
 # ── 판정 ────────────────────────────────────────────────────────────────
+
+
+def _nearest_detail(top: "NearestMatch") -> str:
+    """되짚은 패치를 사람이 읽는 문장으로.
+
+    전에는 이렇게 적었다.
+
+        pcb1/Data/Images/Anomaly/001.JPG 격자(48,34), 거리 2.3353
+
+    **읽는 사람이 셋 다 모른다.** 저장소 안쪽 경로가 그대로 나오고, 격자가
+    무엇을 세는 좌표인지 안 적혀 있고, 거리 숫자가 큰 것이 좋은지 나쁜지도
+    알 수 없다. 화면에 그대로 실려서 "이게 뭔 소리냐"는 말을 들었다.
+
+    파일 이름만 남기고, 좌표는 행·열로 풀고, 거리는 방향을 함께 적는다.
+    """
+    name = str(top.bank.source_image).replace("\\", "/").rsplit("/", 1)[-1]
+    return (f"{name} 의 {top.bank.row}행 {top.bank.col}열 조각, "
+            f"닮은 정도 {top.distance:.3f} (숫자가 클수록 덜 닮았습니다)")
 
 
 def _value(evidence: Sequence[Evidence], item_no: int) -> Any:
@@ -461,9 +475,11 @@ def decide(
         nearest_detail = next((e.detail for e in evidence if e.item_no == 4), "")
         patch_detail = next((e.detail for e in evidence if e.item_no == 5), "")
         result.reasoning = (
-            f"최근접 정상 패치를 되짚었더니 {nearest_detail} 였고, 그 패치를 판독한 결과 "
-            f"실제로는 결함이었다({patch_detail}). 정상으로 등록되어 뱅크에 들어간 결함이 "
-            f"같은 유형의 불량을 정상으로 끌어당기고 있습니다."
+            f"못 잡은 이미지에서 가장 이상한 자리를 고른 뒤, 그 자리와 가장 닮은 "
+            f"정상 패치를 뱅크에서 찾았습니다. {nearest_detail}. "
+            f"그 조각을 판독하니 정상이 아니라 결함이었습니다({patch_detail}). "
+            f"정상이라고 등록해 둔 이미지에 결함이 섞여 들어간 것이고, 그래서 같은 "
+            f"유형의 불량이 그 조각과 닮았다는 이유로 정상 판정을 받습니다."
         )
         _finalize(result)
         return result

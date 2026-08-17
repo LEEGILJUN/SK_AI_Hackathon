@@ -300,8 +300,8 @@ def test_approval_document_reports_where_defects_cluster(factory):
     assert outcome.distribution.total > 0
 
     document = outcome.approval_markdown
-    assert "## 결함이 어디에 몰렸나" in document
-    assert "## 대상 이미지" in document
+    assert "결함이 어디에 몰렸나" in document
+    assert "대상 이미지" in document
     for record in outcome.missed_records[:1]:
         assert record.product_id in document
         assert (record.lot or "") in document

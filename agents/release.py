@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
@@ -105,6 +106,89 @@ def _looks_personal(text: str) -> bool:
     )
 
 
+def document_number(bank_version: str) -> str:
+    """승인 요청 문서의 관리번호.
+
+    **실무 문서에 번호가 없으면 되짚을 수가 없다.** 승인 이력을 쌓아 두고
+    "그때 그 건"을 부르려면 부를 이름이 있어야 한다.
+
+    뱅크 판 이름에서 만든다. 같은 판에는 같은 번호가 나오므로 문서를 다시
+    생성해도 번호가 흔들리지 않는다. 시각을 넣으면 다시 만들 때마다 번호가
+    달라져 같은 건이 두 개로 보인다.
+
+        pcb1-01-v2_20260817-0252_cad872  →  AR-20260817-cad872
+    """
+    parts = str(bank_version).split("_")
+    # **`hash()` 를 쓰지 않는다.** 파이썬 해시는 실행마다 씨앗이 달라져
+    # 같은 판에 다른 번호가 나온다. 문서번호가 흔들리면 부를 이름이 못 된다.
+    fingerprint = parts[2] if len(parts) > 2 else hashlib.sha1(
+        str(bank_version).encode("utf-8")).hexdigest()[:6]
+    if len(parts) > 1:
+        return f"AR-{parts[1].split('-')[0]}-{fingerprint}"
+    # 시각이 이름에 없는 판(합성·시험)은 그 자리를 비운다. `00000000` 을
+    # 채우면 날짜를 아는 것처럼 보인다.
+    return f"AR-{fingerprint}"
+
+
+def bank_settings(bank: MemoryBank, record: RebuildRecord,
+                  gate: GateResult, threshold: float | None = None) -> dict[str, str]:
+    """이 판정이 어떤 설정 위에서 나왔는가.
+
+    **문서를 재활용하려면 이것이 있어야 한다.** 나중에 되짚을 때 임계값과
+    입력 크기, 코어셋 비율을 모르면 같은 조건으로 다시 재볼 수가 없다.
+    폴더 이름의 설정 지문과 같은 값을 사람이 읽는 형태로 적는다.
+
+    **값이 없으면 그 줄을 빼지 않고 "기록 없음"으로 남긴다.** 줄이 사라지면
+    읽는 사람이 "원래 없는 항목"으로 오해한다.
+    """
+    meta = dict(getattr(bank, "meta", {}) or {})
+    config = dict(meta.get("feature_config") or {})
+    grid = meta.get("grid") or []
+    rows: dict[str, str] = {
+        "판정 임계값": _fmt(threshold),
+        "입력 크기": _fmt(config.get("crop") or config.get("resize")),
+        "특징 추출기": _fmt(config.get("backbone")),
+        "격자": f"{grid[0]}×{grid[1]}" if len(grid) == 2 else "기록 없음",
+        "coreset 비율": _fmt(meta.get("coreset_ratio")),
+        "뱅크 행수": _fmt(_bank_rows(bank)),
+        "구성 이미지 수": _fmt(meta.get("source_image_count")),
+        "무작위 씨앗": _fmt(meta.get("seed")),
+        "이전 판": _fmt(record.from_version),
+        "이번 판": _fmt(record.to_version),
+    }
+    if meta.get("coreset_capped"):
+        rows["coreset 상한"] = f"{meta.get('max_bank_size')} 에 걸려 요청 비율대로 안 됨"
+    return rows
+
+
+def _bank_rows(bank: MemoryBank) -> int | None:
+    """뱅크 행수. **numpy 배열에 `or` 를 쓰지 않는다.**
+
+    `embeddings or []` 는 배열의 참·거짓을 물어 `ValueError` 가 난다.
+    길이만 본다.
+    """
+    rows = getattr(bank, "embeddings", None)
+    try:
+        return int(len(rows))
+    except TypeError:
+        return None
+
+
+def _fmt(value: Any) -> str:
+    """값이 없으면 "기록 없음". **0 은 값이다.**
+
+    전에 `value == 0` 으로 걸렀는데, 0 은 없는 것이 아니라 0 이다.
+    그리고 numpy 배열에 `==` 을 쓰면 배열이 돌아와 참·거짓을 못 묻는다.
+    """
+    if value is None:
+        return "기록 없음"
+    if isinstance(value, str):
+        return value if value.strip() else "기록 없음"
+    if isinstance(value, float):
+        return f"{value:g}"
+    return str(value)
+
+
 def _evidence_table(diagnosis: DiagnosisResult) -> str:
     lines = [
         "| # | 판별 항목 | 값 | 출처 | 확인 |",
@@ -127,7 +211,7 @@ def _gate_table(gate: GateResult) -> str:
     for check in gate.checks:
         lines.append(
             f"| {check.name} | {check.value} | {check.threshold} | "
-            f"{'통과' if check.passed else '**미달**'} |"
+            f"{'통과' if check.passed else '미달'} |"
         )
     return "\n".join(lines)
 
@@ -145,6 +229,7 @@ def write_approval_document(
     issue_text: str = "",
     distribution: "DefectDistribution | None" = None,
     affected: "Sequence[ImageRecord]" = (),
+    threshold: float | None = None,
 ) -> Path:
     """승인 요청 문서를 쓴다.
 
@@ -154,26 +239,29 @@ def write_approval_document(
     """
     cause_label = CAUSE_LABEL_KO.get(diagnosis.cause or "", "판정 보류")
 
+    doc_no = document_number(record.to_version)
+
     parts: list[str] = []
-    parts.append(f"# 뱅크 배포 승인 요청: {record.to_version}\n")
+    parts.append(f"뱅크 배포 승인 요청  {record.to_version}")
+    parts.append(f"문서번호  {doc_no}\n")
     parts.append(
-        "> 이 문서는 자동 생성됐습니다. **배포는 실행되지 않았습니다.** "
+        "이 문서는 자동 생성됐습니다. 배포는 실행되지 않았습니다. "
         "아래를 검토하고 승인 여부를 결정해 주세요.\n"
     )
 
     # ── 요약 ────────────────────────────────────────────────────────
-    parts.append("## 요약\n")
-    parts.append(f"- **원인**: {cause_label}")
-    parts.append(f"- **조치**: {plan.summary()}")
-    parts.append(f"- **뱅크**: `{record.from_version}` → `{record.to_version}`")
-    parts.append(f"- **게이트**: {'통과' if gate.passed else '**미통과**'}")
+    parts.append("\n1. 요약\n")
+    parts.append(f"- 원인: {cause_label}")
+    parts.append(f"- 조치: {plan.summary()}")
+    parts.append(f"- 뱅크: {record.from_version} → {record.to_version}")
+    parts.append(f"- 성능 검증: {'통과' if gate.passed else '미통과'}")
     if shadow:
-        parts.append(f"- **사람 확인 필요**: {shadow.review_count}건")
+        parts.append(f"- 사람이 확인할 건: {shadow.review_count}건")
     parts.append("")
 
     if issue_text:
-        parts.append("## 접수된 이슈\n")
-        parts.append(f"> {issue_text}\n")
+        parts.append("\n2. 접수된 이슈\n")
+        parts.append(f"  {issue_text}\n")
 
     # ── 무엇이 걸렸나 ───────────────────────────────────────────────
     #
@@ -181,7 +269,7 @@ def write_approval_document(
     # 뱅크부터 다시 만들면 원인을 놔둔 채 증상만 덮는 셈이다. 승인하는 사람이
     # 그 판단을 하려면 집계가 문서에 있어야 한다.
     if affected:
-        parts.append("## 대상 이미지\n")
+        parts.append("\n3. 대상 이미지\n")
         parts.append(f"미검으로 확인된 {len(affected)}건입니다.\n")
         parts.append("| 제품 | 라인 | 로트 | 설비 | 촬영일 |")
         parts.append("|---|---|---|---|---|")
@@ -198,7 +286,7 @@ def write_approval_document(
         parts.append("")
 
     if distribution is not None and distribution.total:
-        parts.append("## 결함이 어디에 몰렸나\n")
+        parts.append("\n4. 결함이 어디에 몰렸나\n")
         parts.append(f"{distribution.describe()}\n")
         for title, counts in (("로트", distribution.by_lot),
                               ("라인", distribution.by_line),
@@ -209,17 +297,17 @@ def write_approval_document(
             inline = ", ".join(
                 f"{key} {n}건({n / distribution.total:.0%})" for key, n in ordered[:5]
             )
-            parts.append(f"- **{title}**: {inline}")
+            parts.append(f"- {title}: {inline}")
         parts.append("")
         if distribution.concentrated_in():
             parts.append(
-                "> 한쪽에 몰려 있습니다. **뱅크 재구성으로 덮기 전에 그쪽 원인을 "
-                "먼저 확인해 주세요.** 자재나 설비 문제라면 뱅크를 다시 만들어도 "
+                "한쪽에 몰려 있습니다. 뱅크 재구성으로 덮기 전에 그쪽 원인을 "
+                "먼저 확인해 주세요. 자재나 설비 문제라면 뱅크를 다시 만들어도 "
                 "같은 일이 반복됩니다.\n"
             )
 
     # ── 진단 ────────────────────────────────────────────────────────
-    parts.append("## 진단\n")
+    parts.append("\n5. 원인 규명\n")
     parts.append(f"{diagnosis.reasoning}\n")
     parts.append(_evidence_table(diagnosis))
     parts.append("")
@@ -231,7 +319,7 @@ def write_approval_document(
         )
 
     # ── 조치 내용 ───────────────────────────────────────────────────
-    parts.append("## 뱅크에 무엇이 바뀌었나\n")
+    parts.append("\n6. 뱅크에 무엇이 바뀌었나\n")
     parts.append(f"{record.reason}\n")
     if record.removed:
         parts.append(f"**제거 {len(record.removed)}장**\n")
@@ -251,18 +339,21 @@ def write_approval_document(
     parts.append(f"유지된 이미지 {record.kept_count}장, 최종 뱅크 {len(bank)}행\n")
 
     # ── 평가 ────────────────────────────────────────────────────────
-    parts.append("## 평가 게이트\n")
+    parts.append("\n7. 성능 검증\n")
     parts.append(_gate_table(gate))
     parts.append("")
     parts.append(f"{gate.reason}\n")
 
     if reproducibility:
         mark = "100%" if reproducibility.identical else "**불일치**"
-        parts.append(f"**재현성**: {reproducibility.runs}회 반복, {mark}. {reproducibility.detail}\n")
+        parts.append(
+            f"재현성: 같은 근거로 {reproducibility.runs}회 다시 판정했고 {mark}. "
+            f"{reproducibility.detail}\n"
+        )
 
     # ── 섀도 ────────────────────────────────────────────────────────
     if shadow:
-        parts.append("## 섀도 비교\n")
+        parts.append("\n8. 신구 비교\n")
         parts.append(
             "신규 뱅크를 실제 판정에 쓰지 않고 같은 이미지에 병렬로만 추론시킨 결과입니다. "
             "판정이 갈린 건만 확인하시면 됩니다.\n"
@@ -290,18 +381,31 @@ def write_approval_document(
                 parts.append(f"| … | | 외 {len(shadow.newly_detected) - 15}건 |")
             parts.append("")
 
+    # ── 무엇으로 판정했나 ───────────────────────────────────────────
+    #
+    # **이 절이 없으면 문서를 재활용할 수 없다.** 나중에 이 승인을 되짚을 때
+    # "그때 임계값이 얼마였나", "어떤 해상도로 뽑은 뱅크인가"를 알 수 없으면
+    # 같은 조건으로 다시 재볼 수가 없다. 뱅크 폴더 이름의 설정 지문과 같은
+    # 값을 사람이 읽는 형태로 함께 적는다.
+    parts.append("\n9. 무엇으로 판정했나\n")
+    parts.append("| 항목 | 값 |")
+    parts.append("|---|---|")
+    for label, value in bank_settings(bank, record, gate, threshold).items():
+        parts.append(f"| {label} | {value} |")
+    parts.append("")
+
     # ── 승인 ────────────────────────────────────────────────────────
-    parts.append("## 승인\n")
+    parts.append("\n10. 승인\n")
     if not gate.passed:
         parts.append(
-            "**게이트를 통과하지 못했습니다.** 아래 항목이 기준에 미달합니다. "
+            "성능 검증을 통과하지 못했습니다. 아래 항목이 기준에 미달합니다. "
             "그대로 승인하실 경우 근거를 남겨 주세요.\n"
         )
         for check in gate.failures:
             parts.append(f"- {check.name}: {check.value} (기준 {check.threshold}): {check.detail}")
         parts.append("")
 
-    parts.append("승인하시면 아래를 수동으로 진행합니다. **자동 반영은 없습니다.**\n")
+    parts.append("승인하시면 아래를 수동으로 진행합니다. 자동 반영은 없습니다.\n")
     parts.append(f"1. 배포 패키지 확인: `{display_path(path.parent)}`")
     parts.append("2. 장비에 뱅크 반영 (담당자 수행)")
     parts.append("3. 반영 후 초기 물량 모니터링")
@@ -331,6 +435,7 @@ def prepare_release(
     issue_text: str = "",
     distribution: "DefectDistribution | None" = None,
     affected: "Sequence[ImageRecord]" = (),
+    threshold: float | None = None,
 ) -> ReleasePackage:
     """배포 패키지를 만든다. 배포하지는 않는다.
 
@@ -370,6 +475,7 @@ def prepare_release(
         bank=bank, record=record, diagnosis=diagnosis, plan=plan,
         gate=gate, shadow=shadow, reproducibility=reproducibility, issue_text=issue_text,
         distribution=distribution, affected=affected,
+        threshold=threshold,
     )
 
     blocking: list[str] = []

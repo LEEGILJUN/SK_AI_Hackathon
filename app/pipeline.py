@@ -1214,7 +1214,10 @@ class _DemoSession:
         if self.patch_override:
             return VisionJudgment(
                 verdict=self.patch_override, confidence=0.95,
-                reason=f"시연을 위해 지정한 값 ({self.patch_override})",
+                reason=("시연을 위해 지정한 값: "
+                        + {"defect": "잘못 섞여 들어간 결함",
+                           "genuine_normal": "진짜 정상품"}.get(
+                              self.patch_override or "", self.patch_override or "")),
                 model="manual", is_stub=False,
             )
 
@@ -1502,6 +1505,7 @@ class _DemoSession:
             gate=o.gate, shadow=o.shadow, reproducibility=reproducibility,
             issue_text=self.issue_text,
             distribution=o.distribution, affected=o.missed_records,
+            threshold=self.threshold,
         )
         o.package = package
         o.approval_markdown = package.approval_document.read_text(encoding="utf-8")

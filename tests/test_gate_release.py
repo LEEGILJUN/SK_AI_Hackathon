@@ -293,8 +293,8 @@ def test_failed_gate_is_surfaced_not_hidden(embedder, tmp_path):
     )
     text = package.approval_document.read_text(encoding="utf-8")
 
-    assert "**미통과**" in text
-    assert "게이트를 통과하지 못했습니다" in text
+    assert "미통과" in text
+    assert "성능 검증을 통과하지 못했습니다" in text
     assert package.blocking_reasons, "승인을 막는 사유가 남아야 한다"
 
 
