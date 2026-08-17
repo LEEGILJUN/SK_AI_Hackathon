@@ -301,7 +301,7 @@ def write_approval_document(
         parts.append("")
         if distribution.concentrated_in():
             parts.append(
-                "한쪽에 몰려 있습니다. 뱅크 재구성으로 덮기 전에 그쪽 원인을 "
+                "  한쪽에 몰려 있습니다. 뱅크 재구성으로 덮기 전에 그쪽 원인을 "
                 "먼저 확인해 주세요. 자재나 설비 문제라면 뱅크를 다시 만들어도 "
                 "같은 일이 반복됩니다.\n"
             )
@@ -315,14 +315,14 @@ def write_approval_document(
     if unusable:
         names = ", ".join(f"{e.item_no}번({e.name})" for e in unusable)
         parts.append(
-            f"> 확인하지 못한 판별 항목: {names}. 이 항목들은 판정 근거에서 제외됐습니다.\n"
+            f"  확인하지 못한 판별 항목: {names}. 이 항목들은 판정 근거에서 제외됐습니다.\n"
         )
 
     # ── 조치 내용 ───────────────────────────────────────────────────
     parts.append("\n6. 뱅크에 무엇이 바뀌었나\n")
     parts.append(f"{record.reason}\n")
     if record.removed:
-        parts.append(f"**제거 {len(record.removed)}장**\n")
+        parts.append(f"제거 {len(record.removed)}장\n")
         for image in record.removed[:20]:
             reason = next((c.reason for c in plan.remove if c.image == image), "")
             parts.append(f"- `{image}`: {reason}")
@@ -330,7 +330,7 @@ def write_approval_document(
             parts.append(f"- … 외 {len(record.removed) - 20}장")
         parts.append("")
     if record.added:
-        parts.append(f"**보충 {len(record.added)}장**\n")
+        parts.append(f"보충 {len(record.added)}장\n")
         for image in record.added[:20]:
             parts.append(f"- `{image}`")
         if len(record.added) > 20:
@@ -361,7 +361,7 @@ def write_approval_document(
         parts.append(f"{shadow.summary()}\n")
 
         if shadow.newly_missed:
-            parts.append(f"### 새로 놓치는 건 {len(shadow.newly_missed)}건 (확인 필요)\n")
+            parts.append(f"새로 놓치는 건 {len(shadow.newly_missed)}건 (확인 필요)\n")
             parts.append("고치려던 문제가 나아져도 다른 것을 잃으면 개선이 아닙니다.\n")
             parts.append("| 이미지 | 현행 점수 | 후보 점수 |")
             parts.append("|---|---|---|")
@@ -372,7 +372,7 @@ def write_approval_document(
             parts.append("")
 
         if shadow.newly_detected:
-            parts.append(f"### 새로 잡는 건 {len(shadow.newly_detected)}건\n")
+            parts.append(f"새로 잡는 건 {len(shadow.newly_detected)}건\n")
             parts.append("| 이미지 | 현행 점수 | 후보 점수 |")
             parts.append("|---|---|---|")
             for d in shadow.newly_detected[:15]:
