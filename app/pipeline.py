@@ -759,7 +759,7 @@ class _DemoSession:
         self.outcome.stages.append(
             Stage(
                 key="intake",
-                title="1. 인테이크",
+                title="1. 이슈 접수",
                 status="done" if intake.verdict == "proceed" else "blocked",
                 headline={"proceed": "진단으로 넘김", "need_more_info": "정보 부족, 되물음",
                           "duplicate": "이미 해결된 사례, 중단"}[intake.verdict],
@@ -871,7 +871,7 @@ class _DemoSession:
         self.outcome.stages.append(
             Stage(
                 key="mes",
-                title="2. MES 조회",
+                title="2. 생산 정보 조회",
                 status="blocked" if missing or not records else "done",
                 headline=found_note,
                 detail=(
@@ -1010,7 +1010,7 @@ class _DemoSession:
         self.outcome.stages.append(
             Stage(
                 key="inspect",
-                title="3. 추론: 미검·과검",
+                title="3. 재검사: 미검·과검",
                 status="done" if missed else "blocked",
                 headline=f"{len(self.records)}장 중 미검 {len(missed)}장 · 과검 {len(overkill)}장",
                 detail=(
@@ -1156,7 +1156,7 @@ class _DemoSession:
         self.outcome.stages.append(
             Stage(
                 key="evidence",
-                title="4. 판별 7항목",
+                title="4. 근거 수집: 판별 7항목",
                 status="done",
                 headline=f"{sum(1 for e in self.evidence if e.usable)}/7 확인",
                 rows=[
@@ -1292,7 +1292,7 @@ class _DemoSession:
         self.outcome.stages.append(
             Stage(
                 key="diagnose",
-                title="5. 진단",
+                title="5. 원인 규명",
                 status="done" if diagnosis.cause else "blocked",
                 headline=diagnosis.cause_label,
                 detail=diagnosis.reasoning or diagnosis.blocking_reason,
@@ -1332,7 +1332,7 @@ class _DemoSession:
         self.outcome.stages.append(
             Stage(
                 key="curate",
-                title="6. 데이터 큐레이션",
+                title="6. 데이터 선별",
                 status="done" if plan.touches_bank else "skipped",
                 headline=plan.summary(),
                 detail=plan.reason,
@@ -1423,7 +1423,7 @@ class _DemoSession:
         self.outcome.stages.append(
             Stage(
                 key="gate",
-                title="8. 평가 게이트",
+                title="8. 성능 검증",
                 status="done" if gate.passed else "blocked",
                 headline="통과" if gate.passed else "미통과",
                 detail=gate.reason,
@@ -1456,7 +1456,7 @@ class _DemoSession:
         self.outcome.stages.append(
             Stage(
                 key="shadow",
-                title="9. 섀도 비교",
+                title="9. 신구 비교",
                 status="done",
                 headline=f"{shadow.total}장 중 {shadow.review_count}장만 확인",
                 detail=shadow.summary(),
