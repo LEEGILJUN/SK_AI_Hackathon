@@ -22,6 +22,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import io  # noqa: E402
+import pathlib  # noqa: E402
 
 from fastapi import FastAPI, Form, HTTPException, Response  # noqa: E402
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse  # noqa: E402
@@ -36,6 +37,8 @@ from app.pipeline import (  # noqa: E402
 from inspection.crop import crop_patch  # noqa: E402
 from inspection.types import PatchRef  # noqa: E402
 from app.view import render_page  # noqa: E402
+from agents.history import append_resolved_issue  # noqa: E402
+from agents.release import document_number  # noqa: E402
 from inspection.store import record_decision  # noqa: E402
 from lookup.base import bank_item_key  # noqa: E402
 from dataclasses import dataclass  # noqa: E402
@@ -206,6 +209,9 @@ class Decision:
     at: str
     reason: str
     command: str
+    #: 이력에 쌓인 기록. 남은 것이 안 보이면 남은 줄 모른다.
+    issue_id: str = ""
+    document_no: str = ""
 
 
 @app.post("/decision", response_class=HTMLResponse)
@@ -247,9 +253,35 @@ def decide(by: str = Form(""), reason: str = Form(""),
         # 시연 기록이 저장소에 섞여 들어가면 실제 운영 이력과 구분이 안 된다.
         root=factory().store_root or (factory().root / "decisions"),
     )
+    # ── 처리한 건을 이슈 이력에 쌓는다 ─────────────────────────────────
+    #
+    # **승인이 곧 "해결"이다.** 후보를 만든 것은 해결이 아니므로 그 전에
+    # `resolved=True` 로 쌓으면 다음 이슈가 "이미 처리된 건"으로 잘못 끊긴다.
+    # 비승인도 남긴다 — 시도했고 안 됐다는 것도 다음 사람에게는 정보다.
+    #
+    # 합성 실행이 `data/issue_history.jsonl` 을 늘리면 24건 고정이던 것이
+    # 흔들리므로, 저장소가 없으면 공장 임시 폴더에 쓴다.
+    report = _last.intake.report if _last.intake else None
+    doc_no = document_number(to)
+    history_path = (
+        pathlib.Path("data/issue_history.jsonl") if factory().store_root
+        else factory().root / "issue_history.jsonl"
+    )
+    logged = append_resolved_issue(
+        line=item.line, object_name=item.object_name,
+        defect_type=(getattr(report, "defect_type", "") or ""),
+        cause=(_last.diagnosis.cause or "") if _last.diagnosis else "",
+        action=_last.plan.summary() if _last.plan else "",
+        summary=(_last.diagnosis.reasoning or "") if _last.diagnosis else "",
+        resolved=approved,
+        bank_version=to, document_no=doc_no, approved_by=by.strip(),
+        path=history_path,
+    )
+
     _decision = Decision(
         approved=approved, by=by.strip(), at=record.at, reason=reason.strip(),
         command=f"python scripts/switch_bank.py --item {key} --to {to}",
+        issue_id=str(logged.get("issue_id", "")), document_no=doc_no,
     )
     return render_page(_last, _last.issue_text, on_visa=factory().on_visa,
                        factory=factory(), decision=_decision)

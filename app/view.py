@@ -378,6 +378,10 @@ a{color:var(--accent)}
 
 /* 점수 눈금. 임계값을 눈금 위 한 자리에 세워, 점수가 그보다 왼쪽이라
    양품으로 나갔다는 것이 막대 하나로 읽히게 한다. */
+.scale{display:flex;align-items:center;gap:7px;font-family:var(--mono);
+  font-size:10.5px;color:var(--ink3)}
+.scale i{flex:1;height:9px;border-radius:5px;border:1px solid var(--rule2);
+  background:linear-gradient(90deg,var(--panel2),var(--stop))}
 .gauge{position:relative;height:22px;background:var(--panel2);
   border:1px solid var(--rule2);border-radius:6px;overflow:hidden}
 .gauge>b{position:absolute;left:0;top:0;bottom:0;
@@ -518,6 +522,16 @@ table.tax tr.here td:first-child{color:var(--accent)}
   text-transform:uppercase;color:var(--ink3);margin-right:2px}
 .rail{list-style:none;margin:0;padding:0;display:flex;gap:4px;flex-wrap:wrap}
 .rail li{flex:1 1 84px;min-width:0;display:flex}
+/* 마디 이름. 열 칸이 평평하게 나열되면 어디까지가 규명이고 어디부터가
+   조치인지 안 보인다. */
+.rail li.ph{flex:0 0 auto;align-items:center;padding:0 3px 0 5px}
+.rail li.ph span{font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;
+  color:var(--ink3);writing-mode:vertical-rl;text-orientation:mixed;
+  max-height:38px;overflow:hidden;border-left:2px solid var(--rule);padding-left:3px}
+.phase{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+  margin:6px 0 -2px;padding:0 2px}
+.phase b{font-size:15px;letter-spacing:-.01em}
+.phase span{font-size:13px;color:var(--ink3)}
 .rail a{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;
   text-decoration:none;color:var(--ink2);background:var(--panel);
   border:1px solid var(--rule2);border-top:3px solid var(--rule);
@@ -688,6 +702,22 @@ PIPELINE_STEPS: list[tuple[str, str, str]] = [
     (STEP_NAMES[name][0], STEP_NAMES[name][1], name)
     for name, _ in FALLBACK_SEQUENCE if name in STEP_NAMES
 ]
+
+
+#: 열 단계를 세 마디로 묶는다. (마지막 단계 번호, 마디 이름, 한 줄).
+#:
+#: 평평하게 열 개가 나열되면 **어디까지가 규명이고 어디부터가 조치인지** 안
+#: 보인다. 이 과제의 논지가 "재구성이 답이 아니면 멈춘다"인데, 규명과 조치가
+#: 갈려 있지 않으면 멈춘 자리가 무슨 뜻인지도 안 읽힌다.
+PHASES: list[tuple[int, str, str]] = [
+    (5, "무엇이 문제인가", "접수부터 원인 규명까지. 여기까지는 뱅크를 건드리지 않습니다"),
+    (7, "무엇을 할 것인가", "원인이 정해졌습니다. 이 원인에서 재구성이 답인지부터 판단합니다"),
+    (10, "그것이 맞는가", "새 뱅크가 나아졌는지 검증합니다. 배포는 사람이 결정합니다"),
+]
+
+
+def _phase_of(number: int) -> tuple[int, str, str] | None:
+    return next((ph for ph in PHASES if number <= ph[0]), None)
 
 
 def _step_views(outcome: RunOutcome) -> list[tuple[int, str, str, Stage | None, str, str]]:
@@ -874,7 +904,12 @@ def _nav_html(views: list, blocks: list[tuple[str, str]]) -> str:
     at = ran[-1] if ran else -1
 
     items = ""
+    seen_phase = None
     for index, (number, key, short, stage, status, _error) in enumerate(views):
+        phase = _phase_of(number)
+        if phase is not None and phase is not seen_phase:
+            seen_phase = phase
+            items += f'<li class="ph"><span>{escape(phase[1])}</span></li>'
         title = stage.title if stage is not None else short
         here = ' <em>지금</em>' if index == at else ""
         items += (
@@ -1077,6 +1112,11 @@ def _evidence_visual_html(outcome: RunOutcome) -> str:
     # 히트맵이 아니라 세로줄 무늬가 된다(4090 화면이 그랬다). 모서리 둥글리기도
     # 4px 칸에서는 칸을 동그라미로 만든다.
     cell_gap = 3 if grid_w <= 16 else 2 if grid_w <= 32 else 1 if grid_w <= 48 else 0
+
+    # 한 칸이 얼마나 큰가. **격자 수만 적으면 "64×64" 가 무슨 크기인지 안
+    # 잡힌다.** 화소로 적으려면 원본을 열어 크기를 재야 하는데, 화면이 파일을
+    # 읽는 것은 이 자리가 할 일이 아니다. **비율은 파일 없이 정확하다.**
+    cell_px = f"가로 1/{grid_w} · 세로 1/{grid_h}" if grid_w and grid_h else ""
     cell_radius = 2 if cell_gap >= 2 else 0
 
     # 역추적이 지목한 칸에만 붙는 표시. f-string 식 안에 역슬래시를 두면
@@ -1179,8 +1219,16 @@ def _evidence_visual_html(outcome: RunOutcome) -> str:
           <div class="ev-label">이상 점수 히트맵 · {grid_h}×{grid_w}</div>
           <div class="heat" style="grid-template-columns:repeat({grid_w},1fr);
                --cell-gap:{cell_gap}px;--cell-r:{cell_radius}px">{cells}</div>
-          <p class="hint">진할수록 정상에서 멉니다. 테두리 친 칸이 가장 높은 자리이고,
-             아래 두 조각이 그 칸을 잘라낸 것입니다.</p>
+          <div class="scale"><span>닮음</span><i></i><span>덜 닮음</span></div>
+          <p class="hint">
+            검사한 이미지를 <strong>{grid_h}×{grid_w} 칸</strong>으로 자른 것입니다
+            (한 칸이 이미지의 {cell_px}). 칸마다 <strong>뱅크에서 가장 닮은
+            정상 패치와 얼마나 먼가</strong>를 재어 색을 칠했습니다. 진할수록
+            정상에서 멉니다.
+          </p>
+          <p class="hint">테두리 친 칸이 가장 먼 자리이고, 아래 두 조각이
+             그 칸과 <strong>뱅크에서 그 칸과 가장 닮았던 자리</strong>를
+             잘라낸 것입니다.</p>
         </div>
         <div class="wide">
           <div class="ev-label">이상 점수 · 임계값</div>
@@ -1307,7 +1355,9 @@ def _decision_html(outcome: RunOutcome, decision: Any = None) -> str:
             <tr><td>승인자</td><td>{escape(decision.by)}</td><td></td></tr>
             <tr><td>시각</td><td>{escape(decision.at)}</td><td></td></tr>
             <tr><td>사유</td><td>{escape(decision.reason)}</td><td></td></tr>
+            <tr><td>문서번호</td><td>{escape(decision.document_no)}</td><td></td></tr>
           </table>
+          {f'<p class="detail">이 건이 <strong>이슈 이력에 {escape(decision.issue_id)} 로 남았습니다.</strong> 다음에 같은 라인·같은 증상이 올라오면 접수 단계가 이 기록을 찾아 중복인지 판단합니다.</p>' if decision.issue_id else ''}
           {note}
           <p class="note">
             기록은 덧붙이기만 하며 고치거나 지우지 않습니다. 되돌린 이력도
@@ -2052,7 +2102,15 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
             stages_html.append(html)
             blocks.append((anchor, label))
 
+        seen_phase = None
         for number, key, short, stage, status, error in views:
+            phase = _phase_of(number)
+            if phase is not None and phase is not seen_phase:
+                seen_phase = phase
+                stages_html.append(
+                    f'<div class="phase"><b>{escape(phase[1])}</b>'
+                    f'<span>{escape(phase[2])}</span></div>'
+                )
             if stage is None:
                 # 멈춤 설명은 실행된 마지막 단계 바로 뒤, 미도달 칸이 시작되기
                 # 전에 한 번만 놓는다.
