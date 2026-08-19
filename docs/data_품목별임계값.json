@@ -1,0 +1,178 @@
+{
+  "threshold": {
+    "candle": {
+      "bank": 700,
+      "holdout_normal": 300,
+      "defects": 100,
+      "rows": 8192,
+      "auroc": 0.9715,
+      "thr_fp1": 1.9253,
+      "hit_fp1": 66,
+      "thr_fp5": 1.8046,
+      "hit_fp5": 80
+    },
+    "capsules": {
+      "bank": 421,
+      "holdout_normal": 181,
+      "defects": 100,
+      "rows": 8192,
+      "auroc": 0.9263,
+      "thr_fp1": 2.5602,
+      "hit_fp1": 50,
+      "thr_fp5": 2.3602,
+      "hit_fp5": 76
+    },
+    "cashew": {
+      "bank": 350,
+      "holdout_normal": 150,
+      "defects": 100,
+      "rows": 8192,
+      "auroc": 0.9673,
+      "thr_fp1": 2.0213,
+      "hit_fp1": 72,
+      "thr_fp5": 1.9127,
+      "hit_fp5": 83
+    },
+    "chewinggum": {
+      "bank": 352,
+      "holdout_normal": 151,
+      "defects": 100,
+      "rows": 8192,
+      "auroc": 0.9898,
+      "thr_fp1": 2.0439,
+      "hit_fp1": 95,
+      "thr_fp5": 1.915,
+      "hit_fp5": 97
+    },
+    "fryum": {
+      "bank": 350,
+      "holdout_normal": 150,
+      "defects": 100,
+      "rows": 8192,
+      "auroc": 0.9585,
+      "thr_fp1": 2.3368,
+      "hit_fp1": 54,
+      "thr_fp5": 2.0537,
+      "hit_fp5": 77
+    },
+    "macaroni1": {
+      "bank": 700,
+      "holdout_normal": 300,
+      "defects": 100,
+      "rows": 8192,
+      "auroc": 0.962,
+      "thr_fp1": 2.1174,
+      "hit_fp1": 36,
+      "thr_fp5": 1.9048,
+      "hit_fp5": 77
+    },
+    "macaroni2": {
+      "bank": 700,
+      "holdout_normal": 300,
+      "defects": 100,
+      "rows": 8192,
+      "auroc": 0.8556,
+      "thr_fp1": 2.285,
+      "hit_fp1": 31,
+      "thr_fp5": 2.0959,
+      "hit_fp5": 55
+    },
+    "pcb1": {
+      "bank": 702,
+      "holdout_normal": 302,
+      "defects": 100,
+      "rows": 8192,
+      "auroc": 0.9934,
+      "thr_fp1": 2.2056,
+      "hit_fp1": 90,
+      "thr_fp5": 1.9503,
+      "hit_fp5": 99
+    },
+    "pcb2": {
+      "bank": 700,
+      "holdout_normal": 301,
+      "defects": 100,
+      "rows": 8192,
+      "auroc": 0.9668,
+      "thr_fp1": 2.153,
+      "hit_fp1": 81,
+      "thr_fp5": 2.0064,
+      "hit_fp5": 87
+    },
+    "pcb3": {
+      "bank": 704,
+      "holdout_normal": 302,
+      "defects": 100,
+      "rows": 8192,
+      "auroc": 0.9873,
+      "thr_fp1": 2.1718,
+      "hit_fp1": 81,
+      "thr_fp5": 2.0156,
+      "hit_fp5": 94
+    },
+    "pcb4": {
+      "bank": 703,
+      "holdout_normal": 302,
+      "defects": 100,
+      "rows": 8192,
+      "auroc": 0.9965,
+      "thr_fp1": 2.2452,
+      "hit_fp1": 95,
+      "thr_fp5": 2.0929,
+      "hit_fp5": 98
+    },
+    "pipe_fryum": {
+      "bank": 350,
+      "holdout_normal": 150,
+      "defects": 100,
+      "rows": 8192,
+      "auroc": 0.9971,
+      "thr_fp1": 1.9834,
+      "hit_fp1": 95,
+      "thr_fp5": 1.6934,
+      "hit_fp5": 100
+    }
+  },
+  "contamination": [
+    {
+      "k": 2,
+      "missed": 13,
+      "recovered": 4,
+      "still": 9,
+      "fp": 4,
+      "rows": 8192
+    },
+    {
+      "k": 5,
+      "missed": 13,
+      "recovered": 4,
+      "still": 9,
+      "fp": 4,
+      "rows": 8192
+    },
+    {
+      "k": 10,
+      "missed": 15,
+      "recovered": 5,
+      "still": 10,
+      "fp": 2,
+      "rows": 8192
+    },
+    {
+      "k": 20,
+      "missed": 20,
+      "recovered": 11,
+      "still": 9,
+      "fp": 3,
+      "rows": 8192
+    },
+    {
+      "k": 40,
+      "missed": 11,
+      "recovered": 5,
+      "still": 6,
+      "fp": 3,
+      "rows": 8192
+    }
+  ]
+}
