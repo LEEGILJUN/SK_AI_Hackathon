@@ -139,9 +139,29 @@ def execute_rebuild(
 
     not_found = remove_set - set(current_bank.images)
     added: list[str] = []
+    #: 보충하겠다고 해 놓고 한 장도 못 찾은 조건. **조용히 넘어가면 안 된다.**
+    #:
+    #: 실측에서 `conditions` 를 안 넘겨 `images_for` 가 언제나 빈 목록이었다.
+    #: 그런데도 `composition = kept` 라 재구성이 성공으로 끝났다 — 화면은
+    #: "보충하겠다"고 말하고 0장을 넣은 뒤 성공이라 적었다. 뱅크가 안 바뀌는데
+    #: 성공으로 보이는 것이 이 계열에서 가장 위험한 실패다.
+    empty: list[str] = []
     for request in plan.add:
         found = source.images_for(request.condition_key, request.condition_value)
-        added.extend(image for image in found if image not in kept)
+        fresh = [image for image in found if image not in kept]
+        if not fresh:
+            empty.append(f"{request.condition_key}={request.condition_value}")
+        added.extend(fresh)
+
+    if plan.add and not added and not remove_set:
+        # 뺄 것도 없고 넣은 것도 없으면 **뱅크가 그대로다.** 성공이라 적으면
+        # 화면이 "재구성했다"고 말하는데 실제로는 아무 일도 안 일어난 것이다.
+        return RebuildResult(
+            executed=False,
+            reason=(f"보충하려던 조건({', '.join(empty)})의 이미지를 하나도 찾지 "
+                    f"못해 뱅크가 그대로다. 조회 계층에 그 조건의 정상 이미지가 "
+                    f"있는지 확인해야 한다."),
+        )
 
     composition = kept + added
     if not composition:
@@ -188,6 +208,13 @@ def execute_rebuild(
         reason_parts.append(f"{len(added)}장 보충")
     if not_found:
         reason_parts.append(f"(제거 대상 {len(not_found)}장은 현재 뱅크에 없어 건너뜀)")
+    if empty:
+        # **보충이 0장이면 그렇다고 적는다.** 계획이 "보충하겠다" 인데 결과가
+        # 침묵이면, 받는 쪽은 보충이 된 줄 안다.
+        reason_parts.append(
+            f"보충할 이미지를 못 찾은 조건 {len(empty)}개({', '.join(empty)}) — "
+            f"이 조건의 정상 이미지가 조회 계층에 없다"
+        )
 
     record = RebuildRecord(
         from_version=current_bank.version,

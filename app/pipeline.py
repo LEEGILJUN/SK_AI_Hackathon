@@ -1191,6 +1191,42 @@ class _DemoSession:
             "next": "diagnose_issue",
         }
 
+    def _add_conditions(self) -> dict[str, dict[str, list[str]]]:
+        """조건 → 그 조건의 정상 이미지 목록.
+
+        **이걸 안 넘기면 보충이 언제나 0장이다.** `DirectoryImageSource` 가
+        조건을 안 받으면 `images_for` 가 빈 목록을 돌려주는데, 그래도 재구성이
+        성공으로 끝나서 **화면은 "보충하겠다"고 말하고 뱅크는 그대로**였다.
+        뱅크 오염 시연에서는 제거만 하므로 안 드러났고, 커버리지 부족을
+        시연하려면 여기가 이어져 있어야 한다.
+
+        축은 판별 6번이 보는 것과 같다 — 날짜·로트·설비. 뱅크에 이미 들어간
+        이미지는 빼고 준다. 이미 있는 것을 "보충"이라 세면 장수가 부풀고,
+        받는 쪽은 새로 넣은 줄 안다.
+        """
+        item = self.item
+        if item is None:
+            return {}
+        already = set(getattr(item.bank, "images", []) or [])
+        root = self.factory.root
+        conditions: dict[str, dict[str, list[str]]] = {}
+        for record in self.factory.catalog:
+            if record.line != item.line or record.object_name != item.object_name:
+                continue
+            if record.verdict not in (None, "pass"):      # 정상만 보충한다
+                continue
+            path = str(record.path)
+            if path in already:
+                continue
+            for key, value in (("date", record.captured_at),
+                               ("lot", record.lot),
+                               ("equipment", record.equipment)):
+                if not value:
+                    continue
+                text = value.isoformat() if hasattr(value, "isoformat") else str(value)
+                conditions.setdefault(key, {}).setdefault(text, []).append(path)
+        return conditions
+
     def _threshold_feasibility(self):
         """지금 뱅크에서 임계값을 내리면 해결되는지 잰다.
 
@@ -1380,8 +1416,8 @@ class _DemoSession:
         f = self.factory
         item = self.item
         rebuild = execute_rebuild(
-            plan, item.bank, DirectoryImageSource(f.root), f.embedder,
-            triggered_by=self.issue_text,
+            plan, item.bank, DirectoryImageSource(f.root, self._add_conditions()),
+            f.embedder, triggered_by=self.issue_text,
         )
         self.outcome.rebuild = rebuild
         self.outcome.stages.append(
