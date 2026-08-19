@@ -111,6 +111,13 @@ class Evidence:
     source: Literal["vlm", "lookup", "compute", "trace"]
     usable: bool
     detail: str = ""
+    #: 다음 단계가 **문장이 아니라 값으로** 받아야 하는 것.
+    #:
+    #: 판별 6번이 "어느 조건이 비었는가"를 `detail` 문장에만 남기고 버려서,
+    #: 큐레이션이 "어느 조건이 비었는지 알 수 없다"로 멈췄다. 커버리지 부족은
+    #: 진단됐는데 조치를 못 세우는 상태였다. **문장은 사람이 읽는 것이고,
+    #: 다음 단계는 값을 받아야 한다.**
+    extra: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -281,10 +288,12 @@ def collect_evidence(
         asked.setdefault(condition_key, condition_value)
 
     coverage = None
+    missing_keys: list[str] = []
     detail_6 = "뱅크 구성 이력 없음"
     if bank_profile and asked:
         checked = {key: bank_profile.covers(key, value) for key, value in asked.items()}
         missing = [key for key, present in checked.items() if present is False]
+        missing_keys = list(missing)
         # **기록하지 않은 축은 판정에서 뺀다.** 모르는 것을 "없다"로 세면
         # 뱅크 프로파일이 그 축을 안 담았다는 이유만으로 커버리지 부족이 된다.
         unknown = [key for key, present in checked.items() if present is None]
@@ -319,6 +328,7 @@ def collect_evidence(
             source="lookup",
             usable=coverage is not None,
             detail=detail_6,
+            extra={"missing_conditions": {k: asked[k] for k in missing_keys}},
         )
     )
 

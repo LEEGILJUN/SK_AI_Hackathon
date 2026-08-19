@@ -1376,7 +1376,13 @@ class _DemoSession:
         if item is None:
             raise RuntimeError("먼저 lookup_mes 를 불러야 한다.")
         missed = score_images(item.holdout_defect, item.bank, f.embedder, root=f.root)
-        plan = plan_curation(diagnosis, bank=item.bank, missed_results=missed)
+        # **판별 6번이 알아낸 것을 값으로 넘긴다.** 안 넘기면 큐레이션이
+        # "어느 조건이 비었는지 알 수 없다"로 멈춘다 — 커버리지 부족은
+        # 진단됐는데 조치를 못 세우는 상태가 된다.
+        item6 = diagnosis.evidence_by_item(6)
+        missing = (item6.extra.get("missing_conditions") if item6 else None) or None
+        plan = plan_curation(diagnosis, bank=item.bank, missed_results=missed,
+                             missing_conditions=missing)
         self.outcome.plan = plan
         self.outcome.stages.append(
             Stage(

@@ -967,3 +967,51 @@ def test_뺄_이미지가_격자_앞쪽에_온다(factory):
     assert marked == list(range(len(marked))), (
         f"뺄 것이 격자 맨 앞에 와야 스크롤 없이 보인다. 지금 순번 {marked}"
     )
+
+
+def test_커버리지_부족이_보충까지_실제로_간다(factory):
+    """**진단만 되고 조치가 안 서던 자리다. 끝까지 도는지 본다.**
+
+    이 경로는 세 군데가 끊겨 있었다.
+
+        판별 6번이 "어느 조건이 비었는가"를 문장에만 남기고 버렸다
+        파이프라인이 그것을 큐레이션에 안 넘겼다
+        `DirectoryImageSource` 에 조건을 안 넘겨 보충이 언제나 0장이었다
+
+    셋 다 이어야 뱅크가 실제로 바뀐다. 하나만 이으면 앞의 둘이 조용히
+    막아서 "보충하겠다"고 말하고 아무 일도 안 일어난다. **뱅크 오염
+    시연에서는 제거만 하므로 이 경로가 안 드러난다.**
+    """
+    from lookup import MockLookup
+
+    line, object_name = CONTAMINATED_ITEM
+    lookup = MockLookup(
+        threshold=2.2, catalog=factory.catalog, banks=factory.bank_versions(),
+        quality_provider=factory.quality_baseline,
+        # 로트 축을 비워 판별 6번이 "없음"을 내게 한다.
+        bank_conditions={"date": ["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04"],
+                         "lot": ["LOT-뱅크에-없는-것"]},
+    )
+    outcome = run(factory, patch_override="genuine_normal", lookup=lookup)
+
+    assert outcome.diagnosis is not None
+    assert outcome.diagnosis.cause == "coverage_gap"
+
+    item6 = outcome.diagnosis.evidence_by_item(6)
+    assert item6 is not None and item6.extra.get("missing_conditions"), (
+        "판별 6번이 어느 조건이 비었는지를 값으로 남겨야 한다"
+    )
+
+    assert outcome.plan is not None and outcome.plan.touches_bank, (
+        "커버리지 부족은 보충이 답이다"
+    )
+    assert outcome.plan.add, "보충 요청이 서야 한다"
+
+    assert outcome.rebuild is not None and outcome.rebuild.executed
+    record = outcome.rebuild.record
+    assert record is not None and record.added, (
+        "보충이 0장이면 뱅크가 그대로다. 그것을 성공이라 하면 안 된다"
+    )
+    # 뱅크가 실제로 커졌는지. 숫자가 안 움직이면 아무 일도 안 일어난 것이다.
+    assert len(outcome.rebuild.bank.images) == record.kept_count + len(record.added)
+    assert record.kept_count > 0
