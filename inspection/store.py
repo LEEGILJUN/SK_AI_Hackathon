@@ -49,7 +49,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+import shutil
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -359,3 +360,81 @@ def read_decisions(
         except (json.JSONDecodeError, KeyError, TypeError):
             continue
     return found
+
+
+@dataclass
+class PruneResult:
+    """정리 결과. **무엇을 지웠는지 돌려준다.**
+
+    지운 것을 안 알려주면 "몇 개 지웠다"만 남고 무엇이 사라졌는지 모른다.
+    되돌릴 수 없는 일이므로 목록이 남아야 한다.
+    """
+
+    removed: list[str] = field(default_factory=list)
+    kept: list[str] = field(default_factory=list)
+    freed_bytes: int = 0
+    reason: str = ""
+
+    @property
+    def freed_mb(self) -> float:
+        return self.freed_bytes / (1024 * 1024)
+
+
+def prune_banks(
+    item_key: str,
+    keep: int = 3,
+    root: str | Path = DEFAULT_STORE_ROOT,
+    dry_run: bool = True,
+) -> PruneResult:
+    """오래된 판을 지운다. **운영본은 절대 안 지운다.**
+
+    재구성을 한 번 돌릴 때마다 판이 하나씩 생긴다. 측정하느라 열아홉 번
+    돌리면 열아홉 개가 쌓이고, 판 하나가 100MB 쯤이라 금세 기가 단위가 된다.
+
+    ── 무엇을 남기는가 ─────────────────────────────────────────────────
+
+    최신 `keep` 개와 **`CURRENT` 가 가리키는 판**을 남긴다. 둘은 다를 수
+    있다 — 되돌린 뒤라면 운영본이 최신이 아니다. 그때 최신만 남기면
+    **지금 판정에 쓰는 뱅크를 지우게 된다.** 그러면 시연이 "배포된 뱅크가
+    없다"로 2단계에서 죽는다.
+
+    되돌릴 수 있는 범위를 남기는 것도 목적이다. `keep=3` 이면 지금 판과 그
+    앞 두 판이 남아 두 단계까지 되돌아갈 수 있다.
+
+    ── 기본이 시늉인 이유 ──────────────────────────────────────────────
+
+    `dry_run=True` 가 기본이다. **지우는 것은 되돌릴 수 없다.** 무엇이
+    지워질지 먼저 보고, 그다음에 `dry_run=False` 로 부른다.
+    """
+    directory = _item_dir(root, item_key)
+    if not directory.is_dir():
+        return PruneResult(reason=f"{item_key} 저장소가 없다")
+
+    banks = list_banks(item_key, root=root)          # 최신이 앞
+    if not banks:
+        return PruneResult(reason=f"{item_key} 에 판이 없다")
+
+    keep = max(1, int(keep))
+    survivors = {b.path.name for b in banks[:keep]}
+    current = _read_pointer(directory)
+    if current:
+        # **운영본은 순서와 무관하게 남긴다.** 되돌린 뒤라면 최신이 아니다.
+        survivors.add(current)
+
+    result = PruneResult(kept=sorted(survivors))
+    for bank in banks:
+        name = bank.path.name
+        if name in survivors:
+            continue
+        size = sum(f.stat().st_size for f in bank.path.rglob("*") if f.is_file())
+        result.removed.append(name)
+        result.freed_bytes += size
+        if not dry_run:
+            shutil.rmtree(bank.path, ignore_errors=True)
+
+    result.reason = (
+        f"{item_key}: 판 {len(banks)}개 중 {len(result.removed)}개 "
+        f"{'지울 수 있다' if dry_run else '지웠다'} ({result.freed_mb:.0f}MB). "
+        f"운영본 {current or '없음'} 은 남긴다."
+    )
+    return result

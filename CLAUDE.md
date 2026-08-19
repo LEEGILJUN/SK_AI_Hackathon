@@ -281,6 +281,7 @@ LLM 과 VLM 에 같은 이름을 넣는다 — 모델 하나, 스왑 없음. 등
 .venv/bin/python scripts/check_docs.py          # 문서가 코드와 어긋나지 않는지
 .venv/bin/python scripts/scan_bank_history.py banks/   # 뱅크 구성 이력 복원
 .venv/bin/python scripts/switch_bank.py --item pcb1-01  # 운영 뱅크 판 교체·원복 (사람이 실행)
+.venv/bin/python scripts/prune_banks.py               # 오래된 뱅크 판 정리 (기본은 시늉)
 .venv/bin/python scripts/run_scheduler.py --now  # 야간 누적분 자동 점검
 .venv/bin/python scripts/measure_mask.py       # 판별 7번 면적 — 기준 근거 측정
 .venv/bin/python scripts/run_demo.py           # 전 구간 한 번 (화면과 같은 경로)

@@ -470,3 +470,72 @@ def test_agents_never_record_a_decision():
         assert "record_decision" not in _referenced_names(package), (
             f"{package}/ 가 결정 기록을 남기고 있다"
         )
+
+
+# ── 오래된 판 정리 ──────────────────────────────────────────────────────
+
+
+def _fake_bank(root, item, version, stamp, fingerprint="cad872", size=1024):
+    d = root / item / f"{item}-{version}_{stamp}_{fingerprint}"
+    d.mkdir(parents=True)
+    (d / "bank.npz").write_bytes(b"x" * size)
+    return d.name
+
+
+def test_운영본은_최신이_아니어도_안_지운다(tmp_path):
+    """**되돌린 뒤에는 운영본이 최신이 아니다.**
+
+    최신 것만 남기는 규칙이면 그때 **지금 판정에 쓰는 뱅크를 지운다.**
+    그러면 시연이 "배포된 뱅크가 없다"로 2단계에서 죽는다.
+    """
+    from inspection.store import prune_banks, write_current
+
+    names = [_fake_bank(tmp_path, "pcb1-01", f"v{n}", f"2026081{n}-0000")
+             for n in range(1, 6)]
+    (tmp_path / "pcb1-01" / "CURRENT").write_text(names[0], encoding="utf-8")  # v1 로 되돌린 상태
+
+    result = prune_banks("pcb1-01", keep=2, root=tmp_path, dry_run=True)
+    assert names[0] in result.kept, "운영본은 순서와 무관하게 남아야 한다"
+    assert names[4] in result.kept and names[3] in result.kept, "최신 둘도 남는다"
+    assert names[0] not in result.removed
+
+
+def test_시늉이_기본이라_부르는_것만으로는_안_지운다(tmp_path):
+    """지우는 것은 되돌릴 수 없다. 무엇이 지워질지 먼저 보여야 한다."""
+    from inspection.store import prune_banks
+
+    names = [_fake_bank(tmp_path, "pcb1-01", f"v{n}", f"2026081{n}-0000")
+             for n in range(1, 5)]
+    (tmp_path / "pcb1-01" / "CURRENT").write_text(names[-1], encoding="utf-8")
+
+    result = prune_banks("pcb1-01", keep=1, root=tmp_path)      # dry_run 기본값
+    assert result.removed, "지울 것이 있다고 알려야 한다"
+    for name in result.removed:
+        assert (tmp_path / "pcb1-01" / name).is_dir(), "시늉인데 실제로 지워졌다"
+
+    prune_banks("pcb1-01", keep=1, root=tmp_path, dry_run=False)
+    for name in result.removed:
+        assert not (tmp_path / "pcb1-01" / name).exists()
+    assert (tmp_path / "pcb1-01" / names[-1]).is_dir(), "운영본은 남아야 한다"
+
+
+def test_무엇을_지웠는지_돌려준다(tmp_path):
+    """**되돌릴 수 없는 일이라 목록이 남아야 한다.** 개수만으로는 못 되짚는다."""
+    from inspection.store import prune_banks
+
+    names = [_fake_bank(tmp_path, "pcb1-01", f"v{n}", f"2026081{n}-0000", size=2048)
+             for n in range(1, 4)]
+    (tmp_path / "pcb1-01" / "CURRENT").write_text(names[-1], encoding="utf-8")
+
+    result = prune_banks("pcb1-01", keep=1, root=tmp_path, dry_run=True)
+    assert set(result.removed) == {names[0], names[1]}
+    assert result.freed_bytes >= 2048 * 2
+    assert "운영본" in result.reason
+
+
+def test_저장소가_없어도_죽지_않는다(tmp_path):
+    from inspection.store import prune_banks
+
+    result = prune_banks("없는품목", root=tmp_path)
+    assert result.removed == []
+    assert "없다" in result.reason
