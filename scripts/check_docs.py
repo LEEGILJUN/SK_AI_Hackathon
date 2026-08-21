@@ -48,8 +48,11 @@ RENAMED = {
     r"\binspect/": "inspection/ (inspect 는 파이썬 표준 라이브러리 이름이라 못 씀)",
 }
 
-#: 문서지도에 등록돼야 하는 문서를 찾을 위치
-DOC_GLOBS = ("*.md", "docs/*.md", "examples/*.md")
+#: 문서지도에 등록돼야 하는 문서를 찾을 위치.
+#:
+#: `submission/` 도 본다. **심사위원이 읽는 문서라 낡은 숫자가 제일 비싸다** —
+#: 저장소 문서는 팀원이 읽지만 저것은 채점하는 사람이 읽는다.
+DOC_GLOBS = ("*.md", "docs/*.md", "examples/*.md", "submission/**/*.md")
 
 DOC_MAP = REPO_ROOT / "docs" / "문서지도.md"
 
@@ -168,7 +171,10 @@ def check_test_counts(actual: int | None) -> None:
         # **낸 문서와 실측 기록은 그때의 숫자가 맞다.** 제출본을 지금 값으로
         # 고치면 무엇을 제출했는지 알 수 없게 되고, 실험 기록을 고치면 언제
         # 잰 것인지가 사라진다. 둘 다 낡는 것이 아니라 시점을 적은 것이다.
-        if doc.name == "기획서.md" or doc.name.startswith("실험_"):
+        # 개발 일지는 커밋 메시지를 옮긴 것이다. 그때 89건이었다는 문장은
+        # 지금 480건이라고 해서 틀린 것이 아니다. **그 시점의 기록이다.**
+        if (doc.name == "기획서.md" or doc.name.startswith("실험_")
+                or doc.name == "개발일지.md"):
             continue
         text = doc.read_text(encoding="utf-8")
         for line_no, line in enumerate(text.split("\n"), 1):
@@ -218,6 +224,11 @@ def check_doc_map() -> None:
     for doc in documents():
         rel = nfc(doc.relative_to(REPO_ROOT).as_posix())
         if rel == nfc("docs/문서지도.md"):
+            continue
+        # 제출 폴더의 붙임 파일은 `scripts/build_submission.py` 가 docs/ 에서
+        # 복사한 것이다. **원본이 이미 문서지도에 있다.** 복사본까지 등록하면
+        # 목록이 두 벌이 되고, 이름을 바꿔 넣은 것이라 원본과 짝도 안 맞는다.
+        if rel.startswith("submission/") and doc.name != "README.md":
             continue
         if rel not in listed and nfc(doc.name) not in listed:
             warnings.append(
