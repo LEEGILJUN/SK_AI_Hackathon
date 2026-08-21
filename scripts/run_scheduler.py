@@ -23,7 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from agents.adapters import build_adapters  # noqa: E402
-from app.pipeline import DemoFactory  # noqa: E402
+from app.pipeline import DEMO_THRESHOLDS, DemoFactory  # noqa: E402
 from scheduler import due, next_run, run_nightly  # noqa: E402
 
 
@@ -63,7 +63,15 @@ def main() -> int:
         print("공장 데이터가 없어 목으로 돕니다 — 시연 결과로 쓰지 마세요.")
         from lookup import MockLookup
 
-        lookup = MockLookup(catalog=factory.catalog, banks=factory.bank_versions())
+        lookup = MockLookup(
+            catalog=factory.catalog,
+            banks=factory.bank_versions(),
+            quality_provider=factory.quality_baseline,
+            # 뱅크 구성과 임계값은 화면이 쓰는 것과 같아야 한다. 여기만
+            # 상수로 두면 야간 점검이 화면과 다른 원인을 낸다.
+            bank_profiles=factory.bank_profiles(),
+            thresholds=DEMO_THRESHOLDS,
+        )
 
     report = run_nightly(factory, lookup, build_adapters(), now=now)
     stamp.parent.mkdir(parents=True, exist_ok=True)

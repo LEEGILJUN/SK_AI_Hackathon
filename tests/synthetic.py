@@ -24,9 +24,18 @@ _TILE = 16
 #: 품목을 잘못 고르는 실수가 드러나지 않는다. 타일 크기·명암·기울기를
 #: 바꿔 패치 분포 자체를 갈라 놓는다. VisA 의 capsules 와 pcb1 이 다른
 #: 것과 같은 이유다.
+#: **여기 없는 이름은 조용히 capsules 가 된다.** 시연 품목이 pcb1~pcb4 인데
+#: pcb2·pcb3·pcb4 가 없어서 세 라인이 전부 캡슐 무늬로 서 있었다. 생김새가
+#: 같은 것으로 끝나지 않았다 — 캡슐 무늬(110/165)에 결함 얼룩(25)이 찍히면
+#: 대비·선명도가 z=5·z=10 으로 튀어 **판별 2번이 화질 이탈로 읽고 진단이
+#: 언제나 설비·광학으로 나왔다.** 라인마다 다른 원인을 심어도 그 앞에서
+#: 전부 가려진다. pcb 계열은 어두운 편이라 같은 얼룩이 화질을 흔들지 않는다.
 VARIANTS: dict[str, dict[str, float]] = {
     "capsules":  {"tile": 16, "dark": 110, "light": 165, "stripe": 0.0},
     "pcb1":      {"tile": 8,  "dark": 60,  "light": 120, "stripe": 0.0},
+    "pcb2":      {"tile": 12, "dark": 55,  "light": 115, "stripe": 0.0},
+    "pcb3":      {"tile": 10, "dark": 68,  "light": 128, "stripe": 0.0},
+    "pcb4":      {"tile": 8,  "dark": 64,  "light": 124, "stripe": 1.0},
     "macaroni1": {"tile": 32, "dark": 150, "light": 200, "stripe": 0.0},
     "fryum":     {"tile": 16, "dark": 90,  "light": 145, "stripe": 1.0},
 }

@@ -253,6 +253,26 @@ def test_a_changed_setting_rebuilds_rather_than_loading_a_wrong_bank(tmp_path):
     )
 
 
+def test_a_changed_composition_rebuilds_rather_than_loading_yesterdays_bank(tmp_path):
+    """**구성을 바꿨는데 옛 판이 실리면 바꾼 것이 안 드러난다.**
+
+    저장소는 특징 설정만 대조한다. 라인별 구성을 고쳐도 어제 세운 뱅크가
+    그대로 실리고, 시연은 새 구성이라 말하면서 뱅크는 옛 구성인 상태가
+    된다. 오류가 아니라 정상 응답으로 나와서 화면에서는 안 보인다.
+    """
+    first = _factory(tmp_path)
+    item_key = bank_item_key("line_01", "pcb1")
+    before = len(first.items[("line_01", "pcb1")].bank.images)
+
+    fewer = _factory(tmp_path, normal_count=24)
+
+    assert fewer.loaded_from_store == [], (
+        "구성이 달라졌는데 저장소에서 불러왔다"
+    )
+    assert len(fewer.items[("line_01", "pcb1")].bank.images) != before
+    assert list_banks(item_key, root=tmp_path), "새 판도 저장은 돼야 한다"
+
+
 def test_the_factory_never_pulls_an_approved_rebuild_back_to_v1(tmp_path):
     """**승인해 넘긴 판을 가상 공장이 무르지 않는다.**
 

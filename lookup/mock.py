@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import replace
 from datetime import date
 
 from .base import (
@@ -106,6 +107,8 @@ class MockLookup:
         object_name: str = "pcb1",
         catalog: list[ImageRecord] | None = None,
         banks: dict[tuple[str, str], str] | None = None,
+        bank_profiles: dict[str, BankProfile] | None = None,
+        thresholds: dict[tuple[str, str], float] | None = None,
     ):
         """
         catalog
@@ -117,6 +120,16 @@ class MockLookup:
             {(라인, 품목): 뱅크 버전}. 품목마다 뱅크가 다르다는 것을 목에서도
             지킨다. 여기 없는 품목은 resolve_bank 가 None 을 돌려주고,
             "그 품목에는 배포된 모델이 없다"가 답이 된다.
+        bank_profiles
+            {뱅크 버전: 구성 이력}. 주면 **뱅크마다 다른 구성**을 돌려준다.
+            안 주면 아래 `bank_conditions` 하나를 모든 뱅크에 돌려주는데,
+            그러면 판별 6번의 답이 뱅크와 무관해진다 — 가상 공장에 없는
+            로트가 적혀 있어도 알 길이 없었다. 시연은 `DemoFactory.
+            bank_profiles()` 로 실제 구성을 넘긴다.
+        thresholds
+            {(라인, 품목): 임계값}. **품목마다 다르다.** 4090 실측에서 과검
+            1% 지점이 candle 1.925 · capsules 2.560 으로 갈렸다. 여기 없는
+            품목은 `threshold` 하나를 그대로 쓴다.
         """
         self.threshold = threshold
         #: (라인, 품목) → 화질 기준을 돌려주는 함수. 있으면 이쪽이 먼저다.
@@ -146,6 +159,8 @@ class MockLookup:
         self.object_name = object_name
         self.catalog = list(catalog or [])
         self.banks = dict(banks or {(line, object_name): bank_version})
+        self.bank_profiles = dict(bank_profiles or {})
+        self.thresholds = dict(thresholds or {})
 
         #: 호출 기록. 진단이 실제로 어떤 조회를 했는지 검증할 때 쓴다.
         self.calls: list[tuple[str, dict]] = []
@@ -159,13 +174,16 @@ class MockLookup:
         self, line: str, object_name: str, bank_version: str
     ) -> ThresholdRecord | None:
         self._record("get_threshold", line=line, object_name=object_name, bank_version=bank_version)
+        value = self.thresholds.get((line, object_name), self.threshold)
         return ThresholdRecord(
             line=line,
             object_name=object_name,
             bank_version=bank_version,
-            value=self.threshold,
+            value=value,
             effective_from=date(2026, 6, 1),
-            note="목 구현이 돌려준 임시값. 실데이터 아님.",
+            note=("목 구현이 돌려준 임시값. 실데이터 아님."
+                  if (line, object_name) not in self.thresholds else
+                  "목 구현. 이 품목에 따로 걸린 값이다."),
         )
 
     # ── 판별 2번 ────────────────────────────────────────────────────────
@@ -218,6 +236,12 @@ class MockLookup:
 
     def get_bank_profile(self, bank_version: str) -> BankProfile | None:
         self._record("get_bank_profile", bank_version=bank_version)
+        known = self.bank_profiles.get(bank_version)
+        if known is not None:
+            # 실제 구성이 있으면 그것을 돌려준다. **복사해서 준다** —
+            # resolve_bank 가 line·object_name 을 물어본 품목으로 고쳐 쓰는데,
+            # 원본을 고치면 공장이 들고 있는 구성이 함께 바뀐다.
+            return replace(known)
         return BankProfile(
             bank_version=bank_version,
             line=self.line,

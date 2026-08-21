@@ -19,7 +19,13 @@ import pytest
 
 from agents.adapters.base import ChatResponse, ModelAdapter, ToolCall
 from agents.adapters.stub import StubAdapter
-from app.pipeline import CONTAMINATED_ITEM, DemoFactory, default_issue, run_pipeline
+from app.pipeline import (
+    CONTAMINATED_ITEM,
+    COVERAGE_ITEM,
+    DemoFactory,
+    default_issue,
+    run_pipeline,
+)
 
 
 class ScriptedLLM(ModelAdapter):
@@ -98,6 +104,41 @@ def run(factory, **kwargs):
         "line": line, "object_name": object_name,
         "defect_type": "scratch", "product_id": factory.reported_product,
     })
+    return run_pipeline(factory, **kwargs)
+
+
+def run_line(factory, key, **kwargs):
+    """지정한 라인의 이슈로 돌린다.
+
+    **라인마다 심은 것이 다르다.** 기본 실행은 오염 라인 하나만 보므로,
+    다른 라인이 실제로 다른 원인을 내는지는 이쪽으로 본다. 조회 계층도
+    화면이 만드는 것과 같게 만든다 — 여기서 상수를 쓰면 시험이 통과해도
+    화면에서는 다른 답이 나온다.
+    """
+    from app.pipeline import DEMO_THRESHOLDS
+    from lookup import MockLookup
+
+    line, object_name = key
+    item = factory.items[key]
+    product = factory._product_id(line, object_name, item.holdout_defect[0])
+    number = line.split("_")[-1].lstrip("0") or "0"
+
+    kwargs.setdefault("adapters", (StubAdapter(), StubAdapter()))
+    kwargs.setdefault(
+        "issue_text",
+        f"{number}라인 기판이 검사에서 계속 양품으로 나옵니다. 제품 {product} 건입니다.",
+    )
+    kwargs.setdefault("context", {
+        "line": line, "object_name": object_name,
+        # 해결 이력에 있는 결함 유형을 쓰면 중복으로 끊긴다. 그것도 옳은
+        # 동작이라 여기서는 이력에 없는 유형으로 둔다.
+        "defect_type": "burnt", "product_id": product,
+    })
+    kwargs.setdefault("lookup", MockLookup(
+        threshold=2.2, catalog=factory.catalog, banks=factory.bank_versions(),
+        quality_provider=factory.quality_baseline,
+        bank_profiles=factory.bank_profiles(), thresholds=DEMO_THRESHOLDS,
+    ))
     return run_pipeline(factory, **kwargs)
 
 
@@ -981,18 +1022,13 @@ def test_커버리지_부족이_보충까지_실제로_간다(factory):
     셋 다 이어야 뱅크가 실제로 바뀐다. 하나만 이으면 앞의 둘이 조용히
     막아서 "보충하겠다"고 말하고 아무 일도 안 일어난다. **뱅크 오염
     시연에서는 제거만 하므로 이 경로가 안 드러난다.**
-    """
-    from lookup import MockLookup
 
-    line, object_name = CONTAMINATED_ITEM
-    lookup = MockLookup(
-        threshold=2.2, catalog=factory.catalog, banks=factory.bank_versions(),
-        quality_provider=factory.quality_baseline,
-        # 로트 축을 비워 판별 6번이 "없음"을 내게 한다.
-        bank_conditions={"date": ["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04"],
-                         "lot": ["LOT-뱅크에-없는-것"]},
-    )
-    outcome = run(factory, patch_override="genuine_normal", lookup=lookup)
+    전에는 이 시험이 조회 계층에 없는 로트(`LOT-뱅크에-없는-것`)를 손으로
+    끼워 넣어 판별 6번을 "없음"으로 만들었다. **그러면 배선만 재고 공장은
+    안 잰다** — 실제 시연에서 그 조건이 정말 비어 있는지는 확인되지 않는다.
+    지금은 야간 로트를 뱅크에 안 넣은 라인(`COVERAGE_ITEM`)을 그대로 돌린다.
+    """
+    outcome = run_line(factory, COVERAGE_ITEM, patch_override="genuine_normal")
 
     assert outcome.diagnosis is not None
     assert outcome.diagnosis.cause == "coverage_gap"
@@ -1015,3 +1051,133 @@ def test_커버리지_부족이_보충까지_실제로_간다(factory):
     # 뱅크가 실제로 커졌는지. 숫자가 안 움직이면 아무 일도 안 일어난 것이다.
     assert len(outcome.rebuild.bank.images) == record.kept_count + len(record.added)
     assert record.kept_count > 0
+
+
+# ── 라인마다 다른 것이 심겨 있는가 ──────────────────────────────────────
+
+
+def test_라인마다_심은_것이_다르고_그대로_진단된다(factory):
+    """**어느 라인을 눌러도 같은 이야기면 라인이 넷일 이유가 없다.**
+
+    오염 하나만 심어 두었을 때는 2·3·4라인이 진단은 돌되 재구성까지 가지
+    않았다. 그것이 맞는 동작이긴 해도 보여줄 것은 1라인 하나뿐이었다
+    (`docs/4090_보고_시연구성.md` 1장).
+
+    여기서 재는 것은 표에 적어 둔 `expected_cause` 가 실제로 나오는가다.
+    **표만 고치고 공장이 안 따라오면 여기서 걸린다** — 야간 로트를 뱅크에
+    넣는지, 혼입을 몇 장 섞는지가 전부 그 값과 맞물려 있다.
+    """
+    from app.pipeline import DEMO_LINES
+
+    override = {"bank_contamination": "defect"}
+    for spec in DEMO_LINES:
+        outcome = run_line(
+            factory, spec.key,
+            patch_override=override.get(spec.expected_cause or "", "genuine_normal"),
+        )
+        assert outcome.diagnosis is not None, f"{spec.line}: 진단까지 못 갔다"
+        if spec.expected_cause is None:
+            assert not (outcome.plan and outcome.plan.touches_bank), (
+                f"{spec.line}: 심은 것이 없는데 뱅크를 건드렸다 "
+                f"(원인 {outcome.diagnosis.cause})"
+            )
+            continue
+        assert outcome.diagnosis.cause == spec.expected_cause, (
+            f"{spec.line}: {spec.expected_cause} 를 심었는데 "
+            f"{outcome.diagnosis.cause} 가 나왔다"
+        )
+
+
+def test_뱅크_구성_이력이_실제_구성에서_나온다(factory):
+    """판별 6번이 보는 조건이 **그 뱅크에 실제로 든 이미지**에서 나온다.
+
+    전에는 목이 상수 하나를 돌려줬고, 거기 적힌 로트(`LOT-20260602-004`)는
+    가상 공장에 없는 로트였다. **커버리지 판정이 공장 구성과 무관하게
+    정해져 있었다는 뜻**이다. 화질 기준을 품목별로 돌린 것과 같은 자리다.
+    """
+    from app.pipeline import COVERAGE_ITEM, DEMO_LINE_BY_KEY
+
+    for key, item in factory.items.items():
+        profile = factory.bank_profile(*key)
+        assert profile is not None
+        assert profile.source_image_count == len(item.bank.images)
+
+        lots = set(profile.conditions.get("lot") or [])
+        in_bank = {str(p) for p in item.bank.images}
+        for record in factory.catalog:
+            if (record.line, record.object_name) != key:
+                continue
+            if str(record.path) in in_bank:
+                assert record.lot in lots, f"{key}: 뱅크에 든 로트가 이력에 없다"
+
+        night_lots = {
+            record.lot for record in factory.catalog
+            if (record.line, record.object_name) == key
+            and str(record.path) in {str(p) for p in item.night_lot}
+        }
+        if key == COVERAGE_ITEM:
+            assert not (night_lots & lots), (
+                f"{key}: 야간 로트를 뱅크에 안 넣었는데 구성 이력에 들어 있다"
+            )
+        else:
+            assert night_lots <= lots, (
+                f"{key}: 야간 로트를 뱅크에 넣었는데 구성 이력에 없다. "
+                f"그러면 이 라인까지 커버리지 부족으로 진단된다"
+            )
+        assert DEMO_LINE_BY_KEY[key].night_lot_in_bank == (key != COVERAGE_ITEM)
+
+
+def test_품목마다_다른_임계값이_실제로_쓰인다(factory):
+    """**판별 3번의 임계값은 조회에서 온다.** 실행 인자 하나가 아니다.
+
+    4090 실측에서 과검 1% 지점이 candle 1.925 · capsules 2.560 으로 갈렸고,
+    2.20 이 쓸 만했던 것은 pcb1 이 2.206 이라 우연히 맞은 것이다
+    (`docs/4090_보고_시연구성.md` 3장).
+    """
+    from app.pipeline import COVERAGE_ITEM, DEMO_THRESHOLDS
+
+    assert COVERAGE_ITEM in DEMO_THRESHOLDS, (
+        "커버리지 부족 라인은 과검을 억누르려 임계값을 올려 둔 상태다. "
+        "그 값이 없으면 미검이 안 생겨 이슈 자체가 성립하지 않는다"
+    )
+    outcome = run_line(factory, COVERAGE_ITEM, patch_override="genuine_normal")
+    assert outcome.threshold == DEMO_THRESHOLDS[COVERAGE_ITEM], (
+        f"조회가 준 값 {DEMO_THRESHOLDS[COVERAGE_ITEM]} 이 아니라 "
+        f"{outcome.threshold} 로 판정했다"
+    )
+
+
+def test_보충에_결함_이미지가_섞이지_않는다(factory):
+    """**미검 건은 설비가 양품이라 한 것이라 `verdict` 가 pass 다.**
+
+    그것만 보고 정상으로 세면 보충이 결함을 뱅크에 넣는다 — 우리가 뱅크
+    오염을 만드는 셈이다. 실제로 야간 로트 보충에 결함 6장이 함께 들어갔다.
+    """
+    outcome = run_line(factory, COVERAGE_ITEM, patch_override="genuine_normal")
+    assert outcome.rebuild is not None and outcome.rebuild.record is not None
+
+    defects = {
+        str(record.path) for record in factory.catalog
+        if record.ground_truth == "defect"
+    }
+    added = {str(name) for name in outcome.rebuild.record.added}
+    assert not (added & defects), (
+        f"보충에 결함이 섞였다: {sorted(added & defects)[:3]}"
+    )
+
+
+def test_사람이_적어_넣은_임계값이_품목별_값을_이긴다(factory):
+    """**화면의 임계값 칸이 장식이 되면 안 된다.**
+
+    그 칸은 "임계값 조절로 풀리는 문제가 아니다"를 만져 보게 하려고 열어
+    둔 것이다. 품목별 값을 조회에서 받게 하면서 그것이 사람이 적은 값을
+    덮으면, 숫자를 바꿔도 판정이 안 움직인다.
+    """
+    from app.pipeline import DEMO_THRESHOLDS
+
+    forced = run_line(factory, COVERAGE_ITEM, patch_override="genuine_normal",
+                      threshold=1.10)
+    assert forced.threshold == 1.10, (
+        f"사람이 1.10 을 적었는데 {forced.threshold} 로 판정했다"
+    )
+    assert DEMO_THRESHOLDS[COVERAGE_ITEM] != 1.10, "시험이 뜻을 잃었다"

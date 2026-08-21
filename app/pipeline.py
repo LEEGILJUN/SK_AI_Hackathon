@@ -107,6 +107,7 @@ from inspection.store import (
 from lookup import MockLookup
 from lookup.base import (
     RETRIEVAL_KIND,
+    BankProfile,
     DefectDistribution,
     ImageRecord,
     bank_item_key,
@@ -306,6 +307,59 @@ class RunOutcome:
 #: 하고, 여기는 VisA 없이 도는 시연용 대체물이다.
 DEMO_PENDING_PER_GROUP = 2
 
+
+@dataclass(frozen=True)
+class DemoLine:
+    """라인 하나에 무엇을 심는가.
+
+    **전에는 오염 하나를 1라인에만 심었다.** 심사위원이 2·3·4라인을 눌러도
+    진단은 돌지만 재구성까지 가지 않았고, 그것이 맞는 동작이긴 해도 **어느
+    라인을 눌러도 이야기는 1라인 하나**였다. 원인 여섯 중 넷은 재구성이
+    답이 아니라는 주장을 보이려면 심은 것이 라인마다 달라야 한다
+    (`docs/4090_보고_시연구성.md` 1장).
+
+    variant
+        VisA 카테고리 이름이자 합성 무늬 이름.
+    normal_count
+        VisA 로 설 때 그 카테고리에서 읽을 정상 장수.
+    night_lot_share
+        읽은 정상 중 **야간 로트**로 돌릴 비율. 로트가 둘이어야 "이 조건이
+        뱅크에 있었나"가 물어볼 값을 갖는다.
+    night_lot_in_bank
+        야간 로트를 뱅크에 넣는가. **False 면 그 조건이 비어 커버리지
+        부족이 된다.** 접수되는 결함도 그 로트에서 나온다.
+    contaminants
+        정상이라고 등록된 자리에 섞어 넣을 결함 장수. 4090 실측에서 **2장으로
+        미검 13장**이 생겼고 정상 700장 뱅크에서도 묻히지 않았다
+        (`docs/4090_보고_시연구성.md` 4장).
+    threshold
+        그 품목에 걸린 임계값. `None` 이면 실행 기본값을 쓴다. **품목마다
+        다르다** — 4090 실측에서 과검 1% 지점이 candle 1.925 · capsules 2.560
+        으로 갈렸고, 2.20 이 쓸 만했던 것은 pcb1 이 2.206 이라 우연히 맞은
+        것이다(`docs/4090_보고_시연구성.md` 3장).
+    expected_cause
+        이 라인을 눌렀을 때 나와야 하는 원인. `None` 이면 **재구성이 답이
+        아닌 자리**다. `tests/test_line_object_mapping.py` 가 지킨다.
+    story
+        화면에 적는 한 줄. 심은 것을 숨기지 않는다.
+    """
+
+    line: str
+    object_name: str
+    variant: str
+    normal_count: int
+    night_lot_share: float = 0.3
+    night_lot_in_bank: bool = True
+    contaminants: int = 0
+    threshold: float | None = None
+    expected_cause: str | None = None
+    story: str = ""
+
+    @property
+    def key(self) -> tuple[str, str]:
+        return (self.line, self.object_name)
+
+
 #: 시연 공장의 라인·품목. **`data/build_factory.py` 의 `VALID_LINES` 를 따른다.**
 #:
 #: 넷이어야 한다. `data/scenarios.yaml` 이 `line_04` 를 18번 쓰는데 여기가
@@ -315,18 +369,77 @@ DEMO_PENDING_PER_GROUP = 2
 #: 라인 하나를 늘리면 뱅크 기동이 36초 늘어난다(4090 실측). 그 값으로
 #: 셋으로 줄여 뒀던 것인데, 줄인 이유가 코드에 안 적혀 있어 다음 사람이
 #: 왜 셋인지 알 수 없었다. **기동 시간보다 어긋남이 더 비싸다.**
-DEMO_ITEMS: list[tuple[str, str, str]] = [
-    ("line_01", "pcb1", "pcb1"),
-    ("line_02", "pcb2", "pcb2"),
-    ("line_03", "pcb3", "pcb3"),
-    ("line_04", "pcb4", "pcb4"),
+#:
+#: ── 왜 오염이 1라인인가 (4090 제안과 다른 자리) ─────────────────────────
+#:
+#: `docs/4090_보고_시연구성.md` 1장은 1라인을 커버리지 부족, 2라인을 오염으로
+#: 제안했다. **그대로 하면 기본 시연이 1단계에서 멈춘다.**
+#: `data/issue_history.jsonl` 에 `ISS-0053`(line_02 · pcb2 · scratch ·
+#: 해결됨)이 있어 2라인 스크래치 이슈는 중복으로 차단된다. 1·2·3·4라인 중
+#: **스크래치가 해결 이력에 없는 라인은 1라인뿐**이고(`ISS-0044` 미해결),
+#: 그래서 기본 이슈 원문이 1라인이다. 그 파일은 데이터 담당 소유라 여기서
+#: 고치지 않는다.
+#:
+#: 보고서가 pcb1 을 커버리지 쪽으로 민 근거는 정상 150→700 장에서 과검이
+#: 41.3%→1.0% 로 갈린다는 것이었다. **그 폭은 아직 안 샀다** — 700장 뱅크는
+#: coreset 이 O(k·N) 이라 세우는 값이 크고, 재는 것은 4090 몫이다.
+#: 장수를 올릴 때는 `normal_count` 하나만 고치면 된다.
+DEMO_LINES: list[DemoLine] = [
+    DemoLine(
+        "line_01", "pcb1", "pcb1", normal_count=150,
+        contaminants=2, expected_cause="bank_contamination",
+        story="정상이라고 등록된 이미지에 결함이 섞여 들어간 라인입니다.",
+    ),
+    # 야간 로트를 뱅크에 안 넣으므로 다른 라인보다 더 읽는다. 주간 147장이
+    # 남아 뱅크는 117장으로, 다른 라인(116장)과 거의 같은 크기로 선다 —
+    # 실측 AUROC 를 낸 `VISA_NORMAL_COUNT` 규모를 벗어나지 않기 위해서다.
+    #
+    # **임계값이 왜 높은가.** 뱅크가 야간 조건을 모르면 그 로트 정상품
+    # 점수가 높게 나오고, 현장은 과검을 못 견뎌 임계값을 올려 둔다. 그
+    # 상태에서 결함이 임계값 아래로 묻히는 것이 이 라인의 미검이다.
+    # 값 자체는 시연에서 미검이 생기는 자리이며 **4090 에서 재확인해야
+    # 한다** — 깨끗한 700장 뱅크의 과검 1% 지점은 2.153 이었다.
+    DemoLine(
+        "line_02", "pcb2", "pcb2", normal_count=210,
+        night_lot_in_bank=False, threshold=2.60, expected_cause="coverage_gap",
+        story=("도입 초기 뱅크입니다. 주간 로트 정상 이미지만 들어 있어 야간 로트 "
+               "조건이 비어 있고, 과검을 억누르려 임계값을 올려 둔 상태입니다."),
+    ),
+    DemoLine(
+        "line_03", "pcb3", "pcb3", normal_count=150,
+        story="깨끗한 뱅크입니다. 재구성이 답이 아닌 것을 보여주는 자리입니다.",
+    ),
+    DemoLine(
+        "line_04", "pcb4", "pcb4", normal_count=150,
+        story="깨끗한 뱅크입니다. 재구성이 답이 아닌 것을 보여주는 자리입니다.",
+    ),
 ]
+
+#: (라인, 품목, 카테고리). 위 표에서 뽑는다 — **출처가 둘이 되면 안 된다.**
+DEMO_ITEMS: list[tuple[str, str, str]] = [
+    (d.line, d.object_name, d.variant) for d in DEMO_LINES
+]
+
+DEMO_LINE_BY_KEY: dict[tuple[str, str], DemoLine] = {d.key: d for d in DEMO_LINES}
 
 #: 혼입 이미지를 넣을 품목 하나. 나머지는 깨끗하다.
 #: 전 품목을 뱅크 오염시키면 "이 품목만 문제다"를 보여줄 수 없습니다.
 #:
-#: 시나리오 `SC-BC-001`(line_01 · pcb1 · 혼입 3장)과 같은 자리로 맞춥니다.
-CONTAMINATED_ITEM = ("line_01", "pcb1")
+#: 시나리오 `SC-BC-001`(line_01 · pcb1 · 혼입 3장)과 같은 자리입니다.
+CONTAMINATED_ITEM = next(d.key for d in DEMO_LINES if d.contaminants)
+
+#: 야간 로트가 뱅크에 없는 품목 하나. 커버리지 부족이 나오는 자리다.
+#: 시나리오 `SC-CV-002`(line_02 · pcb2)와 같은 자리입니다.
+COVERAGE_ITEM = next(d.key for d in DEMO_LINES if not d.night_lot_in_bank)
+
+#: 품목별 값이 없을 때 쓰는 값. **숫자를 여러 곳에 적지 않는다** — 화면·
+#: 파이프라인·목이 각자 2.20 을 들고 있으면 한 곳만 고쳐진다.
+DEFAULT_THRESHOLD = 2.20
+
+#: {(라인, 품목): 임계값}. 조회 계층에 넘겨 **판별 3번이 품목별 값을 보게** 한다.
+DEMO_THRESHOLDS: dict[tuple[str, str], float] = {
+    d.key: d.threshold for d in DEMO_LINES if d.threshold is not None
+}
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -377,6 +490,70 @@ def visa_available(root: Path | None = None) -> bool:
     )
 
 
+def _stale_composition(bank: MemoryBank, images: list[Path], version: str) -> bool:
+    """저장소에서 불러온 판이 지금 세우려는 구성과 다른가.
+
+    **v1 만 본다.** 재구성한 판(v2 이상)이 걸려 있으면 사람이 승인해 넘긴
+    것이고, 가상 공장의 최초 구성과 다른 것이 정상이다.
+
+    **파일 이름으로 견준다.** 뱅크가 든 것은 저장소 기준 상대 경로이고
+    지금 세우려는 것은 절대 경로라 문자열이 통째로 다르다. 경로로 견주면
+    구성이 같아도 언제나 "다르다"가 나오고, 그러면 저장소가 있으나 마나다.
+    """
+    if bank.version != version:
+        return False
+    return {Path(p).name for p in images} != {Path(p).name for p in (bank.images or [])}
+
+
+def _split_by_lot(normal: list[Path], night_share: float) -> tuple[list[Path], list[Path]]:
+    """정상 이미지를 주간 로트와 야간 로트로 가른다.
+
+    **로트가 둘이어야 판별 6번이 물어볼 값을 갖는다.** 하나뿐이면 "이 조건이
+    뱅크에 있었나"의 답이 언제나 예스라 커버리지 부족이 성립하지 않는다.
+
+    뒤쪽을 야간으로 둔다. 앞에서부터 자르는 규약(`_visa_set`)과 맞물려
+    **같은 뱅크가 두 번 나오게** 하기 위해서다 — 무작위로 고르면 재현성
+    검사가 뜻을 잃는다.
+    """
+    night_count = max(1, int(round(len(normal) * night_share)))
+    night_count = min(night_count, max(len(normal) - 1, 0))
+    if night_count == 0:
+        return list(normal), []
+    return list(normal[:-night_count]), list(normal[-night_count:])
+
+
+def _bank_split(
+    day: list[Path], night: list[Path], night_in_bank: bool, baseline_count: int
+) -> tuple[list[Path], list[Path], list[Path]]:
+    """(뱅크에 넣을 것, 기준선용, 홀드아웃 정상) 로 가른다.
+
+    ── 야간 로트를 뱅크에 넣는 라인 ────────────────────────────────────
+
+    기준선·홀드아웃은 **주간에서만 뗀다.** 야간은 통째로 뱅크에 들어간다.
+    전에는 이어 붙인 뒤 뒤에서부터 뗐는데, 그러면 야간이 기준선·홀드아웃
+    장수보다 적을 때 **야간이 한 장도 뱅크에 안 남는다.** 그 라인까지
+    커버리지 부족으로 진단돼 라인별로 다르게 심은 것이 무너진다 — 맥의
+    합성 경로(정상 28장)에서 실제로 그랬다.
+
+    ── 야간 로트를 안 넣는 라인 (커버리지 부족) ────────────────────────
+
+    뱅크는 주간 로트만으로 세우고, 기준선도 주간에서 뗀다 — 기준선은 뱅크와
+    같은 조건이라야 "정상 대비 얼마나 큰가"가 뜻을 갖는다. **홀드아웃 정상은
+    야간에서 뗀다.** 뱅크가 모르는 조건이라야 성능 검증이 보충의 효과를 잰다.
+    야간의 나머지가 보충 후보로 남는다.
+    """
+    reserved = baseline_count + 4
+    if night_in_bank:
+        if len(day) > reserved:
+            return day[:-reserved] + list(night), day[-reserved:-4], day[-4:]
+        return day[:-4] + list(night), [], day[-4:]
+
+    holdout = list(night[-4:])
+    if len(day) > reserved:
+        return day[:-baseline_count], day[-baseline_count:], holdout
+    return list(day), [], holdout
+
+
 @dataclass
 class ItemLine:
     """품목 하나의 이미지와 뱅크.
@@ -392,6 +569,9 @@ class ItemLine:
     holdout_normal: list[Path]
     holdout_defect: list[Path]
     contaminants: list[Path]
+    #: 야간 로트 정상 이미지. **뱅크에 들었는지는 라인마다 다르다** —
+    #: 안 들었으면 그 조건이 비어 커버리지 부족이 되고, 보충 대상이 여기다.
+    night_lot: list[Path] = field(default_factory=list)
 
     @property
     def key(self) -> tuple[str, str]:
@@ -411,8 +591,14 @@ class DemoFactory:
     """
 
     def __init__(self, normal_count: int | None = None, defect_count: int | None = None,
-                 contaminants: int = 2, visa_root: str | Path | None = None,
+                 visa_root: str | Path | None = None,
                  store_root: str | Path | None = None):
+        """
+        normal_count
+            주면 **모든 라인이 이 장수로 선다.** 안 주면 `DEMO_LINES` 의
+            라인별 값을 쓴다 — 커버리지 부족 라인은 보충할 야간 로트가 있어야
+            해서 다른 라인보다 더 읽는다.
+        """
         root = Path(visa_root) if visa_root else VISA_ROOT
         #: VisA 원본으로 도는가. 화면이 이 값을 그대로 표시해야 합니다 —
         #: 합성으로 떨어진 것을 모르고 보면 수치를 실측으로 오해합니다.
@@ -421,7 +607,6 @@ class DemoFactory:
         if self.on_visa:
             self.root = root
             self.embedder = PatchEmbedder(VISA_CONFIG)
-            normal_count = normal_count or VISA_NORMAL_COUNT
             defect_count = defect_count or VISA_DEFECT_COUNT
         else:
             self.root = Path(tempfile.mkdtemp(prefix="shvo_demo_"))
@@ -453,9 +638,12 @@ class DemoFactory:
         #: 미리 재면 시연 첫 요청이 그만큼 느려진다.
         self._quality_cache: dict[tuple[str, str], dict[str, dict[str, float]]] = {}
 
-        for index, (line, object_name, variant) in enumerate(DEMO_ITEMS):
+        for index, spec in enumerate(DEMO_LINES):
+            line, object_name, variant = spec.line, spec.object_name, spec.variant
             if self.on_visa:
-                normal, defect = self._visa_set(variant, normal_count, defect_count)
+                normal, defect = self._visa_set(
+                    variant, normal_count or spec.normal_count, defect_count
+                )
             else:
                 from tests.synthetic import write_set
 
@@ -465,8 +653,7 @@ class DemoFactory:
                 defect = write_set(base / "defect", defect_count, "defect",
                                    seed_offset=index * 1000 + 500, variant=variant)
 
-            dirty = (line, object_name) == CONTAMINATED_ITEM
-            mixed_in = list(defect[:contaminants]) if dirty else []
+            mixed_in = list(defect[:spec.contaminants]) if spec.contaminants else []
 
             # **뒤쪽 정상 이미지는 뱅크에 안 넣는다.**
             #
@@ -477,20 +664,23 @@ class DemoFactory:
             # 패치가 뱅크에 있어 거리가 낮게 나오고, 낮은 값을 기준으로
             # 삼으면 잔차가 부풀어 면적이 다시 커진다.
             baseline_count = BASELINE_COUNT if self.on_visa else DEMO_BASELINE_COUNT
-            reserved = baseline_count + 4
-            bank_normal = normal[:-reserved] if len(normal) > reserved else normal[:-4]
-            baseline_normal = list(normal[-reserved:-4]) if len(normal) > reserved else []
+            day, night = _split_by_lot(normal, spec.night_lot_share)
+            bank_normal, baseline_normal, holdout_normal = _bank_split(
+                day, night, spec.night_lot_in_bank, baseline_count
+            )
 
             bank = self._bank_for(line, object_name, list(bank_normal) + mixed_in,
                                   baseline_normal)
             self.items[(line, object_name)] = ItemLine(
                 line=line, object_name=object_name, bank=bank,
                 bank_normal=list(bank_normal),
-                holdout_normal=list(normal[-4:]),
-                holdout_defect=list(defect[contaminants:]) if dirty else list(defect),
+                holdout_normal=list(holdout_normal),
+                holdout_defect=list(defect[spec.contaminants:]),
                 contaminants=mixed_in,
+                night_lot=list(night),
             )
-            self._register(line, object_name, normal, defect, index)
+            self._register(line, object_name, normal, defect, index, night=night,
+                           defect_in_night=not spec.night_lot_in_bank)
 
         contaminated = self.items[CONTAMINATED_ITEM]
         #: 이슈로 접수될 미검 제품. MES 조회로 찾아내는 대상이다.
@@ -521,6 +711,15 @@ class DemoFactory:
 
         if self.store_root is not None:
             found = load_current(item_key, root=self.store_root, config=self.embedder.config)
+            if found is not None and _stale_composition(found, images, version):
+                # **구성을 바꿨는데 옛 판이 돌아오면 바꾼 것이 안 드러난다.**
+                # 저장소는 특징 설정만 대조하므로, 라인별 구성을 고쳐도 어제
+                # 세운 뱅크가 그대로 실린다. 시연은 새 구성이라 말하고 뱅크는
+                # 옛 구성인 상태가 되고, 그것이 화면에서는 안 보인다.
+                #
+                # 운영본(v2 이상)은 그대로 둔다. 사람이 승인해 넘긴 판이라
+                # 가상 공장의 최초 구성과 다른 것이 정상이다.
+                found = None
             if found is not None:
                 self.loaded_from_store.append(item_key)
                 return found
@@ -578,18 +777,37 @@ class DemoFactory:
     def _product_id(self, line: str, object_name: str, path: Path) -> str:
         return f"{object_name.upper()}-{line[-2:]}-{Path(path).stem}"
 
-    def _register(self, line: str, object_name: str, normal, defect, index: int) -> None:
-        """이미지마다 MES 레코드를 만든다. 로트와 설비를 붙여 집계가 되게 한다."""
+    def _register(self, line: str, object_name: str, normal, defect, index: int,
+                  night: list[Path] | None = None,
+                  defect_in_night: bool = False) -> None:
+        """이미지마다 MES 레코드를 만든다. 로트와 설비를 붙여 집계가 되게 한다.
+
+        night
+            야간 로트로 돌릴 정상 이미지. **뱅크 구성과 같은 기준으로 갈라야
+            한다** — 여기서 다르게 나누면 판별 6번이 "뱅크에 없다"고 한 조건의
+            이미지를 보충하러 갔을 때 엉뚱한 것이 온다.
+        defect_in_night
+            접수될 결함을 야간 로트에 넣는가. 커버리지 부족 라인은 **뱅크가
+            모르는 조건에서 결함이 나와야** 이야기가 성립한다.
+        """
         lots = [f"LOT-2026060{index + 1}-{n:03d}" for n in (1, 2)]
+        night_names = {str(p) for p in (night or [])}
         for group, kind in ((normal, "pass"), (defect, "defect")):
             # 뒤쪽 몇 장은 **아직 검사하지 않은 야간 누적분**으로 둔다. 가상
             # 공장의 pending 구간에 해당하고, 스케줄러가 집는 것이 이것이다.
             # 정상과 결함이 섞여 있어야 "전건이 미검"이 아닌 실제 모양이 된다.
             pending_from = max(len(group) - DEMO_PENDING_PER_GROUP, 0)
             for i, path in enumerate(group):
-                #: 결함은 첫 로트에 몰아 넣는다. 로트 집중도가 화면에 뜨는지
+                #: 결함은 한 로트에 몰아 넣는다. 로트 집중도가 화면에 뜨는지
                 #: 확인하려면 실제로 몰려 있는 데이터가 있어야 한다.
-                lot = lots[0] if kind == "defect" else lots[i % len(lots)]
+                #:
+                #: 정상은 **뱅크를 가른 것과 같은 기준**으로 로트를 받는다.
+                #: 전에는 번갈아 넣었는데, 그러면 어느 로트든 뱅크 안에 있어
+                #: "이 조건이 뱅크에 없다"가 성립할 수 없었다.
+                if kind == "defect":
+                    lot = lots[1] if defect_in_night else lots[0]
+                else:
+                    lot = lots[1] if str(path) in night_names else lots[0]
                 self.catalog.append(
                     ImageRecord(
                         product_id=self._product_id(line, object_name, path),
@@ -606,8 +824,74 @@ class DemoFactory:
                     )
                 )
 
+    def reported_product_for(self, line: str, object_name: str) -> str | None:
+        """그 라인에서 이슈로 접수될 제품명.
+
+        **라인마다 심은 것이 다르므로 접수 제품도 라인마다 다르다.**
+        `reported_product` 는 기본 시연(오염 라인) 하나이고, 다른 라인을
+        돌려 보려면 그 라인의 것이 필요하다. 없는 품목이면 None 이다.
+        """
+        item = self.items.get((line, object_name))
+        if item is None or not item.holdout_defect:
+            return None
+        return self._product_id(line, object_name, item.holdout_defect[0])
+
     def bank_versions(self) -> dict[tuple[str, str], str]:
         return {key: item.bank.version for key, item in self.items.items()}
+
+    def bank_profile(self, line: str, object_name: str) -> BankProfile | None:
+        """그 품목 뱅크의 구성 이력. **실제로 뱅크에 든 이미지에서 만든다.**
+
+        전에는 `lookup/mock.py` 가 품목과 무관하게 상수 하나를 돌려줬다.
+        거기 적힌 로트(`LOT-20260602-004`)는 **가상 공장에 없는 로트**였고,
+        그래서 판별 6번의 답이 공장 구성과 무관하게 정해져 있었다. 화질
+        기준을 품목별로 돌린 것과 같은 이유로 여기도 실제에서 뽑는다.
+
+        축은 판별 6번이 묻는 것과 같다 — 날짜·로트·설비. **뱅크에 안 든 축은
+        넣지 않는다.** 기록하지 않은 축과 값이 없는 축은 다르고, 그 구분이
+        `BankProfile.covers` 의 None 과 False 를 가른다.
+        """
+        item = self.items.get((line, object_name))
+        if item is None:
+            return None
+
+        in_bank = set(item.bank.images or [])
+        conditions: dict[str, list[str]] = {}
+        for record in self.catalog:
+            if record.line != line or record.object_name != object_name:
+                continue
+            if str(record.path) not in in_bank:
+                continue
+            for key, value in (("date", record.captured_at),
+                               ("lot", record.lot),
+                               ("equipment", record.equipment)):
+                if not value:
+                    continue
+                text = value.isoformat() if hasattr(value, "isoformat") else str(value)
+                values = conditions.setdefault(key, [])
+                if text not in values:
+                    values.append(text)
+
+        return BankProfile(
+            bank_version=item.bank.version,
+            line=line,
+            object_name=object_name,
+            source_image_count=len(in_bank),
+            patch_count=int(item.bank.embeddings.shape[0]),
+            conditions={key: sorted(values) for key, values in conditions.items()},
+            built_at=date(2026, 6, 5),
+            # 폴더 스캔으로 역추정한 것이 아니라 우리가 세운 구성이다.
+            is_estimated=False,
+        )
+
+    def bank_profiles(self) -> dict[str, BankProfile]:
+        """{뱅크 버전: 구성 이력}. 조회 계층에 그대로 넘긴다."""
+        profiles = {}
+        for line, object_name in self.items:
+            profile = self.bank_profile(line, object_name)
+            if profile is not None:
+                profiles[profile.bank_version] = profile
+        return profiles
 
     def item_for(self, line: str, object_name: str) -> ItemLine | None:
         return self.items.get((line, object_name))
@@ -688,7 +972,7 @@ class _DemoSession:
         context: dict[str, Any],
         patch_override: str | None,
         adapters: tuple[ModelAdapter, ModelAdapter],
-        threshold: float,
+        threshold: float | None,
         lookup: Any = None,
     ):
         self.factory = factory
@@ -696,16 +980,27 @@ class _DemoSession:
         self.context = context
         self.patch_override = patch_override
         self.llm, self.vlm = adapters
-        self.threshold = threshold
+        #: 사람이 임계값을 적어 넣었는가. **적었으면 그 값이 이긴다.**
+        #: 화면에 그 칸이 열려 있는 이유는 "임계값 조절로 풀리는 문제가
+        #: 아니다"를 만져 보게 하려는 것인데, 조회가 준 품목별 값이 그것을
+        #: 덮으면 칸이 장식이 된다.
+        self.requested_threshold = threshold
+        self.threshold = DEFAULT_THRESHOLD if threshold is None else threshold
         # **조회 계층은 밖에서 준다.** 여기서 만들어 버리면 한 실행 안에 조회
         # 계층이 둘이 되고(부르는 쪽 하나, 파이프라인 하나) 서로 다른 답을
         # 낸다 — 스케줄러가 찾은 미검을 파이프라인이 못 찾는 식이다.
         # 데이터 담당의 실구현(`lookup/factory.py`)을 끼우는 자리도 여기다.
         self.lookup = lookup or MockLookup(
-            threshold=threshold,
+            threshold=self.threshold,
             catalog=factory.catalog,
             banks=factory.bank_versions(),
             quality_provider=factory.quality_baseline,
+            # 판별 6번이 물어볼 뱅크 구성. **실제로 뱅크에 든 이미지에서 만든다.**
+            # 상수를 돌려주면 커버리지 판정이 공장 구성과 무관해진다.
+            bank_profiles=factory.bank_profiles(),
+            # 사람이 값을 적어 넣었으면 품목별 표를 얹지 않는다. 그러면 판별
+            # 3번이 화면에 적힌 것과 다른 값을 근거로 삼는다.
+            thresholds=None if threshold is not None else DEMO_THRESHOLDS,
         )
         self.outcome = RunOutcome(issue_text=issue_text, patch_override=patch_override)
 
@@ -872,6 +1167,22 @@ class _DemoSession:
         self.records = records
         self.item = self.factory.item_for(line, obj)
 
+        # ── 판별 3번의 임계값은 조회에서 온다 ──────────────────────────
+        #
+        # **전에는 실행 인자 하나가 모든 품목에 쓰였다.** 4090 실측에서
+        # 과검 1% 지점이 품목마다 달랐고(candle 1.925 · capsules 2.560),
+        # 2.20 이 쓸 만했던 것은 pcb1 이 2.206 이라 우연히 맞은 것이다
+        # (`docs/4090_보고_시연구성.md` 3장). 조회 계층은 처음부터
+        # `get_threshold(라인, 품목, 뱅크)` 로 받게 돼 있었다.
+        #
+        # 못 찾으면 실행 인자를 그대로 쓴다 — 조회가 비었다고 판정을
+        # 멈출 일은 아니다.
+        if self.item is not None and self.requested_threshold is None:
+            record = self.lookup.get_threshold(line, obj, self.item.bank.version)
+            if record is not None and record.value:
+                self.threshold = float(record.value)
+        spec = DEMO_LINE_BY_KEY.get((line, obj))
+
         missing = profile is None or self.item is None
         found_note = (
             f"{obj} 에 배포된 뱅크가 없다. 이 품목은 아직 검사 모델이 없다."
@@ -892,11 +1203,19 @@ class _DemoSession:
                     f"{k}={v}" for k, v in
                     (("제품", product_id), ("로트", lot), ("라인", line), ("품목", obj)) if v) or "—"),
                     ("품목 뱅크", profile.bank_version if profile else "없음"),
+                    ("이 품목의 임계값", f"{self.threshold:.3f} " + (
+                        "(사람이 적어 넣은 값)" if self.requested_threshold is not None
+                        else "(조회 계층이 준 값)")),
                     ("찾은 이미지", f"{len(records)}장" + (
                         f" (상한 {LOT_SCAN_LIMIT} 에 걸려 잘렸을 수 있습니다)"
                         if len(records) >= LOT_SCAN_LIMIT else "")),
                     ("결함으로 확인된 것", f"{sum(1 for r in records if r.ground_truth == 'defect')}장")],
-                note="뱅크는 품목마다 다릅니다. 캡슐 뱅크로 PCB 를 판정할 수 없습니다.",
+                # **심은 것을 화면이 말한다.** 라인마다 다른 것을 심어 두고
+                # 그것을 안 적으면 심사위원은 왜 라인마다 결과가 다른지 알 수
+                # 없고, 알게 되면 "숨겼다"가 된다. 4090 보고서의 권고이기도
+                # 하다 — 도입 초기 뱅크라고 적는 편이 낫다.
+                note=("뱅크는 품목마다 다릅니다. 캡슐 뱅크로 PCB 를 판정할 수 없습니다."
+                      + (f" 이 라인의 시연 구성: {spec.story}" if spec and spec.story else "")),
             )
         )
         if missing:
@@ -1148,7 +1467,7 @@ class _DemoSession:
             defect_visible=visible,
             quality=quality,
             inference=result,
-            threshold=self.lookup.get_threshold(line, obj, item.bank.version),
+            threshold=self._threshold_record(line, obj, item),
             patch_judgment=patch_judgment,
             bank_profile=self.lookup.get_bank_profile(item.bank.version),
             # ── 판별 6번의 조건 ────────────────────────────────────────
@@ -1215,6 +1534,13 @@ class _DemoSession:
                 continue
             if record.verdict not in (None, "pass"):      # 정상만 보충한다
                 continue
+            # **설비 판정만 보면 안 된다.** 미검 건은 설비가 양품이라 한
+            # 것이라 `verdict` 가 "pass" 인데 실제로는 결함이다. 그것을
+            # 정상 뱅크에 보충하면 **우리가 뱅크 오염을 만드는 셈**이다.
+            # 실제로 그랬다 — 야간 로트 보충에 결함 6장이 함께 들어갔다.
+            # 사람이 확인한 값이 있으면 그쪽이 우선한다.
+            if record.ground_truth == "defect":
+                continue
             path = str(record.path)
             if path in already:
                 continue
@@ -1226,6 +1552,23 @@ class _DemoSession:
                 text = value.isoformat() if hasattr(value, "isoformat") else str(value)
                 conditions.setdefault(key, {}).setdefault(text, []).append(path)
         return conditions
+
+    def _threshold_record(self, line: str, obj: str, item: ItemLine):
+        """판별 3번이 대조할 임계값 기록.
+
+        **재검사가 쓴 값과 같아야 한다.** 사람이 화면에서 값을 적어 넣으면
+        재검사는 그 값으로 미검을 가려내는데, 판별 3번만 조회가 준 품목별
+        값을 보면 **같은 실행 안에서 두 값이 돌아다닌다** — 미검이라고 뽑아
+        놓고 "임계값 위"라고 적히는 식이다.
+        """
+        record = self.lookup.get_threshold(line, obj, item.bank.version)
+        if record is None or self.requested_threshold is None:
+            return record
+        record.value = self.threshold
+        record.note = (
+            (record.note + " ") if record.note else ""
+        ) + "화면에서 사람이 적어 넣은 값으로 덮어썼다."
+        return record
 
     def _threshold_feasibility(self):
         """지금 뱅크에서 임계값을 내리면 해결되는지 잰다.
@@ -1657,7 +2000,7 @@ def run_pipeline(
     issue_text: str = DEFAULT_ISSUE,
     patch_override: str | None = "defect",
     adapters: tuple[ModelAdapter, ModelAdapter] | None = None,
-    threshold: float = 2.20,
+    threshold: float | None = None,
     context: dict[str, Any] | None = None,
     lookup: Any = None,
 ) -> RunOutcome:

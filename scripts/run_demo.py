@@ -37,7 +37,10 @@ def main() -> int:
         "--patch-override", default=None, choices=["defect", "genuine_normal"],
         help="판별 5번을 손으로 지정. **기본은 지정하지 않는다** — 모델에 묻는다",
     )
-    parser.add_argument("--threshold", type=float, default=2.20)
+    # **기본은 비워 둔다.** 값을 적으면 그것이 이기고, 안 적으면 조회 계층이
+    # 준 품목별 값을 쓴다. 전에는 여기 2.20 이 박혀 있어 **품목별 임계값이
+    # 영영 안 쓰였다** — 그 값은 pcb1 에만 맞다.
+    parser.add_argument("--threshold", type=float, default=None)
     parser.add_argument(
         "--no-form", action="store_true",
         help="양식 값을 비운다. 언어 모델이 원문에서 다 뽑는지 보려면 이것",
@@ -52,7 +55,14 @@ def main() -> int:
     if args.item:
         line, object_name = args.item.split("/")
 
-    issue = args.issue or default_issue(factory)
+    # **접수 제품도 라인을 따라간다.** `--item` 으로 라인을 바꿨는데 제품이
+    # 기본 라인 것이면 MES 가 엉뚱한 것을 찾는다.
+    product = factory.reported_product_for(line, object_name) or factory.reported_product
+    issue = args.issue or (
+        default_issue(factory) if (line, object_name) == (DEMO_ITEMS[0][0], DEMO_ITEMS[0][1])
+        else f"{line.split('_')[-1].lstrip('0')}라인 {object_name} 제품이 검사에서 "
+             f"계속 양품으로 나옵니다. 제품 {product} 건입니다."
+    )
     llm, vlm = build_adapters()
     print(f"언어 모델 {llm.describe()}")
     print(f"시각 모델 {vlm.describe()}\n")
@@ -68,7 +78,7 @@ def main() -> int:
         # 이것이 쓰인다. `--no-form` 으로 비우면 모델만으로 도는지 볼 수 있다.
         context={} if args.no_form else {
             "line": line, "object_name": object_name,
-            "defect_type": "스크래치", "product_id": factory.reported_product,
+            "defect_type": "스크래치", "product_id": product,
         },
     )
     elapsed = time.time() - ran

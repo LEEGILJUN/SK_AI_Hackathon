@@ -23,12 +23,17 @@ def demo_factory():
 @pytest.fixture(scope="session")
 def demo_lookup(demo_factory):
     """`demo_factory` 를 보는 목 조회 계층."""
+    from app.pipeline import DEMO_THRESHOLDS
     from lookup import MockLookup
 
     return MockLookup(
         catalog=demo_factory.catalog,
         banks=demo_factory.bank_versions(),
         quality_provider=demo_factory.quality_baseline,
+        # 화면이 만드는 것과 같은 조회 계층이어야 한다. 여기만 상수로 두면
+        # 시험이 통과해도 화면에서는 다른 원인이 나온다.
+        bank_profiles=demo_factory.bank_profiles(),
+        thresholds=DEMO_THRESHOLDS,
     )
 
 
