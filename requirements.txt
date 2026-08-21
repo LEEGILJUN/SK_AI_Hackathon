@@ -72,7 +72,11 @@ python-multipart>=0.0.9        # 이슈 이미지 첨부 업로드
 openai>=1.30
 transformers>=4.40             # 로컬 VLM을 직접 로드하는 경로
 accelerate>=0.30
-# anthropic>=0.25              # 외부 API 경로를 Claude로 둘 경우 활성화
+anthropic>=0.40                # 외부 API 경로. `SHVO_LLM_PROVIDER=anthropic`
+                               # 심사위원이 누를 배포판에서 모델이 도구 순서를
+                               # 정하게 하려면 이것이 필요합니다. 키는
+                               # ANTHROPIC_API_KEY 환경 변수로만 둡니다.
+                               # 폐쇄망 시연은 openai_compat 경로를 그대로 씁니다.
 
 # ── 리포트 · 유틸 ──────────────────────────────────────────────────────
 matplotlib>=3.8                # 임계값 스윕 곡선 (검출률 · 과검률)

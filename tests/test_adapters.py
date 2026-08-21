@@ -135,8 +135,9 @@ def test_env_switches_provider_and_fills_local_base_url(monkeypatch):
 
 
 def test_bad_provider_is_rejected(monkeypatch):
+    """**받는 이름을 늘렸으면 여기도 늘어난다.** 오타는 그대로 걸려야 한다."""
     monkeypatch.setenv("SHVO_LLM_PROVIDER", "gpt-something")
-    with pytest.raises(ValueError, match="stub 또는 openai_compat"):
+    with pytest.raises(ValueError, match="stub · openai_compat · anthropic"):
         load_config()
 
 

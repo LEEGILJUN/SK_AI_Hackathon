@@ -10,10 +10,17 @@ health_check 만으로는 부족하다. 도구 호출과 이미지 판독은 서
     .venv/bin/python scripts/check_models.py
 
 설정 (없으면 스텁으로 떨어져 흐름만 확인된다)
+
+로컬 모델
     SHVO_LLM_PROVIDER=openai_compat
     SHVO_LLM_BASE_URL=http://localhost:11434/v1
     SHVO_LLM_MODEL=<모델 이름>
     SHVO_VLM_* 도 같은 형태
+
+Anthropic API
+    SHVO_LLM_PROVIDER=anthropic
+    SHVO_VLM_PROVIDER=anthropic
+    ANTHROPIC_API_KEY=<키>          # 키는 환경 변수로만 둔다
 """
 
 from __future__ import annotations
@@ -204,7 +211,8 @@ def main() -> int:
         print(
             "\n둘 다 스텁이다. 흐름은 돌지만 판정은 비어 있다.\n"
             "실제 모델을 붙이려면 SHVO_LLM_PROVIDER / SHVO_VLM_PROVIDER 를 "
-            "openai_compat 으로 두고 모델 이름과 주소를 설정하라."
+            "openai_compat(로컬) 또는 anthropic(API) 으로 두라. 로컬은 모델 "
+            "이름과 주소가, API 는 ANTHROPIC_API_KEY 가 필요하다."
         )
 
     results: list[bool] = []

@@ -4,6 +4,7 @@
 붙었는지 알지 못한다. 설정으로 교체한다.
 """
 
+from .anthropic_api import AnthropicAdapter
 from .base import (
     ChatMessage,
     ChatResponse,
@@ -25,6 +26,7 @@ from .openai_compat import OpenAICompatAdapter
 from .stub import StubAdapter
 
 __all__ = [
+    "AnthropicAdapter",
     "ChatMessage",
     "ChatResponse",
     "ImagePart",
