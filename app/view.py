@@ -13,13 +13,18 @@ import json
 import pathlib
 import re
 from html import escape
-from inspect import signature
 from typing import Any
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
 from agents.ontology import ACTION_LABEL_KO, CAUSES, CHECKS, action_label, cause_names
-from app.pipeline import FALLBACK_SEQUENCE, RunOutcome, Stage, run_pipeline
+from app.pipeline import (
+    DEFAULT_THRESHOLD as PIPELINE_DEFAULT_THRESHOLD,
+    FALLBACK_SEQUENCE,
+    RunOutcome,
+    Stage,
+    run_pipeline,
+)
 from lookup.base import RETRIEVAL_LABEL
 
 STATUS_LABEL = {"done": "진행", "blocked": "중단", "skipped": "건드리지 않음",
@@ -28,10 +33,14 @@ STATUS_LABEL = {"done": "진행", "blocked": "중단", "skipped": "건드리지 
 #: 멈춘 단계에 붙는 이름표. 같은 "중단"이라도 고장과 설계된 정지는 다르다.
 WHY_LABEL = {"blocked": "왜 멈췄나", "skipped": "왜 건드리지 않았나"}
 
-#: 판정 임계값의 기본값. **여기 숫자를 적지 않는다** — `run_pipeline` 의 기본값을
-#: 그대로 읽는다. 화면에 손으로 적어 두면 파이프라인이 값을 바꿨을 때 화면만
-#: 옛 숫자를 계속 보여준다.
-DEFAULT_THRESHOLD = signature(run_pipeline).parameters["threshold"].default
+#: 판정 임계값의 기본값. **여기 숫자를 적지 않는다** — 파이프라인이 들고 있는
+#: 값을 그대로 읽는다. 화면에 손으로 적어 두면 파이프라인이 값을 바꿨을 때
+#: 화면만 옛 숫자를 계속 보여준다.
+#:
+#: **전에는 `run_pipeline` 의 서명에서 읽었다.** 그 기본값이 숫자에서 None 으로
+#: 바뀌자(품목별 값을 조회에서 받게 되면서) 화면에 "비우면 기본값 None" 이
+#: 찍혔다. 오류가 아니라 문구로만 틀려서 시험이 안 잡았다.
+DEFAULT_THRESHOLD = PIPELINE_DEFAULT_THRESHOLD
 
 # ── 화면에 영어로 나오던 것들 ───────────────────────────────────────────
 #
@@ -2249,7 +2258,7 @@ def render_page(outcome: RunOutcome | None, issue_text: str, patch_verdict: str 
         <label for="threshold">판정 임계값</label>
         <input id="threshold" name="threshold" inputmode="decimal"
                value="{escape(threshold_value)}"
-               placeholder="비우면 기본값 {DEFAULT_THRESHOLD}">
+               placeholder="비우면 그 품목에 걸린 값 (기본 {DEFAULT_THRESHOLD})">
         <span class="hint">
           이 값을 넘으면 불량입니다. <strong>내리면 미검은 줄고 과검이 늡니다.</strong>
           원인 판정까지 따라 바뀌는지는 아래 「판정 기준값과 출처」에 적어 두었습니다.

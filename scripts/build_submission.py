@@ -136,6 +136,11 @@ def main() -> int:
                 "2_결과물/README.md 의 앱 URL과 접속 계정이 비어 있습니다. "
                 "규정: 열리지 않으면 구현 완성도를 확인할 수 없습니다."
             )
+        if "(그 라인의 제품명)" in text:
+            blanks.append(
+                "2_결과물/README.md 의 시연 각본에 라인별 제품명이 안 들어갔습니다. "
+                "12라인 구성이 확정되면 채웁니다."
+            )
     root_readme = SUBMISSION / "README.md"
     if root_readme.exists() and "팀번호" in root_readme.read_text(encoding="utf-8"):
         blanks.append("팀번호와 팀명이 아직 안 정해졌습니다. 드라이브 폴더를 받으면 채웁니다.")

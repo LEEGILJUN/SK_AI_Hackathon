@@ -38,11 +38,17 @@ def test_a_script_imports(path):
     무거운 작업은 `main()` 안에 있어야 한다. 최상위에서 모델을 내려받거나
     공장을 세우면 `--help` 조차 몇 분씩 걸린다.
     """
+    # **`sys.modules` 에 먼저 넣고 실행한다.** 파이썬이 실제로 임포트하는
+    # 순서가 그렇고, 안 넣으면 평범한 코드가 여기서만 죽는다. 최상위
+    # `@dataclass` 가 그랬다 — `dataclasses` 가 `sys.modules[모듈이름]` 을
+    # 찾는데 없어서 AttributeError 가 났다. 스크립트는 직접 실행하면
+    # 멀쩡한데 시험만 실패하니, 스크립트를 고칠 뻔했다.
     done = subprocess.run(
         [sys.executable, "-c",
          f"import importlib.util,sys; sys.path.insert(0,{str(REPO_ROOT)!r}); "
          f"spec=importlib.util.spec_from_file_location('probe',{str(path)!r}); "
          f"mod=importlib.util.module_from_spec(spec); "
+         f"sys.modules['probe']=mod; "
          f"spec.loader.exec_module(mod)"],
         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180, cwd=REPO_ROOT,
     )

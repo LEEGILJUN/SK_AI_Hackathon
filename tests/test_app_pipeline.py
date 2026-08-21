@@ -1181,3 +1181,24 @@ def test_사람이_적어_넣은_임계값이_품목별_값을_이긴다(factory
         f"사람이 1.10 을 적었는데 {forced.threshold} 로 판정했다"
     )
     assert DEMO_THRESHOLDS[COVERAGE_ITEM] != 1.10, "시험이 뜻을 잃었다"
+
+
+def test_화면이_임계값_기본값을_숫자로_보여준다(factory):
+    """**문구로만 틀리는 것은 시험이 안 잡는다.**
+
+    화면은 `run_pipeline` 의 서명에서 기본값을 읽고 있었다. 품목별 값을
+    조회에서 받게 하면서 그 기본값이 숫자에서 None 으로 바뀌자 화면에
+    "비우면 기본값 None" 이 찍혔다. 오류가 아니라 안내 문구라 아무도
+    안 멈췄고, 심사위원이 보는 자리다.
+    """
+    from app.pipeline import DEFAULT_THRESHOLD
+    from app.view import render_page
+
+    html = render_page(None, "이슈 원문")
+
+    assert "None" not in html.split("판정 임계값")[1][:400], (
+        "임계값 안내에 None 이 찍혔다. 파이프라인 기본값이 바뀐 자리다"
+    )
+    assert str(DEFAULT_THRESHOLD) in html, (
+        f"화면이 기본값 {DEFAULT_THRESHOLD} 를 안 보여준다"
+    )
